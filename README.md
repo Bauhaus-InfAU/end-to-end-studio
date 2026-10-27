@@ -1,4 +1,4 @@
-# AI in Design: skills
+# End-to-end studio
 
 An office of skills that writes a competition proposal for any site in Weimar. One skill per person. The contract that holds them together is in [`OFFICE.md`](OFFICE.md).
 
@@ -6,7 +6,7 @@ A skill is a folder with a `SKILL.md`: a short Markdown file of instructions, wi
 
 ## Use a skill
 
-Copy its folder from `skills/` into `.claude/skills/` in your project, then restart `claude`. Type `/` to check it's listed. Or ask your agent: "Copy the skill `general-plan` from github.com/Bauhaus-InfAU/ai-in-design-skills into this project."
+Copy its folder from `skills/` into `.claude/skills/` in your project, then restart `claude`. Type `/` to check it's listed. Or ask your agent: "Copy the skill `general-plan` from github.com/Bauhaus-InfAU/end-to-end-studio into this project."
 
 To run the whole office, copy all of `skills/` and ask for "a competition proposal for the site in `proposal/site.geojson`".
 
