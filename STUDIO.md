@@ -1,6 +1,6 @@
 # The studio
 
-Thirty skills, written by thirty people, that together answer Europan 18 in Regensburg: three vertical A1 panels and up to four pages of text, as the brief asks. Each of you writes one. Nobody waits for anybody else: you can test your skill on the example in `examples/regensburg/` before the skills you depend on exist.
+Twenty skills, one per person, plus three examples, that together answer Europan 18 in Regensburg: three vertical A1 panels and up to four pages of text, as the brief asks. Each of you writes one. Nobody waits for anybody else: you can test your skill on the example in `examples/regensburg/` before the skills you depend on exist.
 
 This file is the contract. If your skill reads and writes what it says here, the studio can run it.
 
@@ -44,33 +44,26 @@ Every skill says in one line near its top which other skills it reads: `Reads: c
 | --- | --- | --- |
 | 1 Site and brief | `site-kit` | Collects the site data: buildings, land use, streets, water, rail. Example |
 | | `brief-reader` | Turns the brief into a checklist: numbers, required drawings, scales, what the jury looks for |
-| | `site-analysis` | The site from the region down to the neighbourhood: history, uses, edges, what to keep |
+| | `site-analysis` | The site from the region down to the neighbourhood: history, uses, edges, green and biotopes, what to keep |
 | | `climate` | Fresh-air corridors, sun, wind, noise from the roads and the railway |
-| | `biotopes` | Existing green, trees, biotopes and soil, and what must stay |
-| 2 Concept | `concept` | The one idea and its title, in three sentences |
+| 2 Concept | `concept` | The one idea, its title in three sentences, and three to six pictograms |
 | | `structure-plan` | The urban figure: green corridors, neighbourhoods, centres, main routes |
-| | `programme` | Homes, residents, the food market, schools, social and sports uses, by area |
+| | `programme` | Homes and the household mix, residents, the food market, schools, social and sports uses, by area |
 | 3 Design | `massing` | Buildings, streets and open spaces on the structure plan, written to `proposal/massing/` |
 | | `phasing` | The construction phases, with phase 1 at the mobility point |
-| | `housing-mix` | Which household types live where, and in which building types |
-| | `concept-diagrams` | Three to six pictograms that explain the idea |
 | 4 Systems | `mobility` | The mobility point, low-traffic streets, bike and foot routes, garages |
-| | `open-space` | Parks, squares, gardens and the blue-green network |
-| | `water` | Rain retention, swales, where the water goes |
-| | `energy` | Energy supply and what the district saves |
+| | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention |
 | 5 Plans | `drawing-graphics` | The studio's drawing standard. The other drawing skills read it. Example |
 | | `figure-ground` | The figure-ground plan of the district in its city. Example |
 | | `masterplan` | The overall plan at 1:5000 |
-| | `detail-plan` | Detail area 1 around the mobility point at 1:1000 |
-| | `district-centre` | Detail area 2, the district centre, at 1:500 |
+| | `detail-plans` | Detail area 1 around the mobility point at 1:1000, and detail area 2, the district centre, at 1:500 |
 | 6 Drawings | `site-section` | A long section through the site, from landscape to neighbourhood |
 | | `isometric` | An isometric overview of the district |
 | | `building-types` | A row of axonometric building types |
-| 7 Visuals | `key-figures` | Residents, homes, floor area, density, sealed share, green share |
-| | `perspective` | Eye-level views with people, from a view in the massing |
-| | `people` | Who lives here: a few residents and a day in their life |
-| 8 Delivery | `competition-text` | The text, up to four pages, from every `summary.md` |
+| 7 Visuals | `perspective` | Eye-level views with people, from a view in the massing |
+| 8 Evidence | `evaluation` | Runs the same analyses on the site as it is and on the design (walking reach, green and sealed share, sun, fresh air, density, the brief's numbers) and shows where the design improves on today, where it doesn't, and what's still missing |
+| 9 Delivery | `competition-text` | The text, up to four pages, with the key figures, from every `summary.md` |
 | | `panel-layout` | The three vertical A1 panels, numbered, with the entry code |
-| | `jury-check` | Reads the whole entry against the brief, as the jury would, and lists what's weak |
+| | `jury` | Reads the finished entry as the Europan jury would, against the brief and the theme, and writes a short jury report: what convinces, what's weak, a verdict |
 
 `competition-proposal` itself is the lead: it runs the others and reports what's missing.

@@ -1,6 +1,6 @@
 # End-to-end studio
 
-A studio made of skills. Thirty people each write one skill, and together the skills answer a real competition from the brief to the panels: Europan 18, Regensburg. The brief is in `brief/`. How the skills fit together is in [`STUDIO.md`](STUDIO.md).
+A studio made of skills. Twenty people each write one skill, and together the skills answer a real competition from the brief to the panels: Europan 18, Regensburg. The brief is in `brief/`. How the skills fit together is in [`STUDIO.md`](STUDIO.md).
 
 A skill is a folder with a `SKILL.md`: a short Markdown file of instructions, with a `name` and a `description` at the top. Claude Code reads the descriptions of all skills in the project, and loads a skill when a task fits its description. In this repo every skill lives in `.claude/skills/`, so all of them are active as soon as you open the project.
 
