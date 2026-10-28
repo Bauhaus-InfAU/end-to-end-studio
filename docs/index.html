@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio skill flow</title>
+<meta name="description" content="How the end-to-end studio's skills feed each other, round by round, from the brief to the panels of Europan 18 Regensburg.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f3f1ea; --paper-2:#e9e6dc; --paper-3:#dfdbcf;
+  --ink:#1c2230; --ink-2:#4b5263; --ink-3:#686c76;
+  --rule:#cfcabd; --navy:#2a3768;
+  --serif:"Source Serif 4", Georgia, serif;
+  --sans:"IBM Plex Sans", system-ui, sans-serif;
+  --cond:"IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--sans)}
+a{color:var(--navy)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+.wrap{max-width:1560px;margin:0 auto;padding:0 28px}
+
+/* masthead */
+.mast{display:grid;grid-template-columns:220px 1fr auto;gap:24px;align-items:start;border-top:1.5px solid var(--ink-2);margin-top:28px;padding:10px 0 16px;border-bottom:1px solid var(--rule)}
+.mast b{display:block;font-weight:600}
+.mast .note{color:var(--ink-2);font-size:13px;max-width:44ch;display:flex;gap:14px}
+.mast .note svg{flex:none;margin-top:3px}
+.mast .tag{font-size:13px;font-weight:600;text-align:right}
+.mast .tag span{display:block;font-weight:400;color:var(--ink-3)}
+
+.head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:40px;align-items:end;padding:34px 0 22px}
+h1{font-family:var(--serif);font-weight:600;color:var(--navy);font-size:clamp(30px,3.4vw,46px);line-height:1.08;margin:0 0 14px;letter-spacing:-.01em}
+.lede{max-width:66ch;color:var(--ink-2);margin:0;font-size:16px}
+.stats{display:flex;gap:30px}
+.stat{border-left:1px solid var(--rule);padding-left:14px}
+.stat b{display:block;font-family:var(--serif);font-weight:500;font-size:38px;line-height:1;color:var(--ink)}
+.stat span{font-size:12px;color:var(--ink-3);line-height:1.3;display:block;margin-top:6px;max-width:12ch}
+
+/* toolbar */
+.bar{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center;padding:14px 0;border-top:1px solid var(--rule)}
+.btn{font:500 14px var(--sans);display:inline-flex;align-items:center;gap:9px;background:var(--ink);color:var(--paper);border:0;border-radius:3px;padding:9px 16px 9px 13px;cursor:pointer}
+.btn:hover{background:var(--navy)}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule)}
+.btn.ghost:hover{box-shadow:inset 0 0 0 1px var(--ink-2)}
+label.find{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:3px;padding:7px 10px}
+.groups{display:flex;flex-wrap:wrap;gap:4px 14px;margin-left:auto}
+.g{font:12.5px var(--cond);color:var(--ink-2);display:inline-flex;align-items:center;gap:6px;cursor:default;padding:2px 0;border:0;background:none}
+.g i{width:10px;height:10px;border-radius:1px;background:var(--c)}
+
+/* main grid */
+.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:28px;align-items:start;padding-bottom:20px}
+.chart{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.chart svg{display:block}
+.lead-note{font-size:12.5px;color:var(--ink-3);margin:0 0 8px}
+.lead-note code{color:var(--ink-2)}
+
+/* chart */
+.colbg{fill:var(--paper-2);opacity:.55}
+.colhead{fill:var(--paper-3)}
+.colhead.on{fill:var(--ink)}
+.rh{font:600 13px var(--sans);fill:var(--ink)}
+.rs{font:12px var(--cond);fill:var(--ink-3)}
+.on + .rh,.colhead.on ~ .rh{fill:var(--paper)}
+.link,.node,.loop,.tick,.strip{transition:opacity .35s ease}
+.link{mix-blend-mode:multiply}
+.node{cursor:pointer;outline:none}
+.node .nm{font:600 13.5px var(--cond);fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
+.node .mk{font:12px var(--cond);fill:var(--ink-3);paint-order:stroke;stroke:var(--paper);stroke-width:4px;stroke-linejoin:round}
+.node .ring{fill:none;stroke:var(--ink);stroke-width:1.5;opacity:0}
+.node.sel .ring,.node:focus-visible .ring{opacity:1}
+.node.run rect.b{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.loop-label,.strip-label{font:italic 13px var(--serif);fill:var(--ink-2)}
+.strip-label b{font:600 12.5px var(--cond);font-style:normal}
+.strip{cursor:pointer}
+
+/* panel */
+.panel{position:sticky;top:18px;background:#faf9f5;border:1px solid var(--rule);border-radius:4px;padding:22px 22px 20px;min-height:200px}
+.panel h2{font:500 22px var(--mono);margin:6px 0 4px;letter-spacing:-.01em;word-break:break-word}
+.panel h3{font:600 12px var(--sans);text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:18px 0 6px}
+.panel p{margin:0 0 10px}
+.panel .does{font-family:var(--serif);font-size:17px;line-height:1.42;color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:7px;font:12.5px var(--cond);color:var(--ink-2)}
+.chip i{width:10px;height:10px;border-radius:1px;background:var(--c)}
+.status{display:inline-block;font:600 12px var(--sans);padding:3px 8px;border-radius:2px;margin:6px 0 12px}
+.status.open{background:transparent;box-shadow:inset 0 0 0 1px var(--ink-3);color:var(--ink-2)}
+.status.done{background:var(--ink);color:var(--paper)}
+.status.ex{background:var(--navy);color:#fff}
+.status.warn{background:#c8102e;color:#fff}
+.refs{display:flex;flex-wrap:wrap;gap:6px}
+.ref{font:13px var(--mono);border:1px solid var(--rule);background:var(--paper);border-radius:3px;padding:3px 8px;cursor:pointer;color:var(--ink);display:inline-flex;gap:6px;align-items:center}
+.ref i{width:7px;height:7px;border-radius:1px;background:var(--c)}
+.ref:hover{border-color:var(--ink-2)}
+.ref.bad{border-style:dashed;color:#c8102e;cursor:default}
+.muted{color:var(--ink-3);font-size:13.5px}
+.panel .go{display:inline-flex;gap:8px;align-items:center;margin-top:16px;font-weight:500;text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
+.key{display:grid;grid-template-columns:34px 1fr;gap:10px 12px;align-items:center;font-size:13.5px;color:var(--ink-2);margin-top:8px}
+.key svg{display:block}
+
+/* contract */
+.contract{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1.5px solid var(--ink-2);margin-top:26px}
+.contract div{padding:16px 24px 6px 0;border-right:1px solid var(--rule);margin-right:24px}
+.contract div:last-child{border-right:0}
+.contract h4{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:0 0 6px}
+.contract p{margin:0 0 10px;color:var(--ink-2);max-width:42ch}
+.foot{display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:space-between;border-top:1px solid var(--rule);margin:30px 0 40px;padding-top:12px;font-size:13px;color:var(--ink-3)}
+.foot a{margin-right:18px}
+
+@media (max-width:1240px){
+  .main{grid-template-columns:minmax(0,1fr)}
+  .panel{position:static}
+  .head{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .wrap{padding:0 16px}
+  .mast{grid-template-columns:1fr;gap:6px}
+  .mast .tag{text-align:left}
+  .stats{gap:18px;flex-wrap:wrap}
+  .stat b{font-size:30px}
+  .groups{margin-left:0}
+  .contract{grid-template-columns:1fr}
+  .contract div{border-right:0;margin-right:0;border-bottom:1px solid var(--rule)}
+}
+@media (prefers-reduced-motion:reduce){
+  .link,.node,.loop,.tick,.strip{transition:none}
+  .node.run rect.b{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div><b>End-to-end studio</b>Europan 18, Regensburg</div>
+    <div class="note">
+      <svg width="46" height="26" viewBox="0 0 46 26" aria-hidden="true"><rect x="0" y="2" width="5" height="22" fill="#4f9d8f"/><path d="M5 4 C24 4 22 18 41 18 L41 24 C22 24 24 10 5 10Z" fill="#4f9d8f" opacity=".35"/><rect x="41" y="14" width="5" height="10" fill="#e2574c"/></svg>
+      <span>Each bar is a skill, each ribbon a <code>Reads:</code> line. Read it from left to right, the way the lead runs the studio.</span>
+    </div>
+    <div class="tag">Session 3<span>Skills</span></div>
+  </header>
+
+  <section class="head">
+    <div>
+      <h1>Twenty skills, one entry</h1>
+      <p class="lede">Each of you writes one skill. The lead, <code>competition-proposal</code>, runs them in rounds: every skill whose inputs exist starts at the same time, each as its own agent, and the next round starts when they are done. Your <code>Reads:</code> line decides your round. Click a skill to see what it needs and who waits for it.</p>
+    </div>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <div class="bar">
+    <button class="btn" id="play" type="button"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path id="playIcon" d="M2 1 L11 6 L2 11Z" fill="currentColor"/></svg><span>Watch a run</span></button>
+    <button class="btn ghost" id="clear" type="button">Show everything</button>
+    <label class="find">Find your skill <select id="find"><option value="">Choose</option></select></label>
+    <div class="groups" id="groups"></div>
+  </div>
+
+  <div class="main">
+    <div>
+      <p class="lead-note">Every skill also reads <code>brief/</code>, <code>proposal/site.geojson</code> and the site data from <code>site-kit</code>. The ribbons show only what the <code>Reads:</code> lines add.</p>
+      <div class="chart" id="chart"></div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+
+  <section class="contract">
+    <div><h4>Reads</h4><p>The brief, the site, the site data, and the skills on your <code>Reads:</code> line. Nothing you didn't list is guaranteed to exist when you start.</p></div>
+    <div><h4>Writes</h4><p>Everything into <code>proposal/&lt;your-skill&gt;/</code> and nowhere else. Drawings as SVG with a PNG next to each, images as PNG, tables as CSV.</p></div>
+    <div><h4>Leaves</h4><p>A <code>summary.md</code> of three lines: what you found or made, the one number that matters, and the one thing you're unsure of.</p></div>
+  </section>
+
+  <footer class="foot">
+    <div><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio">Repository</a><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio/blob/main/STUDIO.md">STUDIO.md</a><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio#readme">How to hand in</a></div>
+    <div id="live">Showing the plan from STUDIO.md.</div>
+  </footer>
+</div>
+
+<script>
+const REPO = 'Bauhaus-InfAU/end-to-end-studio', BRANCH = 'main';
+const GROUPS = {
+  1:{name:'Site and brief', c:'#4f9d8f'},
+  2:{name:'Concept',        c:'#e2574c'},
+  3:{name:'Design',         c:'#2e5aa8'},
+  4:{name:'Systems',        c:'#7fbde3'},
+  5:{name:'Plans',          c:'#ef7d3c'},
+  6:{name:'Drawings',       c:'#e39cbf'},
+  7:{name:'Visuals',        c:'#d8a628'},
+  8:{name:'Evidence',       c:'#6b5b9a'},
+  9:{name:'Delivery',       c:'#4f8f4b'},
+  0:{name:'Not in STUDIO.md', c:'#9a9a9a'}
+};
+// The plan, from STUDIO.md. Live Reads: lines from the repository replace these when they load.
+const PLAN = [
+  {id:'site-kit', g:1, mk:'The site data', example:true, reads:[], does:'Collects the site data: buildings, land use, streets, water, rail.'},
+  {id:'brief-reader', g:1, mk:'A checklist', reads:[], does:'Turns the brief into a checklist: numbers, required drawings, scales, what the jury looks for.'},
+  {id:'site-analysis', g:1, mk:'What to keep', reads:['site-kit'], does:'The site from the region down to the neighbourhood: history, uses, edges, green and biotopes, what to keep.'},
+  {id:'climate', g:1, mk:'Air, sun, wind, noise', reads:['site-kit'], does:'Fresh-air corridors, sun, wind, noise from the roads and the railway.'},
+  {id:'narrative', g:2, mk:'Idea and storyline', mkEnd:'The text', reads:['brief-reader','site-analysis','climate'], readsEnd:'ALL', does:'The story of the entry. At the start: the idea, its title, and the storyline across the three panels, what each panel has to tell. At the end: the text, up to four pages with the key figures, along that storyline.'},
+  {id:'concept-diagrams', g:2, mk:'Pictograms', draws:true, reads:['narrative'], does:'Three to six pictograms that tell the idea.'},
+  {id:'structure-plan', g:2, mk:'The urban figure', reads:['narrative','climate'], does:'The urban figure: green corridors, neighbourhoods, centres, main routes.'},
+  {id:'programme', g:2, mk:'Homes, schools, market', reads:['brief-reader'], does:'Homes and the household mix, residents, the food market, schools, social and sports uses, by area.'},
+  {id:'massing', g:3, mk:'The design', reads:['structure-plan','programme'], does:'Buildings, streets and open spaces on the structure plan, written to proposal/massing/. Every skill that needs the buildings reads them from there.'},
+  {id:'phasing', g:3, mk:'Phases', reads:['structure-plan','massing'], does:'The construction phases, with phase 1 at the mobility point.'},
+  {id:'mobility', g:4, mk:'Mobility point', reads:['structure-plan'], does:'The mobility point, low-traffic streets, bike and foot routes, garages.'},
+  {id:'open-space', g:4, mk:'Blue-green network', reads:['structure-plan'], does:'Parks, squares, gardens, and the blue-green network with rain retention.'},
+  {id:'drawing-graphics', g:5, mk:'Drawing standard', example:true, standard:true, reads:[], does:"The studio's drawing standard. The other drawing skills read it, so all three panels look like one studio. The room picks its direction from the moodboard."},
+  {id:'figure-ground', g:5, mk:'Figure-ground plan', example:true, draws:true, reads:['site-kit','massing'], does:'The figure-ground plan of the district in its city.'},
+  {id:'masterplan', g:5, mk:'Plan at 1:5000', draws:true, reads:['massing','open-space','mobility'], does:'The overall plan at 1:5000.'},
+  {id:'detail-plans', g:5, mk:'1:1000 and 1:500', draws:true, reads:['massing','mobility','programme'], does:'Detail area 1 around the mobility point at 1:1000, and detail area 2, the district centre, at 1:500.'},
+  {id:'site-section', g:6, mk:'Long section', draws:true, reads:['massing'], does:'A long section through the site, from landscape to neighbourhood.'},
+  {id:'isometric', g:6, mk:'District overview', draws:true, reads:['massing'], does:'An isometric overview of the district.'},
+  {id:'building-types', g:6, mk:'Axonometric types', draws:true, reads:['programme','massing'], does:'A row of axonometric building types.'},
+  {id:'perspective', g:7, mk:'Eye-level views', reads:['massing'], does:'Eye-level views with people, from a view in the massing.'},
+  {id:'evaluation', g:8, mk:'Site against design', reads:['site-kit','massing','brief-reader'], does:"Runs the same analyses on the site as it is and on the design (walking reach, green and sealed share, sun, fresh air, density, the brief's numbers) and shows where the design improves on today, where it doesn't, and what's still missing."},
+  {id:'panel-layout', g:9, mk:'Three A1 panels', reads:'ALL', does:'The three vertical A1 panels along the storyline, numbered, with the entry code.'},
+  {id:'jury', g:9, mk:'Jury report', reads:['panel-layout','narrative'], does:"Reads the finished entry as the Europan jury would, against the brief, the theme and its own storyline, and writes a short jury report: what convinces, what's weak, a verdict."}
+];
+
+const NS = 'http://www.w3.org/2000/svg';
+const $ = s => document.querySelector(s);
+function el(tag, attrs, parent){
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const col = s => GROUPS[s.g] ? GROUPS[s.g].c : GROUPS[0].c;
+
+let SK = new Map(PLAN.map((s, i) => [s.id, {...s, idx:i, written:!!s.example}]));
+let G = null;
+const state = {sel:null, hover:null, group:null, play:null, strip:false};
+
+/* ---------- graph ---------- */
+function buildGraph(){
+  const nodes = [], by = new Map();
+  for (const s of SK.values()){
+    if (s.standard) continue;
+    const n = {key:s.id, s, end:false, spec:s.reads, unknown:[]};
+    nodes.push(n); by.set(n.key, n);
+    if (s.readsEnd){
+      const e = {key:s.id + '@end', s, end:true, spec:s.readsEnd, unknown:[]};
+      nodes.push(e); by.set(e.key, e);
+    }
+  }
+  for (const n of nodes){
+    n.inKeys = [];
+    n.resolved = n.spec !== 'ALL';
+    if (!n.resolved) continue;
+    for (const id of n.spec){
+      const t = SK.get(id);
+      if (!t){ n.unknown.push(id); continue; }
+      if (t.standard || id === n.s.id || n.inKeys.includes(id)) continue;
+      n.inKeys.push(id);
+    }
+  }
+  const anc = (n, seen = new Set()) => {
+    for (const k of n.inKeys) if (!seen.has(k)){ seen.add(k); anc(by.get(k), seen); }
+    return seen;
+  };
+  // "everything": every skill that is ready and doesn't wait on this one. Second runs resolve first.
+  const alls = nodes.filter(n => !n.resolved).sort((a, b) => (b.end - a.end) || (a.s.idx - b.s.idx));
+  for (const X of alls){
+    const cand = [];
+    for (const n of nodes){
+      if (n.s.id === X.s.id || !n.resolved) continue;
+      const a = anc(n); a.add(n.key);
+      if (a.has(X.key) || [...a].some(k => !by.get(k).resolved)) continue;
+      cand.push(n.key);
+    }
+    X.inKeys = cand.filter(k => by.get(k).end || !cand.includes(k + '@end'));
+    X.resolved = true;
+  }
+  // A skill that runs twice hands its later result to everyone who comes after it.
+  for (const n of nodes){
+    if (n.spec === 'ALL') continue;
+    n.inKeys = [...new Set(n.inKeys.map(k => {
+      const e = by.get(k + '@end');
+      if (!e || e === n) return k;
+      return anc(e).has(n.key) ? k : e.key;
+    }))];
+  }
+  const round = (n, stack = new Set()) => {
+    if (n.round !== undefined) return n.round;
+    if (stack.has(n.key)) return Infinity;
+    stack.add(n.key);
+    let r = 1;
+    for (const k of n.inKeys) r = Math.max(r, round(by.get(k), stack) + 1);
+    stack.delete(n.key);
+    return (n.round = r);
+  };
+  nodes.forEach(n => round(n));
+  const links = [];
+  nodes.forEach(n => { n.inL = []; n.outL = []; });
+  for (const n of nodes) for (const k of n.inKeys){
+    const l = {s:by.get(k), t:n, all:n.spec === 'ALL'};
+    links.push(l); l.s.outL.push(l); n.inL.push(l);
+  }
+  const desc = (n, seen = new Set()) => {
+    for (const l of n.outL) if (!seen.has(l.t.key)){ seen.add(l.t.key); desc(l.t, seen); }
+    return seen;
+  };
+  for (const n of nodes){
+    n.up = anc(n);
+    n.down = desc(n);
+    n.downSkills = new Set([...n.down].map(k => by.get(k).s.id).filter(id => id !== n.s.id));
+  }
+  const rounds = [...new Set(nodes.map(n => n.round))].sort((a, b) => a - b);
+  return {nodes, by, links, rounds};
+}
+
+/* ---------- layout and drawing ---------- */
+const BAR = 12;
+let svg, geo = {};
+
+function render(){
+  const host = $('#chart');
+  const W = Math.max(host.clientWidth, 960);
+  const {nodes, links, rounds} = G;
+  const ncol = rounds.length;
+  const left = 22, right = 118, top = 92;
+  const step = (W - left - right) / Math.max(1, ncol - 1);
+  const maxDown = Math.max(1, ...nodes.map(n => n.downSkills.size));
+  const cols = rounds.map(() => []);
+  for (const n of nodes){
+    n.col = rounds.indexOf(n.round);
+    n.x = left + n.col * step;
+    n.h = 16 + 30 * Math.sqrt(n.downSkills.size / maxDown);
+    cols[n.col].push(n);
+  }
+  const slot = n => Math.max(n.h, 32) + 22;
+  const innerH = Math.max(...cols.map(c => c.reduce((a, n) => a + slot(n), 0))) - 22;
+  const place = c => {
+    const total = c.reduce((a, n) => a + slot(n), 0) - 22;
+    let y = top + (innerH - total) / 2;
+    for (const n of c){ n.y = y; y += slot(n); }
+  };
+  cols.forEach(c => { c.sort((a, b) => (a.s.g - b.s.g) || (a.s.idx - b.s.idx)); place(c); });
+  const mid = n => n.y + n.h / 2;
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  for (let it = 0; it < 8; it++){
+    const fwd = it % 2 === 0;
+    const order = fwd ? cols.map((_, i) => i) : cols.map((_, i) => ncol - 1 - i);
+    for (const ci of order){
+      const c = cols[ci];
+      for (const n of c){
+        const nb = fwd ? n.inL.map(l => mid(l.s)) : n.outL.map(l => mid(l.t));
+        n.bc = nb.length ? mean(nb) : mid(n);
+      }
+      c.sort((a, b) => a.bc - b.bc);
+      place(c);
+    }
+  }
+  for (const n of nodes){
+    n.outL.sort((a, b) => mid(a.t) - mid(b.t));
+    n.inL.sort((a, b) => mid(a.s) - mid(b.s));
+    n.outL.forEach((l, i) => { const w = n.h / n.outL.length; l.y0 = n.y + i * w; l.y1 = l.y0 + w; });
+    n.inL.forEach((l, i) => { const w = n.h / n.inL.length; l.z0 = n.y + i * w; l.z1 = l.z0 + w; });
+  }
+  const loopFrom = G.nodes.find(n => n.s.readsEnd && !n.end);
+  const loopTo = loopFrom && G.by.get(loopFrom.key + '@end');
+  const bottom = top + innerH;
+  const loopY = bottom + 40;
+  const stripY = loopY + 34;
+  const H = stripY + 50;
+
+  host.innerHTML = '';
+  svg = el('svg', {width:W, height:H, viewBox:`0 0 ${W} ${H}`, role:'img', 'aria-label':'Flow of the studio skills, round by round'}, host);
+  const defs = el('defs', {}, svg);
+
+  // round columns
+  geo.heads = [];
+  rounds.forEach((r, i) => {
+    const x = left + i * step - 12;
+    const w = i === ncol - 1 ? right + 10 : step - 8;
+    el('rect', {class:'colbg', x, y:0, width:w, height:bottom + 16}, svg);
+    const hd = el('rect', {class:'colhead', x, y:0, width:w, height:52}, svg);
+    const t = el('text', {class:'rh', x:x + 12, y:22}, svg);
+    t.textContent = r === Infinity ? 'Never runs' : `Round ${r}`;
+    const sub = el('text', {class:'rs', x:x + 12, y:40}, svg);
+    const k = cols[i].length;
+    sub.textContent = r === Infinity ? 'waits in a loop' : (k === 1 ? '1 skill' : `${k} at once`);
+    geo.heads.push({hd, t, sub});
+  });
+
+  // ribbons
+  geo.links = links.map((l, i) => {
+    const x0 = l.s.x + BAR, x1 = l.t.x, c = (x1 - x0) * .5;
+    const gid = 'lg' + i;
+    const lg = el('linearGradient', {id:gid, gradientUnits:'userSpaceOnUse', x1:x0, x2:x1, y1:0, y2:0}, defs);
+    el('stop', {offset:'0', 'stop-color':col(l.s.s)}, lg);
+    el('stop', {offset:'1', 'stop-color':col(l.t.s)}, lg);
+    const d = `M${x0},${l.y0} C${x0 + c},${l.y0} ${x1 - c},${l.z0} ${x1},${l.z0} L${x1},${l.z1} C${x1 - c},${l.z1} ${x0 + c},${l.y1} ${x0},${l.y1}Z`;
+    l.el = el('path', {class:'link', d, fill:`url(#${gid})`}, svg);
+    return l;
+  });
+
+  // the second run
+  geo.loop = null;
+  if (loopFrom && loopTo){
+    const a = loopFrom.x + BAR / 2, b = loopTo.x + BAR / 2, r = 16;
+    const y0 = loopFrom.y + loopFrom.h, y1 = loopTo.y + loopTo.h;
+    const d = `M${a},${y0} L${a},${loopY - r} Q${a},${loopY} ${a + r},${loopY} L${b - r},${loopY} Q${b},${loopY} ${b},${loopY - r} L${b},${y1}`;
+    const g = el('g', {class:'loop'}, svg);
+    el('path', {d, fill:'none', stroke:col(loopFrom.s), 'stroke-width':7, opacity:.4, 'stroke-linejoin':'round'}, g);
+    const t = el('text', {class:'loop-label', x:(a + b) / 2, y:loopY + 20, 'text-anchor':'middle'}, g);
+    t.textContent = `${loopFrom.s.id} runs again at the end: the same skill, now writing the text`;
+    geo.loop = {g, a:loopFrom, b:loopTo};
+  }
+
+  // drawing standard
+  const std = [...SK.values()].find(s => s.standard);
+  const drawers = nodes.filter(n => n.s.draws && !n.end);
+  geo.strip = null;
+  if (std && drawers.length){
+    const xs = drawers.map(n => n.x);
+    const x0 = Math.min(...xs) - 12, x1 = Math.max(...xs) + step - 20;
+    const g = el('g', {class:'strip', tabindex:0, role:'button', 'aria-label':std.id}, svg);
+    const ticks = el('g', {class:'tick', opacity:0}, svg);
+    for (const n of drawers){
+      el('line', {x1:n.x + BAR / 2, x2:n.x + BAR / 2, y1:n.y + n.h, y2:stripY, stroke:col(std), 'stroke-width':1.2, 'stroke-dasharray':'2 3'}, ticks);
+    }
+    const box = el('rect', {x:x0, y:stripY, width:x1 - x0, height:26, fill:'#faf9f5', stroke:'var(--rule)'}, g);
+    el('rect', {x:x0, y:stripY, width:5, height:26, fill:std.written ? col(std) : 'none', stroke:col(std)}, g);
+    const t = el('text', {class:'strip-label', x:x0 + 14, y:stripY + 17.5}, g);
+    t.innerHTML = `<tspan style="font:600 12.5px var(--cond);font-style:normal;fill:var(--ink)">${std.id}</tspan>  the drawing standard, not a round: every skill with a small square reads it while it draws`;
+    box.setAttribute('width', Math.max(x1 - x0, t.getComputedTextLength() + 28));
+    g.addEventListener('click', () => select(std.id));
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(std.id); } });
+    g.addEventListener('mouseenter', () => { state.strip = true; apply(); });
+    g.addEventListener('mouseleave', () => { state.strip = false; apply(); });
+    geo.strip = {g, ticks, std};
+  }
+
+  // nodes
+  geo.nodes = nodes.map(n => {
+    const c = col(n.s);
+    const g = el('g', {class:'node', tabindex:0, role:'button', 'data-key':n.key, 'aria-label':`${n.s.id}${n.end ? ', second run' : ''}, round ${n.round}`}, svg);
+    el('rect', {class:'hit', x:n.x - 6, y:n.y - 6, width:Math.min(step - 14, 150), height:Math.max(n.h, 32) + 12, fill:'transparent'}, g);
+    el('rect', {class:'ring', x:n.x - 3.5, y:n.y - 3.5, width:BAR + 7, height:n.h + 7, rx:2}, g);
+    el('rect', {class:'b', x:n.x, y:n.y, width:BAR, height:n.h, fill:c, 'fill-opacity':n.s.written ? 1 : .16, stroke:c, 'stroke-width':n.s.written ? 0 : 1.4}, g);
+    const nm = el('text', {class:'nm', x:n.x + BAR + 8, y:n.y + 12}, g);
+    nm.textContent = n.s.id;
+    if (n.end){ const ts = el('tspan', {style:'font-weight:400;fill:var(--ink-3)'}, nm); ts.textContent = ' again'; }
+    const mk = el('text', {class:'mk', x:n.x + BAR + 8, y:n.y + 27}, g);
+    mk.textContent = n.end ? (n.s.mkEnd || 'Second run') : (n.s.mk || '');
+    if (n.s.draws && !n.end){
+      const w = nm.getComputedTextLength();
+      el('rect', {x:n.x + BAR + 8 + w + 6, y:n.y + 3.5, width:7, height:7, fill:'none', stroke:col(std || {g:5}), 'stroke-width':1.3}, g);
+    }
+    g.addEventListener('click', () => select(n.key));
+    g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(n.key); } });
+    g.addEventListener('mouseenter', () => { state.hover = n.key; apply(); });
+    g.addEventListener('mouseleave', () => { state.hover = null; apply(); });
+    n.el = g;
+    return n;
+  });
+  apply();
+}
+
+/* ---------- highlight ---------- */
+function apply(){
+  const {nodes, links} = G;
+  let lit = null, litLink = null, run = null;
+  const focusKey = state.hover || state.sel;
+  if (state.play !== null){
+    const p = state.play;
+    lit = new Set(nodes.filter(n => n.col <= p).map(n => n.key));
+    run = new Set(nodes.filter(n => n.col === p).map(n => n.key));
+    litLink = l => l.t.col <= p;
+  } else if (state.group !== null){
+    lit = new Set(nodes.filter(n => n.s.g === state.group).map(n => n.key));
+    litLink = l => lit.has(l.s.key) || lit.has(l.t.key);
+  } else if (state.strip || (focusKey && SK.get(focusKey) && SK.get(focusKey).standard)){
+    lit = new Set(nodes.filter(n => n.s.draws && !n.end).map(n => n.key));
+    litLink = () => false;
+  } else if (focusKey && G.by.get(focusKey)){
+    const f = G.by.get(focusKey);
+    lit = new Set([...f.up, ...f.down, f.key]);
+    litLink = l => (f.up.has(l.s.key) && (l.t === f || f.up.has(l.t.key))) ||
+                   ((l.s === f || f.down.has(l.s.key)) && f.down.has(l.t.key));
+  }
+  for (const n of nodes){
+    n.el.style.opacity = !lit || lit.has(n.key) ? 1 : .13;
+    n.el.classList.toggle('sel', n.key === state.sel || (state.sel && SK.get(state.sel) && n.s.id === state.sel && !G.by.get(state.sel)));
+    n.el.classList.toggle('run', !!run && run.has(n.key));
+  }
+  for (const l of links){
+    const base = l.all ? .2 : .36;
+    l.el.style.opacity = !lit ? base : (litLink(l) ? (l.all ? .45 : .72) : .035);
+  }
+  if (geo.loop){
+    const on = !lit || (lit.has(geo.loop.a.key) && lit.has(geo.loop.b.key));
+    geo.loop.g.style.opacity = on ? 1 : .12;
+  }
+  if (geo.strip){
+    const showTicks = state.strip || (focusKey && SK.get(focusKey) && SK.get(focusKey).standard);
+    geo.strip.ticks.style.opacity = showTicks ? 1 : 0;
+    geo.strip.g.style.opacity = !lit || showTicks || state.play !== null ? 1 : .35;
+  }
+  geo.heads.forEach((h, i) => {
+    const on = state.play === i;
+    h.hd.style.fill = on ? 'var(--ink)' : '';
+    h.t.style.fill = on ? 'var(--paper)' : '';
+    h.sub.style.fill = on ? '#c9c6bd' : '';
+  });
+}
+
+/* ---------- panel ---------- */
+const refBtn = id => {
+  const s = SK.get(id.replace('@end', ''));
+  if (!s) return `<span class="ref bad" title="No skill of this name in STUDIO.md">${esc(id)}</span>`;
+  const label = id.endsWith('@end') ? `${s.id} again` : s.id;
+  return `<button class="ref" type="button" data-go="${esc(id)}" style="--c:${col(s)}"><i></i>${esc(label)}</button>`;
+};
+const refs = keys => keys.length ? `<div class="refs">${keys.map(refBtn).join('')}</div>` : '<p class="muted">Nothing. It can start in round 1.</p>';
+const fileUrl = id => `https://github.com/${REPO}/blob/${BRANCH}/.claude/skills/${id}/SKILL.md`;
+
+function statusHtml(s){
+  if (s.example) return '<span class="status ex">Example, written by the teaching team</span>';
+  if (s.written) return '<span class="status done">Written and merged</span>';
+  return '<span class="status open">Not written yet. It could be yours</span>';
+}
+
+function panelDefault(){
+  const swatch = (fill, op, stroke) => `<svg width="34" height="22"><rect x="11" y="1" width="12" height="20" fill="${fill}" fill-opacity="${op}" stroke="${stroke}" stroke-width="${op < 1 ? 1.4 : 0}"/></svg>`;
+  $('#panel').innerHTML = `
+    <span class="chip">How to read this</span>
+    <h2 style="font-family:var(--serif);font-weight:600;color:var(--navy)">One run of the studio</h2>
+    <p class="muted">Pick your skill in the chart or in the list above.</p>
+    <div class="key">
+      ${swatch('#2e5aa8', 1, '#2e5aa8')}<span>A skill that is written and merged</span>
+      ${swatch('#2e5aa8', .16, '#2e5aa8')}<span>A skill nobody has written yet</span>
+      <svg width="34" height="22"><path d="M0 4 C17 4 17 12 34 12 L34 20 C17 20 17 12 0 12Z" fill="#2e5aa8" opacity=".4"/></svg><span>A <code>Reads:</code> line: the right skill needs the left one</span>
+      <svg width="34" height="22"><rect x="7" y="2" width="12" height="18" fill="#2e5aa8"/><rect x="21" y="12" width="12" height="8" fill="#2e5aa8" opacity=".5"/></svg><span>Taller bars hold up more of the studio: more skills wait on them</span>
+      <svg width="34" height="22"><rect x="13" y="7" width="8" height="8" fill="none" stroke="#ef7d3c" stroke-width="1.3"/></svg><span>Reads the drawing standard</span>
+    </div>
+    <h3>A column is a round</h3>
+    <p class="muted">Everything in one column runs at the same time, each skill as its own agent. A skill whose input is missing is skipped, and the run report says which input it waited for.</p>`;
+}
+
+function panelPlay(i){
+  const r = G.rounds[i];
+  const here = G.nodes.filter(n => n.col === i);
+  $('#panel').innerHTML = `
+    <span class="chip">Watching a run</span>
+    <h2 style="font-family:var(--serif);font-weight:600;color:var(--navy)">${r === Infinity ? 'Never runs' : 'Round ' + r} <span class="muted" style="font:15px var(--sans)">of ${G.rounds.filter(x => x !== Infinity).length}</span></h2>
+    <p>${here.length === 1 ? 'One skill runs, alone. The next round waits for it.' : `${here.length} skills start at the same time, each as its own agent. The lead waits until all of them are done.`}</p>
+    ${refs(here.map(n => n.key))}`;
+}
+
+function panelSkill(id){
+  const s = SK.get(id.replace('@end', ''));
+  if (!s) return panelDefault();
+  const grp = GROUPS[s.g] || GROUPS[0];
+  const n = G.by.get(s.id), e = G.by.get(s.id + '@end');
+  let body = '';
+  if (s.standard){
+    const readers = G.nodes.filter(m => m.s.draws && !m.end).map(m => m.key);
+    body = `<h3>When it runs</h3><p class="muted">Never on its own. The lead skips it; the drawing skills read it while they draw.</p>
+            <h3>Read by</h3>${refs(readers)}`;
+  } else {
+    const runs = [n, e].filter(Boolean);
+    const when = runs.map(m => {
+      const others = G.nodes.filter(o => o.col === m.col).length - 1;
+      const r = m.round === Infinity ? 'never: it waits for a skill that waits for it' : `round ${m.round}${others ? `, with ${others} other${others > 1 ? 's' : ''} at the same time` : ', alone'}`;
+      return `<p class="muted" style="margin-bottom:4px">${runs.length > 1 ? (m.end ? '<b>Second run:</b> ' : '<b>First run:</b> ') : ''}${r[0].toUpperCase() + r.slice(1)}.</p>`;
+    }).join('');
+    const readsBlock = m => {
+      const label = runs.length > 1 ? (m.end ? 'Reads, second run' : 'Reads, first run') : 'Reads';
+      const unk = m.unknown.length ? `<p class="muted" style="margin-top:6px">Not a skill in STUDIO.md, check the name: ${m.unknown.map(u => `<code>${esc(u)}</code>`).join(', ')}</p>` : '';
+      if (m.spec === 'ALL') return `<h3>${label}</h3><p class="muted">Everything that is ready before it: ${m.inKeys.length} skills.</p>${refs(m.inKeys)}${unk}`;
+      return `<h3>${label}</h3>${refs(m.inKeys)}${unk}`;
+    };
+    const readers = [...new Set(runs.flatMap(m => m.outL.map(l => l.t.key)))].filter(k => !runs.some(m => m.key === k));
+    const down = new Set(runs.flatMap(m => [...m.downSkills]));
+    body = `<h3>When it runs</h3>${when}
+      ${runs.map(readsBlock).join('')}
+      <h3>Read by</h3>${readers.length ? refs(readers) : '<p class="muted">Nobody. It is at the end of the line.</p>'}
+      ${down.size ? `<p class="muted" style="margin-top:8px">${down.size} skill${down.size > 1 ? 's' : ''} wait on it, directly or further down.</p>` : ''}`;
+  }
+  $('#panel').innerHTML = `
+    <span class="chip" style="--c:${grp.c}"><i></i>${s.g ? s.g + ' ' : ''}${esc(grp.name)}</span>
+    <h2>${esc(s.id)}</h2>
+    ${statusHtml(s)}
+    <p class="does">${esc(s.does || 'No description in STUDIO.md yet.')}</p>
+    ${body}
+    <h3>Writes</h3><p class="muted"><code>proposal/${esc(s.id)}/</code> and a <code>summary.md</code> of three lines.</p>
+    ${s.written ? `<a class="go" href="${fileUrl(s.id)}" target="_blank" rel="noopener">Open SKILL.md on GitHub</a>`
+                : `<p class="muted" style="margin-top:14px">Write it in <code>.claude/skills/${esc(s.id)}/SKILL.md</code>. Put <code>Reads: ${esc(Array.isArray(s.reads) && s.reads.length ? s.reads.join(', ') : (s.reads === 'ALL' ? 'everything' : 'nothing'))}</code> near the top.</p>`}`;
+}
+
+/* ---------- actions ---------- */
+function select(key){
+  stopPlay();
+  state.sel = key || null;
+  state.group = null;
+  if (state.sel){
+    panelSkill(state.sel);
+    try { history.replaceState(null, '', '#' + state.sel.replace('@end', '')); } catch (e) {}
+    const p = $('#panel');
+    if (getComputedStyle(p).position !== 'sticky') p.scrollIntoView({behavior:'smooth', block:'nearest'});
+  } else {
+    panelDefault();
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  }
+  $('#find').value = state.sel ? state.sel.replace('@end', '') : '';
+  apply();
+}
+
+let timer = null;
+function setPlayButton(on){
+  $('#play span').textContent = on ? 'Stop' : 'Watch a run';
+  $('#playIcon').setAttribute('d', on ? 'M2 1 H10 V11 H2Z' : 'M2 1 L11 6 L2 11Z');
+}
+function stopPlay(){
+  if (timer){ clearTimeout(timer); timer = null; }
+  if (state.play !== null){ state.play = null; setPlayButton(false); }
+}
+function play(){
+  if (state.play !== null){ stopPlay(); select(state.sel); return; }
+  state.sel = null; state.hover = null; state.group = null;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const n = G.rounds.length;
+  setPlayButton(true);
+  const step = i => {
+    if (i >= n){ state.play = null; timer = null; setPlayButton(false); apply(); panelDefault(); return; }
+    state.play = i; apply(); panelPlay(i);
+    timer = setTimeout(() => step(i + 1), reduce ? 2200 : 1500);
+  };
+  step(0);
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-go]');
+  if (b) select(b.dataset.go);
+});
+$('#play').addEventListener('click', play);
+$('#clear').addEventListener('click', () => select(null));
+$('#find').addEventListener('change', e => select(e.target.value));
+
+function fillControls(){
+  const f = $('#find'), keep = f.value;
+  f.innerHTML = '<option value="">Choose</option>' + [...SK.values()]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(s => `<option value="${esc(s.id)}">${esc(s.id)}</option>`).join('');
+  f.value = keep;
+  const used = [...new Set([...SK.values()].map(s => s.g))].sort((a, b) => (a || 99) - (b || 99));
+  $('#groups').innerHTML = used.map(g => `<button class="g" type="button" data-g="${g}" style="--c:${GROUPS[g].c}"><i></i>${esc(GROUPS[g].name)}</button>`).join('');
+  $('#groups').querySelectorAll('.g').forEach(b => {
+    b.addEventListener('mouseenter', () => { state.group = +b.dataset.g; apply(); });
+    b.addEventListener('mouseleave', () => { state.group = null; apply(); });
+  });
+  const all = [...SK.values()];
+  const finite = G.rounds.filter(r => r !== Infinity);
+  const most = Math.max(...G.rounds.map(r => G.nodes.filter(n => n.round === r).length));
+  const stat = (b, s) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`;
+  $('#stats').innerHTML =
+    stat(all.length, 'skills, three of them examples') +
+    stat(finite.length, 'rounds from the brief to the jury') +
+    stat(most, 'agents at once in the busiest round') +
+    stat(all.filter(s => s.written).length, 'written and merged so far');
+}
+
+/* ---------- live Reads: lines from the repository ---------- */
+function parseList(str){
+  const t = str.replace(/[`*_]/g, '').replace(/\.\s*$/, '').trim();
+  if (!t || /^(nothing|none|-)$/i.test(t)) return [];
+  if (/^(everything|all|every summary|every skill|all skills)\b/i.test(t)) return 'ALL';
+  return t.split(/,|\band\b/).map(x => x.trim().toLowerCase()).filter(Boolean);
+}
+async function loadLive(){
+  const r = await fetch(`https://api.github.com/repos/${REPO}/contents/.claude/skills?ref=${BRANCH}`);
+  if (!r.ok) throw new Error('GitHub ' + r.status);
+  const dirs = (await r.json()).filter(d => d.type === 'dir').map(d => d.name).filter(d => d !== 'competition-proposal');
+  const texts = await Promise.all(dirs.map(d =>
+    fetch(`https://raw.githubusercontent.com/${REPO}/${BRANCH}/.claude/skills/${d}/SKILL.md`)
+      .then(x => x.ok ? x.text() : null).catch(() => null)));
+  dirs.forEach((d, i) => {
+    const text = texts[i];
+    let s = SK.get(d);
+    if (!s){
+      const desc = text && (text.match(/^description:\s*(.+)$/m) || [])[1];
+      s = {id:d, g:0, mk:'', reads:[], does:desc || '', idx:1000 + i};
+      SK.set(d, s);
+    }
+    s.written = !!text || s.written;
+    if (!text) return;
+    const m = text.match(/^\s*\**Reads\**\s*:\s*(.*)$/im);
+    const me = text.match(/^\s*\**Reads \(end\)\**\s*:\s*(.*)$/im);
+    if (m && !s.standard) s.reads = parseList(m[1]);
+    if (me) s.readsEnd = parseList(me[1]);
+    if (d !== 'drawing-graphics' && /drawing-graphics/.test(text)) s.draws = true;
+  });
+  return dirs.length;
+}
+
+function boot(){
+  G = buildGraph();
+  fillControls();
+  render();
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h && SK.has(h)) select(h); else if (!state.sel) panelDefault(); else panelSkill(state.sel);
+}
+boot();
+let rt;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+loadLive().then(() => {
+  const sel = state.sel;
+  G = buildGraph(); fillControls(); render();
+  if (sel) panelSkill(sel);
+  const t = new Date();
+  $('#live').textContent = `Status and Reads: lines read live from the repository's main branch, ${t.toLocaleDateString('en-GB')} ${t.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'})}.`;
+}).catch(() => {
+  $('#live').textContent = 'Could not reach GitHub, so this shows the plan from STUDIO.md.';
+});
+</script>
+</body>
+</html>
