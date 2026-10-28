@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "WebFetch(domain:europan.de)",
+      "WebFetch(domain:www.europan.de)",
+      "WebFetch(domain:europan-europe.eu)",
+      "WebFetch(domain:www.europan-europe.eu)",
+      "Bash(curl *europan*)",
+      "Bash(wget *europan*)"
+    ]
+  }
+}

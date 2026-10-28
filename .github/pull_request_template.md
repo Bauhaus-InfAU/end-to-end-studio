@@ -1,14 +1,14 @@
-**Skill:** `skills/<name>/`
+**Skill:** `.claude/skills/<name>/`
 
-**What it does, in one line:**
+**What it makes, in one line:**
 
-**It reads:** (from `proposal/`, beyond `site.geojson`)
+**Reads:** (the skills whose output it needs)
 
-**It writes:** (in `proposal/<name>/`)
+**Writes:** (in `proposal/<name>/`)
 
-**Tested on:** `examples/weimar-block/`, and on a site of my own: yes / no
+**Tested on:** `examples/regensburg/`: yes / no
 
 **What still isn't right:**
 
 - [ ] I changed only my own folder
-- [ ] No key, no personal path, no layer name of my own in the skill
+- [ ] No key, no personal path, no site or layer name of my own in the skill
