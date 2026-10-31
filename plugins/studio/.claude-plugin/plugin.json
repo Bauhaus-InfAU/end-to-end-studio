@@ -1,0 +1,10 @@
+{
+  "name": "studio",
+  "displayName": "Studio",
+  "description": "The lead that runs the other skills as a studio on a competition brief, and keeps versions of the proposal.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

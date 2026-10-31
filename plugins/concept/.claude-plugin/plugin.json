@@ -1,0 +1,10 @@
+{
+  "name": "concept",
+  "displayName": "Concept",
+  "description": "The idea of an entry: its storyline and text, the urban structure, the programme.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

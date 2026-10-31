@@ -1,4 +1,23 @@
 {
+  "extraKnownMarketplaces": {
+    "end-to-end-studio": {
+      "source": {
+        "source": "directory",
+        "path": "./"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "brief@end-to-end-studio": true,
+    "utilities@end-to-end-studio": true,
+    "site@end-to-end-studio": true,
+    "analysis@end-to-end-studio": true,
+    "concept@end-to-end-studio": true,
+    "design@end-to-end-studio": true,
+    "drawings@end-to-end-studio": true,
+    "delivery@end-to-end-studio": true,
+    "studio@end-to-end-studio": true
+  },
   "permissions": {
     "deny": [
       "WebFetch(domain:europan.de)",

@@ -1,0 +1,10 @@
+{
+  "name": "utilities",
+  "displayName": "Utilities",
+  "description": "Tools any project can use: PDFs to Markdown with their tables, pictures and vector plans.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

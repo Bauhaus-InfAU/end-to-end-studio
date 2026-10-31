@@ -1,0 +1,10 @@
+{
+  "name": "analysis",
+  "displayName": "Analysis",
+  "description": "Measures a site as it is and a design on it, with the same measures, so the two can be compared.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "brief",
+  "displayName": "Brief",
+  "description": "Reads the brief: a checklist of what it asks for, its numbers, drawings, scales and format.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

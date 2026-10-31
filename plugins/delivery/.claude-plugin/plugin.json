@@ -1,0 +1,10 @@
+{
+  "name": "delivery",
+  "displayName": "Delivery",
+  "description": "The finished entry: panels laid out along the storyline, and a jury's reading of them.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

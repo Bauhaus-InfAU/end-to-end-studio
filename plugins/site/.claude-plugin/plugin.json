@@ -1,0 +1,10 @@
+{
+  "name": "site",
+  "displayName": "Site",
+  "description": "Collects the data of a site: its boundary, buildings, plots, streets, water, rail, climate.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "end-to-end-studio",
+  "description": "Skills for architecture and urban design competitions, from the brief to the panels, in nine topics. Install one topic into any project, or all of them to run the studio.",
+  "owner": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "plugins": [
+    {
+      "name": "brief",
+      "source": "./plugins/brief",
+      "description": "Reads the brief: a checklist of what it asks for, its numbers, drawings, scales and format.",
+      "category": "brief"
+    },
+    {
+      "name": "utilities",
+      "source": "./plugins/utilities",
+      "description": "Tools any project can use: PDFs to Markdown with their tables, pictures and vector plans.",
+      "category": "utilities"
+    },
+    {
+      "name": "site",
+      "source": "./plugins/site",
+      "description": "Collects the data of a site: its boundary, buildings, plots, streets, water, rail, climate.",
+      "category": "site"
+    },
+    {
+      "name": "analysis",
+      "source": "./plugins/analysis",
+      "description": "Measures a site as it is and a design on it, with the same measures, so the two can be compared.",
+      "category": "analysis"
+    },
+    {
+      "name": "concept",
+      "source": "./plugins/concept",
+      "description": "The idea of an entry: its storyline and text, the urban structure, the programme.",
+      "category": "concept"
+    },
+    {
+      "name": "design",
+      "source": "./plugins/design",
+      "description": "The design itself: buildings, streets and open spaces, mobility, phases.",
+      "category": "design"
+    },
+    {
+      "name": "drawings",
+      "source": "./plugins/drawings",
+      "description": "Plans, sections, axonometrics, diagrams and views, drawn to one standard made from reference images, at the scales a brief asks for.",
+      "category": "drawings"
+    },
+    {
+      "name": "delivery",
+      "source": "./plugins/delivery",
+      "description": "The finished entry: panels laid out along the storyline, and a jury's reading of them.",
+      "category": "delivery"
+    },
+    {
+      "name": "studio",
+      "source": "./plugins/studio",
+      "description": "The lead that runs the other skills as a studio on a competition brief, and keeps versions of the proposal.",
+      "category": "studio"
+    }
+  ]
+}

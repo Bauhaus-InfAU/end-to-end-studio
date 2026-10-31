@@ -1,0 +1,10 @@
+{
+  "name": "design",
+  "displayName": "Design",
+  "description": "The design itself: buildings, streets and open spaces, mobility, phases.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

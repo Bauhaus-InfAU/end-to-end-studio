@@ -162,7 +162,7 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
 
   <div class="main">
     <div>
-      <p class="lead-note">Every skill also reads <code>brief/</code>, <code>proposal/site.geojson</code> and the site data from <code>site-kit</code>. The ribbons show only what the <code>Reads:</code> lines add.</p>
+      <p class="lead-note">Every skill also reads the brief and the site, which every version shares. The ribbons show only what the <code>Reads:</code> lines add.</p>
       <div class="chart" id="chart"></div>
     </div>
     <aside class="panel" id="panel" aria-live="polite"></aside>
@@ -170,7 +170,7 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
 
   <section class="contract">
     <div><h2>Reads</h2><p>The brief, the site, the site data, and the skills on your <code>Reads:</code> line. Nothing you didn't list is guaranteed to exist when you start.</p></div>
-    <div><h2>Writes</h2><p>Everything into <code>proposal/&lt;your-skill&gt;/</code> and nowhere else. Drawings as SVG with a PNG next to each, images as PNG, tables as CSV.</p></div>
+    <div><h2>Writes</h2><p>Everything into <code>&lt;your-skill&gt;/</code> in the proposal folder, <code>competition/proposals/&lt;date&gt;_&lt;label&gt;/</code>, and nowhere else. Drawings as SVG with a PNG next to each, images as PNG, tables as CSV.</p></div>
     <div><h2>Leaves</h2><p>A <code>summary.md</code> of three lines: what you found or made, the one number that matters, and the one thing you're unsure of.</p></div>
   </section>
 
@@ -183,42 +183,41 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
 <script>
 const REPO = 'Bauhaus-InfAU/end-to-end-studio', BRANCH = 'main';
 const GROUPS = {
-  1:{name:'Site and brief', c:'#4f9d8f'},
-  2:{name:'Concept',        c:'#e2574c'},
-  3:{name:'Design',         c:'#2e5aa8'},
-  4:{name:'Systems',        c:'#7fbde3'},
-  5:{name:'Plans',          c:'#ef7d3c'},
-  6:{name:'Drawings',       c:'#e39cbf'},
-  7:{name:'Visuals',        c:'#d8a628'},
-  8:{name:'Evidence',       c:'#6b5b9a'},
-  9:{name:'Delivery',       c:'#4f8f4b'},
-  0:{name:'Not in STUDIO.md', c:'#9a9a9a'}
+  1:{name:'Brief',    t:'brief',    c:'#4f9d8f'},
+  2:{name:'Site',     t:'site',     c:'#7fbde3'},
+  3:{name:'Analysis', t:'analysis', c:'#6b5b9a'},
+  4:{name:'Concept',  t:'concept',  c:'#e2574c'},
+  5:{name:'Design',   t:'design',   c:'#2e5aa8'},
+  6:{name:'Drawings', t:'drawings', c:'#ef7d3c'},
+  7:{name:'Delivery', t:'delivery', c:'#4f8f4b'},
+  8:{name:'Utilities', t:'utilities', c:'#8c7a5b'},
+  0:{name:'Not in STUDIO.md', t:'', c:'#9a9a9a'}
 };
+const TOPIC_G = Object.fromEntries(Object.entries(GROUPS).map(([g, v]) => [v.t, +g]));
 // The plan, from STUDIO.md. Live Reads: lines from the repository replace these when they load.
 const PLAN = [
-  {id:'site-kit', g:1, mk:'The site data', example:true, reads:[], does:'Collects the site data: buildings, land use, streets, water, rail.'},
-  {id:'brief-reader', g:1, mk:'A checklist', reads:[], does:'Turns the brief into a checklist: numbers, required drawings, scales, what the jury looks for.'},
-  {id:'site-analysis', g:1, mk:'What to keep', reads:['site-kit'], does:'The site from the region down to the neighbourhood: history, uses, edges, green and biotopes, what to keep.'},
-  {id:'climate', g:1, mk:'Air, sun, wind, noise', reads:['site-kit'], does:'Fresh-air corridors, sun, wind, noise from the roads and the railway.'},
-  {id:'narrative', g:2, mk:'Idea and storyline', mkEnd:'The text', reads:['brief-reader','site-analysis','climate'], readsEnd:'ALL', does:'The story of the entry. At the start: the idea, its title, and the storyline across the three panels, what each panel has to tell. At the end: the text, up to four pages with the key figures, along that storyline.'},
-  {id:'concept-diagrams', g:2, mk:'Pictograms', draws:true, reads:['narrative'], does:'Three to six pictograms that tell the idea.'},
-  {id:'structure-plan', g:2, mk:'The urban figure', reads:['narrative','climate'], does:'The urban figure: green corridors, neighbourhoods, centres, main routes.'},
-  {id:'programme', g:2, mk:'Homes, schools, market', reads:['brief-reader'], does:'Homes and the household mix, residents, the food market, schools, social and sports uses, by area.'},
-  {id:'massing', g:3, mk:'The design', reads:['structure-plan','programme'], does:'Buildings, streets and open spaces on the structure plan, written to proposal/massing/. Every skill that needs the buildings reads them from there.'},
-  {id:'phasing', g:3, mk:'Phases', reads:['structure-plan','massing'], does:'The construction phases, with phase 1 at the mobility point.'},
-  {id:'mobility', g:4, mk:'Mobility point', reads:['structure-plan'], does:'The mobility point, low-traffic streets, bike and foot routes, garages.'},
-  {id:'open-space', g:4, mk:'Blue-green network', reads:['structure-plan'], does:'Parks, squares, gardens, and the blue-green network with rain retention.'},
-  {id:'drawing-graphics', g:5, mk:'Drawing standard', example:true, standard:true, reads:[], does:"The studio's drawing standard. The other drawing skills read it, so all three panels look like one studio. The room picks its direction from the moodboard."},
-  {id:'figure-ground', g:5, mk:'Figure-ground plan', example:true, draws:true, reads:['site-kit','massing'], does:'The figure-ground plan of the district in its city.'},
-  {id:'masterplan', g:5, mk:'Plan at 1:5000', draws:true, reads:['massing','open-space','mobility'], does:'The overall plan at 1:5000.'},
-  {id:'detail-plans', g:5, mk:'1:1000 and 1:500', draws:true, reads:['massing','mobility','programme'], does:'Detail area 1 around the mobility point at 1:1000, and detail area 2, the district centre, at 1:500.'},
-  {id:'site-section', g:6, mk:'Long section', draws:true, reads:['massing'], does:'A long section through the site, from landscape to neighbourhood.'},
+  {id:'pdf-to-md', g:8, mk:'PDFs as text', example:true, reads:[], does:'PDFs to Markdown with page markers, tables, and the pictures and vector plans in them.'},
+  {id:'brief-reader', g:1, mk:'A checklist', reads:[], does:'A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for.'},
+  {id:'site-kit', g:2, mk:'The site data', example:true, reads:[], does:"The site's boundary and data: buildings, plots, streets, water, rail."},
+  {id:'climate', g:2, mk:'Air, sun, wind, noise', reads:['site-kit'], does:'Fresh-air corridors, sun, wind, noise.'},
+  {id:'analysis', g:3, mk:'The site today', mkEnd:'Design against today', reads:['site-kit','brief-reader'], readsEnd:['massing','TOPIC:analysis'], does:'The site as it is: uses, edges, green and biotopes, walking reach, sealed share, what to keep. At the end the same on the design, and the comparison of every analysis skill.'},
+  {id:'narrative', g:4, mk:'Idea and storyline', mkEnd:'The text', reads:['brief-reader','analysis','climate'], readsEnd:'ALL', does:'The idea, its title and the storyline across the panels. At the end, the text with the key figures.'},
+  {id:'structure-plan', g:4, mk:'The urban figure', reads:['narrative','climate'], does:'The urban figure: green corridors, neighbourhoods, centres, main routes.'},
+  {id:'programme', g:4, mk:'The programme', reads:['brief-reader'], does:"The brief's programme as a table: homes and household mix, residents, uses and their areas."},
+  {id:'massing', g:5, mk:'The design', reads:['structure-plan','programme'], does:'Buildings, streets and open spaces on the structure plan, in massing/massing.geojson. Every skill that needs the buildings reads them from there.'},
+  {id:'phasing', g:5, mk:'Phases', reads:['structure-plan','massing'], does:'The construction phases and what comes first.'},
+  {id:'mobility', g:5, mk:'Arriving and moving', reads:['structure-plan'], does:'How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking.'},
+  {id:'open-space', g:5, mk:'Blue-green network', reads:['structure-plan'], does:'Parks, squares, gardens, and the blue-green network with rain retention.'},
+  {id:'drawing-graphics', g:6, mk:'Drawing standard', standard:true, reads:[], does:"The studio's drawing standard, made from the reference images in competition/references/. The other drawing skills read it, so all panels look like one studio. Change the references and every drawing changes with them."},
+  {id:'figure-ground', g:6, mk:'Figure-ground plan', draws:true, reads:['site-kit','massing'], does:'The figure-ground plan of the district in its city.'},
+  {id:'plans', g:6, mk:"Plans at the brief's scales", draws:true, reads:['massing','open-space','mobility','programme'], does:'Every plan the brief asks for, at its scales: the overall plan and the detail areas. What a plan shows changes with its scale.'},
+  {id:'site-section', g:6, mk:'Long section', draws:true, reads:['massing'], does:'A long section through the site, and elevations if the brief asks for them.'},
   {id:'isometric', g:6, mk:'District overview', draws:true, reads:['massing'], does:'An isometric overview of the district.'},
   {id:'building-types', g:6, mk:'Axonometric types', draws:true, reads:['programme','massing'], does:'A row of axonometric building types.'},
-  {id:'perspective', g:7, mk:'Eye-level views', reads:['massing'], does:'Eye-level views with people, from a view in the massing.'},
-  {id:'evaluation', g:8, mk:'Site against design', reads:['site-kit','massing','brief-reader'], does:"Runs the same analyses on the site as it is and on the design (walking reach, green and sealed share, sun, fresh air, density, the brief's numbers) and shows where the design improves on today, where it doesn't, and what's still missing."},
-  {id:'panel-layout', g:9, mk:'Three A1 panels', reads:'ALL', does:'The three vertical A1 panels along the storyline, numbered, with the entry code.'},
-  {id:'jury', g:9, mk:'Jury report', reads:['panel-layout','narrative'], does:"Reads the finished entry as the Europan jury would, against the brief, the theme and its own storyline, and writes a short jury report: what convinces, what's weak, a verdict."}
+  {id:'concept-diagrams', g:6, mk:'Pictograms', draws:true, reads:['narrative'], does:'Three to six pictograms that tell the idea.'},
+  {id:'perspective', g:6, mk:'Eye-level views', reads:['massing'], does:'Eye-level views with people, from a view in the massing.'},
+  {id:'panel-layout', g:7, mk:'The panels', reads:'ALL', does:'The panels the brief asks for, along the storyline.'},
+  {id:'jury', g:7, mk:'Jury report', reads:['panel-layout','narrative'], does:"Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict."}
 ];
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -253,6 +252,7 @@ function buildGraph(){
     n.resolved = n.spec !== 'ALL';
     if (!n.resolved) continue;
     for (const id of n.spec){
+      if (id.startsWith('TOPIC:')){ (n.topics = n.topics || []).push(id.slice(6)); continue; }
       const t = SK.get(id);
       if (!t){ n.unknown.push(id); continue; }
       if (t.standard || id === n.s.id || n.inKeys.includes(id)) continue;
@@ -263,6 +263,11 @@ function buildGraph(){
     for (const k of n.inKeys) if (!seen.has(k)){ seen.add(k); anc(by.get(k), seen); }
     return seen;
   };
+  // "every <topic>": every skill of that topic that doesn't wait on this one.
+  for (const X of nodes.filter(n => n.topics)){
+    const cand = nodes.filter(n => n.s.id !== X.s.id && n.resolved && X.topics.includes((GROUPS[n.s.g] || {}).t) && !anc(n).has(X.key)).map(n => n.key);
+    X.inKeys = [...new Set([...X.inKeys, ...cand.filter(k => by.get(k).end || !cand.includes(k + '@end'))])];
+  }
   // "everything": every skill that is ready and doesn't wait on this one. Second runs resolve first.
   const alls = nodes.filter(n => !n.resolved).sort((a, b) => (b.end - a.end) || (a.s.idx - b.s.idx));
   for (const X of alls){
@@ -428,7 +433,7 @@ function render(){
     const box = el('rect', {x:x0, y:stripY, width:x1 - x0, height:26, fill:'#faf9f5', stroke:'var(--rule)'}, g);
     el('rect', {x:x0, y:stripY, width:5, height:26, fill:std.written ? col(std) : 'none', stroke:col(std)}, g);
     const t = el('text', {class:'strip-label', x:x0 + 14, y:stripY + 17.5}, g);
-    t.innerHTML = `<tspan style="font:600 12.5px var(--cond);font-style:normal;fill:var(--ink)">${std.id}</tspan>  the drawing standard, not a round: every skill with a small square reads it while it draws`;
+    t.innerHTML = `<tspan style="font:600 12.5px var(--cond);font-style:normal;fill:var(--ink)">${std.id}</tspan>  the drawing standard, made first from the references: every skill with a small square reads it while it draws`;
     box.setAttribute('width', Math.max(x1 - x0, t.getComputedTextLength() + 28));
     g.addEventListener('click', () => select(std.id));
     g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); select(std.id); } });
@@ -519,10 +524,11 @@ const refBtn = id => {
   return `<button class="ref" type="button" data-go="${esc(id)}" style="--c:${col(s)}"><i></i>${esc(label)}</button>`;
 };
 const refs = keys => keys.length ? `<div class="refs">${keys.map(refBtn).join('')}</div>` : '<p class="muted">Nothing. It can start in round 1.</p>';
-const fileUrl = id => `https://github.com/${REPO}/blob/${BRANCH}/.claude/skills/${id}/SKILL.md`;
+const skillPath = s => s.path || `plugins/${(GROUPS[s.g] || {}).t || '<topic>'}/skills/${s.id}`;
+const fileUrl = s => `https://github.com/${REPO}/blob/${BRANCH}/${skillPath(s)}/SKILL.md`;
 
 function statusHtml(s){
-  if (s.example) return '<span class="status ex">Example, written by the teaching team</span>';
+  if (s.example) return '<span class="status ex">Example, written by Egor</span>';
   if (s.written) return '<span class="status done">Written and merged</span>';
   return '<span class="status open">Not written yet. It could be yours</span>';
 }
@@ -562,7 +568,7 @@ function panelSkill(id){
   let body = '';
   if (s.standard){
     const readers = G.nodes.filter(m => m.s.draws && !m.end).map(m => m.key);
-    body = `<h3>When it runs</h3><p class="muted">Never on its own. The lead skips it; the drawing skills read it while they draw.</p>
+    body = `<h3>When it runs</h3><p class="muted">First, before round 1. It turns the reference images into the standard; the drawing skills read it while they draw.</p>
             <h3>Read by</h3>${refs(readers)}`;
   } else {
     const runs = [n, e].filter(Boolean);
@@ -585,14 +591,14 @@ function panelSkill(id){
       ${down.size ? `<p class="muted" style="margin-top:8px">${down.size} skill${down.size > 1 ? 's' : ''} wait on it, directly or further down.</p>` : ''}`;
   }
   $('#panel').innerHTML = `
-    <span class="chip" style="--c:${grp.c}"><i></i>${s.g ? s.g + ' ' : ''}${esc(grp.name)}</span>
+    <span class="chip" style="--c:${grp.c}"><i></i>${esc(grp.name)}</span>
     <h2>${esc(s.id)}</h2>
     ${statusHtml(s)}
     <p class="does">${esc(s.does || 'No description in STUDIO.md yet.')}</p>
     ${body}
-    <h3>Writes</h3><p class="muted"><code>proposal/${esc(s.id)}/</code> and a <code>summary.md</code> of three lines.</p>
-    ${s.written ? `<a class="go" href="${fileUrl(s.id)}" target="_blank" rel="noopener">Open SKILL.md on GitHub</a>`
-                : `<p class="muted" style="margin-top:14px">Write it in <code>.claude/skills/${esc(s.id)}/SKILL.md</code>. Put <code>Reads: ${esc(Array.isArray(s.reads) && s.reads.length ? s.reads.join(', ') : (s.reads === 'ALL' ? 'everything' : 'nothing'))}</code> near the top.</p>`}`;
+    <h3>Writes</h3><p class="muted"><code>${esc(s.id)}/</code> in the proposal folder, and a <code>summary.md</code> of three lines.</p>
+    ${s.written ? `<a class="go" href="${fileUrl(s)}" target="_blank" rel="noopener">Open SKILL.md on GitHub</a>`
+                : `<p class="muted" style="margin-top:14px">Write it in <code>${esc(skillPath(s))}/SKILL.md</code>. Put <code>Reads: ${esc(Array.isArray(s.reads) && s.reads.length ? s.reads.join(', ') : (s.reads === 'ALL' ? 'everything' : 'nothing'))}</code> near the top.</p>`}`;
 }
 
 /* ---------- actions ---------- */
@@ -661,7 +667,7 @@ function fillControls(){
   const most = Math.max(...G.rounds.map(r => G.nodes.filter(n => n.round === r).length));
   const stat = (b, s) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`;
   $('#stats').innerHTML =
-    stat(all.length, 'skills, three of them examples') +
+    stat(all.length, `skills, ${all.filter(s => s.example).length} of them examples`) +
     stat(finite.length, 'rounds from the brief to the jury') +
     stat(most, 'agents at once in the busiest round') +
     stat(all.filter(s => s.written).length, 'written and merged so far');
@@ -672,32 +678,34 @@ function parseList(str){
   const t = str.replace(/[`*_]/g, '').replace(/\.\s*$/, '').trim();
   if (!t || /^(nothing|none|-)$/i.test(t)) return [];
   if (/^(everything|all|every summary|every skill|all skills)\b/i.test(t)) return 'ALL';
-  return t.split(/,|\band\b/).map(x => x.trim().toLowerCase()).filter(Boolean);
+  return t.split(/,|\band\b/).map(x => x.trim().toLowerCase()).filter(Boolean)
+    .map(x => { const m = x.match(/^every ([a-z-]+)$/); return m && m[1] in TOPIC_G ? 'TOPIC:' + m[1] : x; });
 }
 async function loadLive(){
-  const r = await fetch(`https://api.github.com/repos/${REPO}/contents/.claude/skills?ref=${BRANCH}`);
+  const r = await fetch(`https://api.github.com/repos/${REPO}/git/trees/${BRANCH}?recursive=1`);
   if (!r.ok) throw new Error('GitHub ' + r.status);
-  const dirs = (await r.json()).filter(d => d.type === 'dir').map(d => d.name).filter(d => d !== 'competition-proposal');
-  const texts = await Promise.all(dirs.map(d =>
-    fetch(`https://raw.githubusercontent.com/${REPO}/${BRANCH}/.claude/skills/${d}/SKILL.md`)
-      .then(x => x.ok ? x.text() : null).catch(() => null)));
-  dirs.forEach((d, i) => {
-    const text = texts[i];
+  const found = (await r.json()).tree.map(e => e.path.match(/^plugins\/([^/]+)\/skills\/([^/]+)\/SKILL\.md$/)).filter(Boolean)
+    .filter(m => m[2] !== 'competition-proposal');
+  const texts = await Promise.all(found.map(m =>
+    fetch(`https://raw.githubusercontent.com/${REPO}/${BRANCH}/${m[0]}`).then(x => x.ok ? x.text() : null).catch(() => null)));
+  found.forEach((m, i) => {
+    const [, topic, d] = m, text = texts[i];
     let s = SK.get(d);
     if (!s){
       const desc = text && (text.match(/^description:\s*(.+)$/m) || [])[1];
-      s = {id:d, g:0, mk:'', reads:[], does:desc || '', idx:1000 + i};
+      s = {id:d, g:TOPIC_G[topic] || 0, mk:'', reads:[], does:desc || '', idx:1000 + i};
       SK.set(d, s);
     }
+    s.path = `plugins/${topic}/skills/${d}`;
     s.written = !!text || s.written;
     if (!text) return;
-    const m = text.match(/^\s*\**Reads\**\s*:\s*(.*)$/im);
+    const rl = text.match(/^\s*\**Reads\**\s*:\s*(.*)$/im);
     const me = text.match(/^\s*\**Reads \(end\)\**\s*:\s*(.*)$/im);
-    if (m && !s.standard) s.reads = parseList(m[1]);
+    if (rl && !s.standard) s.reads = parseList(rl[1]);
     if (me) s.readsEnd = parseList(me[1]);
     if (d !== 'drawing-graphics' && /drawing-graphics/.test(text)) s.draws = true;
   });
-  return dirs.length;
+  return found.length;
 }
 
 function boot(){

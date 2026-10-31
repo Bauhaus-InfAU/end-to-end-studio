@@ -1,0 +1,10 @@
+{
+  "name": "drawings",
+  "displayName": "Drawings",
+  "description": "Plans, sections, axonometrics, diagrams and views, drawn to one standard made from reference images, at the scales a brief asks for.",
+  "author": {
+    "name": "InfAU, Bauhaus-Universität Weimar",
+    "url": "https://github.com/Bauhaus-InfAU"
+  },
+  "repository": "https://github.com/Bauhaus-InfAU/end-to-end-studio"
+}

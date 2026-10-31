@@ -1,0 +1,8 @@
+# What the studio's skills need. Install once: pip install -r requirements.txt
+shapely>=2.0     # geometry: footprints, buffers, sections
+pyproj>=3.6      # coordinates: WGS84 to metres and back
+numpy
+trimesh          # 3D, when a skill needs a mesh
+requests         # downloads: OpenStreetMap, image APIs
+python-dotenv    # reads keys from .env
+# pdf-to-md also needs Docling (about 500 MB of models on first run) and PyMuPDF: pip install docling pymupdf

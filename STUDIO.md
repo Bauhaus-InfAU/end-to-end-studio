@@ -1,69 +1,93 @@
 # The studio
 
-Twenty skills, one per person, plus three examples, that together answer Europan 18 in Regensburg: three vertical A1 panels and up to four pages of text, as the brief asks. Each of you writes one. Nobody waits for anybody else: you can test your skill on the example in `examples/regensburg/` before the skills you depend on exist.
+A set of skills that makes a competition entry, from the brief to the panels. They are grouped into nine topics, and each topic is a plugin you can install into any project. This semester twenty of you write one skill each, and together they answer Europan 18 in Regensburg: three vertical A1 panels and up to four pages of text. Next year the same skills should answer another brief, and you should be able to take yours into your own practice.
 
-This file is the contract. If your skill reads and writes what it says here, the studio can run it.
+This file is the contract. If your skill keeps to it, the studio can run it, and it works on its own too.
 
-## What every skill reads
+## Topics and modules
 
-- `brief/`: the competition brief. Read the parts that concern your skill.
-- `proposal/site.geojson`: the project site, one polygon in longitude and latitude, WGS84, longitude first.
-- `proposal/site-kit/`: the site data `site-kit` collected (buildings, land use, streets, water, rail). Read its `SOURCES.md` first.
-- `proposal/<other-skill>/`: whatever an earlier skill wrote, if you need it. Say in your `SKILL.md` which ones.
+A topic is a plugin in `plugins/<topic>/`. Each skill in it is a module: one folder in `plugins/<topic>/skills/<skill>/` with a `SKILL.md`, and any scripts or files it needs next to it. Its `TOPIC.md` says what the skills of that topic read and what shape they write. Read it before you write yours.
 
-## What every skill writes
+You can add a module to a topic at any time. An `isovist` or `space-syntax` skill goes into `analysis`. If it writes what `analysis/TOPIC.md` asks for, the comparison and the panels pick it up without anyone else changing a line. In Claude Code the skill is then called `/analysis:isovist`.
 
-- Everything into `proposal/<your-skill-name>/` and nowhere else.
-- A `summary.md` there: three lines, plain words, for the people who write the text and lay out the panels. What you found or made, the one number that matters, and the one thing you're unsure of.
-- Drawings as SVG with a PNG next to each, images as PNG, tables as CSV.
+## Every skill works alone
 
-## The design itself
+Copy one skill folder into another project's `.claude/skills/`, or install its topic, and it must still work:
 
-`massing` writes `proposal/massing/massing.geojson`. Every skill that needs the buildings reads it from there. Features carry a `kind`:
+- It names its inputs in plain words and looks for them in the project's inputs and the proposal folder. If one is missing, it asks or says so in `summary.md`; it never invents data.
+- Nothing about Europan, Regensburg, A1 or this repo is written into a skill. All of that comes from the brief.
+- If it needs a rule from its `TOPIC.md`, it says that rule in its own words, in one line.
+- Its scripts and files sit in its folder, and it calls them through `${CLAUDE_SKILL_DIR}`, so the path works wherever it's installed.
+- It says what it needs installed (`pip install docling`) and where a key goes (`.env`, never the skill).
 
-| `kind` | Geometry | Properties |
-| --- | --- | --- |
-| `building` | polygon, the footprint | `floors`; optional `use`, `type` (one of the `building-types`), `phase` |
-| `street` | polygon | optional `phase` |
-| `open-space` | polygon | `use` (park, square, garden, water) |
-| `tree` | point | |
+## The inputs
 
-## Shared rules
+Three things belong to the project, not to one version, and every version reads them:
 
-- Never hard-code your site, your layer names or your paths. The same skill must work on another site and another brief.
-- Never invent data. Every number has its source or its assumption next to it.
-- Drawing skills read `drawing-graphics` and follow it, so the panels look like one studio. The room picks its direction from the moodboard.
-- Keep a skill short. Two or three paragraphs, a list if it helps. Add a line when you don't like a result, delete lines the model no longer needs.
-- If a skill needs a key, the key lives in `.env`, never in the skill.
+- The brief: the PDFs in the project's `brief/`, each with its Markdown next to it, made by `pdf-to-md`.
+- The site: the project's `site/`, made by `site-kit`. `site.geojson` is the project site, one polygon in WGS84, longitude first. Next to it are the layers (buildings, plots, streets, water, rail) and their `SOURCES.md`.
+- The references: the images in the project's `references/`, for `drawing-graphics`.
+
+In this repo they're in `competition/`. In another project they're wherever its `CLAUDE.md` says, else at the top. `pdf-to-md` and `site-kit` write there, and the lead runs them only when their output is missing. Every other skill only reads them.
+
+## The proposal folder
+
+Every version of a proposal is a folder `<YYYY-MM-DD>_<label>/` in the project's `proposals/`, such as `2026-11-02_run-1`. In this repo that's `competition/proposals/`. In another project it's wherever its `CLAUDE.md` says, else `proposals/` at the top. A skill works in the proposal folder it is told, else the newest one there, else a new `<YYYY-MM-DD>_draft/`. In it:
+
+- `<skill>/`: everything a skill writes, and nothing outside it. Every skill leaves a `summary.md` of three lines: what it found or made, the one number that matters, the one thing it's unsure of.
+- `version.md`, `README.md` and `log.md`, written by the lead.
+
+Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJSON in WGS84.
+
+`competition-proposal` makes a new version, a variant of an earlier one ("redo the massing of run-1"), or compares two. `proposals/` is never committed. To test your skill, tell it to work in `competition/proposals/test/`; the brief and the site are in `competition/` already. If it reads a skill that doesn't exist yet, ask your agent for a rough stand-in in that skill's folder, in the shape its `TOPIC.md` gives.
 
 ## The order
 
-Every skill says in one line near its top which other skills it reads: `Reads: narrative, programme`. A skill that works twice in a run, like `narrative`, adds a second line, `Reads (end): ...`, and runs again once those exist. `competition-proposal` starts every skill whose inputs are ready, all at the same time, each as its own agent, waits for them, and repeats until nothing is left. So nobody has to keep an order up to date; a missing `Reads:` line only means your skill may run before its inputs exist. The groups below are by topic, roughly in the order things get ready.
+Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist. `everything` means every skill that doesn't wait for this one; `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
 
-| Group | Skill | What it does |
-| --- | --- | --- |
-| 1 Site and brief | `site-kit` | Collects the site data: buildings, land use, streets, water, rail. Example |
-| | `brief-reader` | Turns the brief into a checklist: numbers, required drawings, scales, what the jury looks for |
-| | `site-analysis` | The site from the region down to the neighbourhood: history, uses, edges, green and biotopes, what to keep |
-| | `climate` | Fresh-air corridors, sun, wind, noise from the roads and the railway |
-| 2 Concept | `narrative` | The story of the entry. At the start: the idea, its title, and the storyline across the three panels, what each panel has to tell. At the end: the text, up to four pages with the key figures, along that storyline |
-| | `concept-diagrams` | Three to six pictograms that tell the idea |
-| | `structure-plan` | The urban figure: green corridors, neighbourhoods, centres, main routes |
-| | `programme` | Homes and the household mix, residents, the food market, schools, social and sports uses, by area |
-| 3 Design | `massing` | Buildings, streets and open spaces on the structure plan, written to `proposal/massing/` |
-| | `phasing` | The construction phases, with phase 1 at the mobility point |
-| 4 Systems | `mobility` | The mobility point, low-traffic streets, bike and foot routes, garages |
-| | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention |
-| 5 Plans | `drawing-graphics` | The studio's drawing standard. The other drawing skills read it. Example |
-| | `figure-ground` | The figure-ground plan of the district in its city. Example |
-| | `masterplan` | The overall plan at 1:5000 |
-| | `detail-plans` | Detail area 1 around the mobility point at 1:1000, and detail area 2, the district centre, at 1:500 |
-| 6 Drawings | `site-section` | A long section through the site, from landscape to neighbourhood |
-| | `isometric` | An isometric overview of the district |
-| | `building-types` | A row of axonometric building types |
-| 7 Visuals | `perspective` | Eye-level views with people, from a view in the massing |
-| 8 Evidence | `evaluation` | Runs the same analyses on the site as it is and on the design (walking reach, green and sealed share, sun, fresh air, density, the brief's numbers) and shows where the design improves on today, where it doesn't, and what's still missing |
-| 9 Delivery | `panel-layout` | The three vertical A1 panels along the storyline, numbered, with the entry code |
-| | `jury` | Reads the finished entry as the Europan jury would, against the brief, the theme and its own storyline, and writes a short jury report: what convinces, what's weak, a verdict |
+## The tools
 
-`competition-proposal` itself is the lead: it runs the others and reports what's missing.
+Skills work in code and plain files, not in a modelling program. Leave Rhino and Grasshopper out wherever you can: the lead runs twenty skills side by side with nobody at the screen, and every skill has to work in any project, on any computer.
+
+- Python 3.11 or newer. What the studio needs is in `requirements.txt` at the top of the repo: `pip install -r requirements.txt`, once.
+- Geometry with `shapely` and `pyproj`. 3D is the footprints extruded by their heights (`trimesh` if you need a mesh), and a section is a cut through them.
+- Drawings as SVG, written directly, with a PNG next to each made by a headless browser (Chrome or Edge, `--headless --screenshot`). No plotting library: plots look like charts.
+- Perspectives and atmosphere from an image API, on a view of the massing the skill draws first. The key goes in `.env`.
+- If a skill really can't do without Rhino, it says why in one line, and without Rhino it says so in `summary.md` instead of failing silently.
+
+## Shared rules
+
+- Never invent data. Every number has its source or its assumption next to it.
+- The look comes from `drawing-graphics`, which turns the project's reference images (here `competition/references/`) into a standard. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
+- Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
+- Keep a skill short: two or three paragraphs, a list if it helps. Add a line when you don't like a result, delete lines the model no longer needs.
+
+## The skills
+
+| Topic | Skill | What it does | Who |
+| --- | --- | --- | --- |
+| utilities | `pdf-to-md` | PDFs to Markdown with page markers, tables, and the pictures and vector plans in them. Example | `YegorGaidukov` |
+| brief | `brief-reader` | A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for | open |
+| site | `site-kit` | The site's boundary and data: buildings, plots, streets, water, rail. Example | `YegorGaidukov` |
+| | `climate` | Fresh-air corridors, sun, wind, noise | `HawarHeidari` |
+| analysis | `analysis` | The site as it is: uses, edges, green and biotopes, walking reach, sealed share, what to keep. At the end the same on the design, and the comparison of every analysis | `roy-mdr` |
+| concept | `narrative` | The idea, its title and the storyline across the panels. At the end, the text with the key figures | `Emdot-code` |
+| | `structure-plan` | The urban figure: green corridors, neighbourhoods, centres, main routes | `dishadesign1503-lab` |
+| | `programme` | The brief's programme as a table: homes and household mix, residents, uses and their areas | `Mehrn00shK` |
+| design | `massing` | Buildings, streets and open spaces on the structure plan | `TukaElGhazaly` |
+| | `phasing` | The construction phases and what comes first | open |
+| | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |
+| | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | open |
+| drawings | `drawing-graphics` | The studio's drawing standard, made from the reference images | open |
+| | `figure-ground` | The figure-ground plan of the district in its city | open |
+| | `plans` | Every plan the brief asks for, at its scales: the overall plan and the detail areas | open |
+| | `site-section` | A long section through the site, and elevations if the brief asks for them | `yhemayll` |
+| | `isometric` | An isometric overview of the district | `MujdaMursal` |
+| | `building-types` | A row of axonometric building types | `simonmazob9` |
+| | `concept-diagrams` | Three to six pictograms that tell the idea | `nouranmoustafa` |
+| | `perspective` | Eye-level views with people, from a view in the massing | `Isabelacano` |
+| delivery | `panel-layout` | The panels the brief asks for, along the storyline | `bengunur` |
+| | `jury` | Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict | open |
+| studio | `competition-proposal` | The lead: runs the others, keeps the versions | `YegorGaidukov` |
+
+"Who" is the GitHub username of the person responsible. "open" means nobody has the skill yet. Egor (`YegorGaidukov`) keeps this column, so don't change it in your pull request.

@@ -1,5 +1,12 @@
-/proposal/
-/runs/
+# runs and tests stay on your computer
+/competition/proposals/
+/proposals/
 .env
 node_modules/
+__pycache__/
 .DS_Store
+
+# made by pdf-to-md: big, and anyone can remake them. Only the plans' PNGs are kept.
+/competition/brief/*-images/
+/competition/brief/*-drawings/*.pdf
+/competition/brief/*-drawings/*.svg
