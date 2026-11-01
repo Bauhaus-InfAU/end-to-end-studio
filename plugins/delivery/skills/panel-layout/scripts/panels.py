@@ -18,6 +18,7 @@ import html
 import json
 import os
 import re
+import secrets
 import shutil
 import struct
 import subprocess
@@ -314,7 +315,7 @@ def item_html(it, box, style, folder):
 
 
 CHECK_JS = """
-<script>
+<script nonce="{nonce}">
 window.addEventListener('load', () => {
   const r = [];
   document.querySelectorAll('.box').forEach(b => {
@@ -342,7 +343,9 @@ def panel_html(n, total, placed, fmt, reserved, marks, style, ctx, folder):
         pos = f"top:{mk['y']}mm;" + (f"right:{mk['x']}mm;" if align == "right" else f"left:{mk['x']}mm;")
         parts.append(f'<div class="mark" style="{pos}font-size:{mk.get("pt", 14)}pt;font-weight:{mk.get("weight", 400)};'
                      f'text-align:{align}">{html.escape(fill(mk["text"], c))}</div>')
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Panel {n}</title><style>
+    nonce = secrets.token_hex(16)  # only the page's own check may run; nothing loads from the network
+    csp = f"default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; script-src 'nonce-{nonce}'"
+    return f"""<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="{csp}"><title>Panel {n}</title><style>
 @page {{ size: {W}mm {H}mm; margin: 0; }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style['background']}; color: {style['text']};
@@ -362,7 +365,7 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 .box td.src {{ opacity: .6; font-size: .8em; }}
 </style></head><body>
 {chr(10).join(parts)}
-{CHECK_JS}</body></html>"""
+{CHECK_JS.replace("{nonce}", nonce)}</body></html>"""
 
 
 # ---------- browser ----------
@@ -385,7 +388,7 @@ def find_browser():
 def run_browser(browser, args, timeout=180):
     with tempfile.TemporaryDirectory() as prof:
         cmd = [browser, "--headless=new", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
-               "--allow-file-access-from-files", f"--user-data-dir={prof}", *args]
+               f"--user-data-dir={prof}", *args]
         try:
             return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
         except subprocess.TimeoutExpired:  # a hung browser: the report then says what wasn't written
