@@ -11,6 +11,12 @@ sources.json: what makes the noise, each with where its number comes from. Nothi
 match: properties a line in the site folder's streets layer (or `layer`) must have; a list allows several values.
 road_class sets the RLS-90 shares of day/night traffic and heavy vehicles: motorway, federal, state, local.
 lme_day / lme_night: an emission level at 25 m from a study, used instead of aadt (any source, rail included).
+
+Railway (optional, off without train numbers): a source with "trains_per_day" (or "trains_day" 6-22 h and "trains_night"
+22-6 h) and "trains_source", or --rail-trains N on the command line. Simplified Schall 03 (1990):
+L = 51 + 10 lg(5 - 0.04 p) + 10 lg(0.01 l) + 20 lg(0.01 v) + D_track, with p % disc-braked, l metres of train per hour,
+v km/h; train_length_m, disc_brake_pct, speed_kmh, track ("concrete" +2, "wood" 0) default to the values in RAIL and
+are listed as assumptions. Without train numbers the maps say: Railway not included: no train data.
 """
 import argparse
 import csv
@@ -34,6 +40,24 @@ def emission(M, p, v):
     return 37.3 + 10 * math.log10(M * (1 + 0.082 * p)) + Dv
 
 
+RAIL = dict(speed_kmh=100, train_length_m=200, disc_brake_pct=100, track="concrete", night_share=0.15)
+
+
+def rail_emission(src):
+    """Simplified Schall 03 emission level at 25 m, day and night, and the assumptions made."""
+    assumed = [f"{k} {RAIL[k]}" for k in ("speed_kmh", "train_length_m", "disc_brake_pct", "track") if k not in src]
+    g = lambda k: src.get(k, RAIL[k])
+    if "trains_day" in src:
+        nd, nn = float(src["trains_day"]), float(src.get("trains_night", 0))
+    else:
+        nn = float(src["trains_per_day"]) * RAIL["night_share"]
+        nd = float(src["trains_per_day"]) - nn
+        assumed.append(f"{round(100 * RAIL['night_share'])} % of trains at night")
+    base = 51 + 10 * math.log10(5 - 0.04 * float(g("disc_brake_pct"))) + 20 * math.log10(0.01 * float(g("speed_kmh"))) + (2 if g("track") == "concrete" else 0)
+    lme = lambda n, hours: base + 10 * math.log10(max(0.01 * n / hours * float(g("train_length_m")), 1e-6))
+    return {"day": lme(nd, 16), "night": lme(nn, 8)}, assumed
+
+
 def matches(props, match):
     return all((props.get(k) in v) if isinstance(v, list) else props.get(k) == v for k, v in match.items())
 
@@ -48,9 +72,17 @@ def main():
     ap.add_argument("--margin", type=float, default=300)
     ap.add_argument("--seg", type=float, default=25)
     ap.add_argument("--raster", type=float, default=5)
+    ap.add_argument("--rail-trains", type=float, help="trains per 24 h on the railway lines; off when not given")
+    ap.add_argument("--rail-source", default="given on the command line", help="where the train number comes from, or ASSUMED")
+    ap.add_argument("--rail-speed", type=float)
+    ap.add_argument("--rail-match", default="railway=rail", help="key=value a line in the site folder's rail layer must have")
     a = ap.parse_args()
     S, out = Site(a.site, a.buildings), Path(a.out)
     cfg = read(a.sources)
+    if a.rail_trains:
+        k, v = a.rail_match.split("=", 1)
+        cfg["sources"].append(dict(name="Railway", layer="rail", match={k: v}, trains_per_day=a.rail_trains, trains_source=a.rail_source,
+                                   **({"speed_kmh": a.rail_speed, "speed_source": a.rail_source} if a.rail_speed else {})))
     hr = float(cfg.get("receiver_height_m", 4))
     zone = S.poly.buffer(a.margin)
     G, H, n_def, _ = S.buildings(zone.buffer(500))
@@ -71,21 +103,29 @@ def main():
     rcv = np.c_[xs, ys]
     E = {"day": np.zeros(len(xs)), "night": np.zeros(len(xs))}
     used, notes, lines_out = [], [], []
+    rail = dict(included=False, label="Railway not included: no train data")
     for src in cfg["sources"]:
         lines = [g for g, p in S.layer(src.get("layer", "streets")) if matches(p, src["match"])]
         if not lines:
             notes.append(f'{src["name"]}: no line in the site data matches {src["match"]}, left out')
             continue
         geom = shapely.union_all(lines)
-        lines_out.append((geom, {"name": src["name"]}))
+        lines_out.append((geom, {"name": src["name"], "kind": "rail" if src.get("layer") == "rail" else "road"}))
+        assumed = []
         if "lme_day" in src:
             lme = {"day": src["lme_day"], "night": src.get("lme_night", src["lme_day"] - 8)}
+        elif "trains_per_day" in src or "trains_day" in src:
+            lme, assumed = rail_emission(src)
+            n = src.get("trains_per_day", src.get("trains_day", 0) + src.get("trains_night", 0))
+            rail = dict(included=True, label=f'{src["name"]}: {n:g} trains/day ({src.get("trains_source", "no source given")})',
+                        assumptions=assumed)
         else:
             md, mn, pd, pn = CLASSES[src.get("road_class", "local")]
             v = float(src.get("speed_kmh", 50))
             lme = {"day": emission(md * src["aadt"], pd, v), "night": emission(mn * src["aadt"], pn, v)}
         used.append(dict(name=src["name"], lme_day=round(lme["day"], 1), lme_night=round(lme["night"], 1),
-                         **{k: src[k] for k in src if k.endswith("source") or k in ("aadt", "speed_kmh", "road_class")}))
+                         **{k: src[k] for k in src if k.endswith("source") or k in ("aadt", "speed_kmh", "road_class", "trains_per_day", "trains_day", "trains_night")},
+                         **({"assumed": "; ".join(assumed)} if assumed else {})))
         # partial sources along the line
         segs, fine = [], shapely.segmentize(geom, a.seg)
         for part in getattr(fine, "geoms", [fine]):
@@ -136,10 +176,12 @@ def main():
         w = csv.writer(f)
         w.writerow(["lon", "lat", "l_day_db", "l_night_db"])
         w.writerows([[round(p.x, 6), round(p.y, 6), round(d, 1), round(n, 1)] for p, d, n in zip(ll, L["day"], L["night"])])
-    summary = dict(sources_used=used, left_out=notes, receiver_height_m=hr, share_of_site_pct=share,
+    rail_line = ("Railway: simplified Schall 03 (1990), propagated as the roads" + (f'; assumed {", ".join(rail["assumptions"])}' if rail["assumptions"] else "")
+                 if rail["included"] else rail["label"])
+    summary = dict(sources_used=used, notes=notes, rail=rail, receiver_height_m=hr, share_of_site_pct=share,
                    buildings=dict(used=len(G), heights_defaulted=n_def),
-                   sources=[f'{u["name"]}: ' + ", ".join(f"{k} {v}" for k, v in u.items() if k.endswith("source")) for u in used] +
-                   ["Method: RLS-90 partial sources, screening by the existing buildings (single diffraction over the highest roof on each path, heights on a {a.raster:g} m raster), "
+                   sources=[f'{u["name"]}: ' + ", ".join(f"{k} {v}" for k, v in u.items() if k.endswith("source")) for u in used] + [rail_line] +
+                   [f"Method: RLS-90 partial sources, screening by the existing buildings (single diffraction over the highest roof on each path, heights on a {a.raster:g} m raster), "
                     "flat ground, no reflections; an estimate, not a noise study",
                     f"Buildings: site data, {n_def} of {len(G)} heights are defaults"])
     write_json(out / "noise.json", summary)

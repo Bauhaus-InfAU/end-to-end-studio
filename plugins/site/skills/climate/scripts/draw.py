@@ -115,8 +115,9 @@ class Map:
         attrs = " ".join(f'{k.replace("_", "-")}="{v}"' for k, v in a.items())
         self.body.append(f'<path d="{self.d(g)}" fill-rule="evenodd" {attrs}/>')
 
-    def hatch(self, name, color, gap=1.6, angle=45, w=None):
-        self.defs.append(f'<pattern id="{name}" width="{gap}" height="{gap}" patternUnits="userSpaceOnUse" patternTransform="rotate({angle})">'
+    def hatch(self, name, color, gap=1.6, angle=45, w=None, bg=None):
+        back = f'<rect width="{gap}" height="{gap}" fill="{bg}"/>' if bg else ""
+        self.defs.append(f'<pattern id="{name}" width="{gap}" height="{gap}" patternUnits="userSpaceOnUse" patternTransform="rotate({angle})">{back}'
                          f'<line x1="0" y1="0" x2="0" y2="{gap}" stroke="{color}" stroke-width="{w or self.st["mid"]}"/></pattern>')
         return f"url(#{name})"
 
@@ -199,6 +200,36 @@ class Map:
         return path.name
 
 
+KEYS = {"paper": ("paper", "background"), "ink": ("ink", "line", "lines", "text colour", "text color"), "accent": ("accent", "highlight", "new"),
+        "context": ("context", "existing", "grey", "gray"), "water": ("water",), "cool": ("cool", "green", "vegetation")}
+
+
+def standard(out, given):
+    """The look: --style, else drawing-graphics/style.json or the colours named in drawing-graphics/standard.md
+    in the proposal folder, else the fallback. Returns (values, what was used)."""
+    if given:
+        return read(given), f"the drawing standard ({given})"
+    dg = out.resolve().parent / "drawing-graphics"
+    if (dg / "style.json").exists():
+        return read(dg / "style.json"), "the drawing standard (drawing-graphics/style.json)"
+    if (dg / "standard.md").exists():
+        import re
+        st = {}
+        for line in (dg / "standard.md").read_text(encoding="utf-8").splitlines():
+            low = line.lower()
+            hexes = re.findall(r"#[0-9a-fA-F]{6}\b", line)
+            if hexes:
+                for k, words in KEYS.items():
+                    if k not in st and any(w in low for w in words):
+                        st[k] = hexes[0]
+                        break
+            m = re.search(r"font[^:|]*[:|]\s*`?([A-Za-z][^`|,]+)", line, re.I)
+            if m and "font" not in st:
+                st["font"] = m.group(1).strip() + ", Helvetica, Arial, sans-serif"
+        return st, f"the drawing standard (drawing-graphics/standard.md: {', '.join(st) or 'no colours found, fallback used'})"
+    return {}, "fallback look (no drawing standard): black on white, one accent"
+
+
 def meta(out, name):
     p = out / f"{name}.json"
     return read(p) if p.exists() else {}
@@ -212,10 +243,15 @@ def main():
     ap.add_argument("--scale", type=int)
     ap.add_argument("--margin", type=float, default=300)
     ap.add_argument("--buildings")
+    ap.add_argument("--sheet", action="store_true", help="only remake climate_sheet from the drawings made, e.g. after writing summary.md")
     a = ap.parse_args()
     S, out = Site(a.site, a.buildings), Path(a.out)
-    st = dict(FALLBACK, **(read(a.style) if a.style else {}))
-    look = "the drawing standard" if a.style else "fallback look (no drawing standard): black on white, one accent"
+    found, look = standard(out, a.style)
+    st = dict(FALLBACK, **found)
+    if a.sheet:  # only the sheet, from the drawings already made
+        lines = (out / "drawings.txt").read_text(encoding="utf-8").splitlines()[1:]
+        print(sheet(out, st, [n for n in lines if n and n != "climate_sheet.svg"]))
+        return
     ext = box(*S.poly.buffer(a.margin).bounds)
     w, h = ext.bounds[2] - ext.bounds[0], ext.bounds[3] - ext.bounds[1]
     scale = a.scale or next((s for s in SCALES if w * 1000 / s <= 280 and h * 1000 / s <= 300), SCALES[-1])
@@ -281,19 +317,51 @@ def main():
         F = S.layer("noise", out)
         for period in dict.fromkeys(p["period"] for _, p in F):
             G = [(g, p) for g, p in F if p["period"] == period]
-            m = new(f"Road noise, {period}", "Estimated level at about 4 m above ground, existing buildings screening")
+            r = meta(out, "noise").get("rail", {})
+            sub = "Estimated level at about 4 m above ground, existing buildings screening"
+            if r.get("included") and "assumed" in r.get("label", "").lower():
+                sub += ". RAIL TRAFFIC ASSUMED, NOT FROM DATA"
+            m = new(f"{'Road and rail' if r.get('included') else 'Road'} noise, {period}", sub)
             m.context(buildings=False)
             cols = ramp(len(G), st)
             for (g, p), c in zip(G, cols):
                 m.add(g, fill=c, stroke="none", fill_opacity=0.85)
             m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["paper"], stroke=st["ink"], stroke_width=st["thin"])
-            for g, p in S.layer("noise-sources", out):
-                m.add(g, fill="none", stroke=st["ink"], stroke_width=st["thick"])
+            srcs = S.layer("noise-sources", out)
+            for g, p in srcs:
+                m.add(g, fill="none", stroke=st["ink"], stroke_width=st["thick"], **({"stroke_dasharray": "2 1"} if p.get("kind") == "rail" else {}))
             m.site()
             for (g, p), c in zip(G, cols):
                 m.key("fill", c, p["label"], opacity=0.85)
             m.key("line", st["ink"], "Roads counted as noise sources", w=st["thick"])
+            rail = meta(out, "noise").get("rail", {"label": "Railway not included: no train data"})
+            if rail.get("included"):
+                m.key("line", st["ink"], f'Railway counted as noise source. {rail["label"]}', w=st["thick"], dash="2 1")
+            else:
+                m.key("line", st["accent"], rail["label"].upper(), w=st["thick"], dash="0.6 0.9")
             made.append(m.save(out / f"noise_{period}.svg", meta(out, "noise").get("sources", [])))
+
+    if (out / "heat.geojson").exists():
+        m = new("Heat island", "How much each place heats up today, from what covers the ground")
+        F = S.layer("heat", out)
+        idx = [(g, p) for g, p in F if p["kind"] == "index"]
+        cool = st.get("cool", mix(st["paper"], st["ink"], 0.35))
+        cols = [mix(st["paper"], cool, 0.55), mix(st["paper"], cool, 0.2)] + ramp(4, st)[1:]
+        for (g, p), c in zip(idx, cols):
+            m.add(g, fill=c, stroke="none")
+        for g, p in F:
+            if p["kind"] == "unknown":
+                m.add(g, fill=m.hatch("unknown", st["ink"], 1.2, 45, st["thin"]), fill_opacity=0.5, stroke="none")
+        # buildings as outlines here, so no grey of theirs is mistaken for the cool class
+        m.context(buildings=False)
+        m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["paper"], stroke=st["ink"], stroke_width=st["thin"])
+        m.site()
+        for (g, p), c in zip(idx, cols):
+            m.key("fill", c, p["label"].capitalize())
+        if any(p["kind"] == "unknown" for _, p in F):
+            m.key("fill", "url(#unknown)", "Too little land-use data to say", opacity=0.5)
+        m.key("fill", st["paper"], "Existing buildings (roofs count as very hot)")
+        made.append(m.save(out / "heat.svg", meta(out, "heat").get("sources", [])))
 
     if (out / "rules.geojson").exists():
         R = meta(out, "rules")
@@ -310,9 +378,9 @@ def main():
             i = n[k]
             n[k] += 1
             if k == "dont":
-                looks[p["rule"]] = (st["accent"], 0.75) if i == 0 else (m.hatch(f"dont{i}", st["accent"], 0.7, 45 + 90 * i, st["mid"] * 1.4), 1)
+                looks[p["rule"]] = (st["accent"], 0.85) if i == 0 else (m.hatch(f"dont{i}", st["paper"], 1.4, 45, st["mid"], bg=st["accent"]), 0.85)
             elif k == "careful":
-                looks[p["rule"]] = (m.dots(f"careful{i}", st["accent"], 1.6 if i == 0 else 2.6, 0.3 if i == 0 else 0.45), 1)
+                looks[p["rule"]] = (m.dots(f"careful{i}", st["accent"], 2.0 if i == 0 else 3.0, 0.32 if i == 0 else 0.5), 1)
             else:
                 looks[p["rule"]] = (st["context"], 0.35) if i == 0 else (m.hatch(f"do{i}", st["context"], 2.2, -45, st["mid"]), 1)
         for g, p in sorted(F, key=lambda f: order.get(f[1]["kind"], 0)):
@@ -320,7 +388,9 @@ def main():
                 m.add(g, fill="none", stroke=st["ink"], stroke_width=st["mid"], marker_end="url(#arrow)")
             else:
                 fill, op = looks[p["rule"]]
-                m.add(g, fill=fill, fill_opacity=op, stroke=st["accent"] if p["kind"] != "do" else "none", stroke_width=st["thin"])
+                edge = {"dont": dict(stroke=st["accent"], stroke_width=st["mid"]),
+                        "careful": dict(stroke=st["accent"], stroke_width=st["mid"], stroke_dasharray="1.2 0.8")}.get(p["kind"], dict(stroke="none"))
+                m.add(g, fill=fill, fill_opacity=op, **edge)
         m.site()
         seen = set()
         for g, p in sorted(F, key=lambda f: -order.get(f[1]["kind"], 0)):
@@ -338,8 +408,44 @@ def main():
 
     if (out / "wind.csv").exists():
         made.append(wind_rose(out, st, meta(out, "wind")))
+    made.append(sheet(out, st, made))
     (out / "drawings.txt").write_text(f"Scale 1:{scale}. {look}.\n" + "\n".join(made) + "\n", encoding="utf-8")
     print(f"1:{scale}", look, made)
+
+
+def sheet(out, st, names, W=420, H=297):
+    """Every map small on one A3 landscape sheet, with summary.md (else the key numbers) as text. Run draw.py --sheet again after summary.md."""
+    pad, head = 10, 16
+    cols, rows = 4, 3
+    cw, ch = (W - 2 * pad) / cols, (H - head - 2 * pad) / rows
+    t = lambda x, y, s, size=st["text"], w="normal": (f'<text x="{x:.1f}" y="{y:.1f}" font-family="{escape(st["font"])}" font-size="{size}" '
+                                                     f'font-weight="{w}" fill="{st["ink"]}">{escape(s)}</text>')
+    o = [f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}mm" height="{H}mm" viewBox="0 0 {W} {H}">',
+         f'<rect width="100%" height="100%" fill="{st["paper"]}"/>', t(pad, pad + st["title"], "Climate of the site", st["title"] * 1.3, "bold")]
+    pngs = [n.replace(".svg", ".png") for n in names if (out / n.replace(".svg", ".png")).exists()][:cols * rows - 2]
+    for i, p in enumerate(pngs):
+        x, y = pad + (i % cols) * cw, pad + head + (i // cols) * ch
+        o.append(f'<image x="{x + 1:.1f}" y="{y + 1:.1f}" width="{cw - 2:.1f}" height="{ch - 2:.1f}" href="{p}" preserveAspectRatio="xMidYMid meet"/>')
+    # text in the last two cells
+    i = len(pngs)
+    x, y = pad + (i % cols) * cw + 3, pad + head + (i // cols) * ch + 6
+    width = int((cols - i % cols) * cw / (st["text"] * 0.5)) if i % cols else int(2 * cw / (st["text"] * 0.5))
+    text = (out / "summary.md").read_text(encoding="utf-8").split("\n") if (out / "summary.md").exists() else []
+    c = meta(out, "climate")
+    if not text and c.get("key_numbers"):
+        text = [f"{k.replace('_', ' ')}: {v}" for k, v in c["key_numbers"].items() if not isinstance(v, dict)]
+    o.append(t(x, y, "Summary", st["text"] * 1.3, "bold"))
+    for para in [s for s in text if s.strip()] + [""] + c.get("notes", []):
+        for ln in textwrap.wrap(para, width) or [""]:
+            y += st["text"] * 1.35
+            o.append(t(x, y, ln))
+        y += 1
+    o.append(t(pad, H - 4, "Each map with its own legend, scale and sources at full size in this folder. A3, maps not to scale.", st["text"] * 0.85))
+    o.append("</svg>")
+    path = out / "climate_sheet.svg"
+    path.write_text("\n".join(o), encoding="utf-8")
+    png(path, W, H)
+    return path.name
 
 
 def wind_rose(out, st, wm):

@@ -127,11 +127,15 @@ def main():
     clip = S.poly.buffer(a.margin).difference(fp)
     he = [0, round(hmax * .25), round(hmax * .5), round(hmax * .75), round(hmax * .9), hmax + 1]
     S.write_geojson(out / "sun-hours.geojson", [(g, {"hours_min": lo, "hours_max": min(hi, hmax), "label": f"{lo}-{min(hi, hmax)} h"}) for lo, hi, g in bands(xs, ys, hours, a.cell, he, clip)])
-    # classes as shares of open ground: shade shows even where most of the site gets nearly all
-    re = [0] + [round(rmax * f) for f in (.6, .8, .9, .95)] + [round(rmax) + 1]
-    S.write_geojson(out / "radiation.geojson", [(g, {"kwh_min": lo, "kwh_max": min(hi, round(rmax)), "label": f"{lo:.0f}-{min(hi, round(rmax)):.0f} kWh/m2"
-                                                     + (f" ({round(100 * lo / rmax)}-{min(100, round(100 * hi / rmax))} % of open ground)" if lo else f" (under {round(100 * hi / rmax)} %)")})
-                                                for lo, hi, g in bands(xs, ys, rad, a.cell, re, clip)])
+    # classes from the site's own values: full sun is one class, the shaded rest is cut into quarters of its cells
+    top = float(np.quantile(rad, 0.99))
+    full = rad >= top * 0.995
+    q = np.unique(np.round(np.quantile(rad[~full], [0, .25, .5, .75]))) if (~full).sum() > 20 else np.array([np.floor(rad.min())])
+    re = [float(q[0]) - 1] + [float(v) for v in q[1:]] + [round(top * 0.995, 1), float(np.ceil(rad.max())) + 1]
+    names = ["most shaded quarter", "second quarter", "third quarter", "least shaded quarter"][-(len(re) - 2):] + ["full sun, no shade"]
+    S.write_geojson(out / "radiation.geojson", [(g, {"kwh_min": round(max(lo, rad.min())), "kwh_max": round(min(hi, rad.max())), "label":
+                                                     f"{max(lo, rad.min()):.0f}-{min(hi, rad.max()):.0f} kWh/m2, {n}"})
+                                                for (lo, hi, g), n in zip(bands(xs, ys, rad, a.cell, re, clip), names)])
     ll = S.to_ll(shapely.points(xs, ys))
     with open(out / "sun_grid.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
