@@ -29,7 +29,7 @@ What `scripts/panels.py render` reads. All lengths in mm, measured from the pane
 ```
 
 - `reserved` and `marks` repeat on every panel. A box the brief puts in a corner sits at that corner, not inside the margin. In `marks`, `y` is the top of the text, `{n}` is the panel number, `{total}` the count, and every key of `labels` works too. `align: right` measures `x` from the right edge.
-- Items without `x` and `y` flow left to right, top to bottom, in the order given, below the reserved areas. Give `x` and `y` to fix one.
+- Items without `x` and `y` flow left to right, top to bottom, in the order given, below the reserved areas, or from `format.content_top_mm` if you give it. Give `x` and `y` to fix one.
 - A drawing with a `scale` keeps the print size its SVG gives (width and height in mm); `w` is then ignored. A drawing without a scale is sized by `w` or `h`. `scale_bar: true` adds a graphic scale under a drawing that has none. The scale is added to the caption: don't write it there yourself.
 - A text or figures box has the `w` and `h` you give (default: full width, 60 mm). `pt` and `weight` set the size of a text item's text. If its text is longer, the report says how much height it needs.
 - `required` lists what the brief asks to see, with the `id` of the item that shows it, or no `id` if nothing does. `missing` is only for what the scan didn't already find missing.

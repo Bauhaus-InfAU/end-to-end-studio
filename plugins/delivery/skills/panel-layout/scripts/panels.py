@@ -30,7 +30,7 @@ OWN = "panel-layout"
 DRAWING_EXT = {".svg", ".png", ".jpg", ".jpeg"}
 MM_PER = {"mm": 1.0, "cm": 10.0, "in": 25.4, "pt": 25.4 / 72, "pc": 25.4 / 6}
 PX_MM = 25.4 / 96  # CSS pixel
-SCALE_RE = re.compile(r"1\s*:\s*(\d{1,3}(?:[,.  ]\d{3})+(?!\d)|\d+)")
+SCALE_RE = re.compile(r"1\s*:\s*(\d{1,3}(?:[,.  ]\d{3})+(?!\d)(?!\s*(?:k?m|ha)\b)|\d+)")
 
 
 # ---------- scan ----------
@@ -188,7 +188,7 @@ def measure(item, folder, inv_by_file, style, notes):
             return
         d = svg_size(p) if p.suffix.lower() == ".svg" else raster_size(p)
     sc = scale_number(item.get("scale"))
-    item["_cap"] = cap_mm + (8 if item.get("scale_bar") and sc else 0)
+    item["_cap"] = cap_mm
     if sc:
         if "w_mm" in d and "h_mm" in d:
             item["_img_w"], item["_img_h"] = d["w_mm"], d["h_mm"]
@@ -201,6 +201,8 @@ def measure(item, folder, inv_by_file, style, notes):
         else:
             item["_scale_held"] = False
             notes.append(f"`{item['id']}` ({f}) has no print size (width and height in mm), so {item['scale']} can't be held; placed at the width asked for")
+    if item.get("scale_bar") and item.get("_scale_held"):
+        item["_cap"] += 8  # room for the scale bar, which is drawn only when the scale is held
     if "_img_w" not in item:
         aspect = d.get("aspect") or 0.75
         if item.get("w"):
@@ -288,10 +290,11 @@ def item_html(it, box, style, folder):
             length = nice_length(it["_img_w"] * 0.25 * sc / 1000)
             bar_mm = length * 1000 / sc
             lw = style["line_mm"]
+            fs = style["body_pt"] * 25.4 / 72 * 0.7  # label size follows the body text
             inner += (f'<svg class="bar" width="{bar_mm + 30:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 30:.2f} 7">'
                       f'<rect x="0.2" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="{style["text"]}"/>'
                       f'<rect x="{bar_mm / 2 + 0.2:.2f}" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
-                      f'<text x="0.2" y="6" font-size="2.6">0</text><text x="{bar_mm + 1.5:.2f}" y="2.6" font-size="2.6">{length:g} m</text></svg>')
+                      f'<text x="0.2" y="6" font-size="{fs:.2f}">0</text><text x="{bar_mm + 1.5:.2f}" y="2.6" font-size="{fs:.2f}">{length:g} m</text></svg>')
         if it.get("caption"):
             sc = scale_number(it.get("scale"))
             cap = it["caption"] + (f" · 1:{sc:,}" if sc and it.get("_scale_held") else "")
@@ -383,7 +386,10 @@ def run_browser(browser, args, timeout=180):
     with tempfile.TemporaryDirectory() as prof:
         cmd = [browser, "--headless=new", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
                "--allow-file-access-from-files", f"--user-data-dir={prof}", *args]
-        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:  # a hung browser: the report then says what wasn't written
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="timeout")
 
 
 def pdf_pages(path):
