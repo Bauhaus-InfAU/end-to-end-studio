@@ -636,9 +636,12 @@ def render(spec_path, out_dir):
     for svg in made:
         w, h = (W, H) if svg.name != "00_sheet.svg" else (cols * W, rows * H)
         if browser:
-            subprocess.run([browser, "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2",
-                            f"--window-size={w},{h}", f"--screenshot={svg.with_suffix('.png')}", svg.as_uri()],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+            try:
+                subprocess.run([browser, "--headless", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2",
+                                f"--window-size={w},{h}", f"--screenshot={svg.with_suffix('.png')}", svg.as_uri()],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+            except subprocess.TimeoutExpired:
+                print(f"{svg.name}: the browser took too long, no PNG; the SVG is written", file=sys.stderr)
     if not browser:
         print("No Chrome, Edge or Chromium found: SVG only. Set CHROME_PATH to its executable.", file=sys.stderr)
     print(f"{len(frames)} frames ({'sequence' if sequence else 'separate'}), {len(field)} placeholder blocks, "
