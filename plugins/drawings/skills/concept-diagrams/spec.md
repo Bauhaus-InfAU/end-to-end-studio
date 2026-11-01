@@ -1,5 +1,20 @@
 # The spec for `draw_diagrams.py`
 
+## Running it
+
+Install once: `pip install "shapely>=2" pyproj numpy`, and Chrome, Edge or Chromium for the PNGs (set `CHROME_PATH` if it isn't found).
+
+1. `python "${CLAUDE_SKILL_DIR}/scripts/draw_diagrams.py" info --site <site.geojson> --layer <name>=<layer.geojson>` prints the site and its lines in metres. Skip it with no site.
+2. Write `spec.json` as below, in the proposal's `concept-diagrams/`.
+3. `python "${CLAUDE_SKILL_DIR}/scripts/draw_diagrams.py" render spec.json .` writes one SVG (its print size in mm) and one PNG per frame, named after the frame's `file` (e.g. `02_<move>.svg`), and `00_sheet`.
+4. Read its warnings: a caption longer than about 90 characters runs into the footer; a label that still overlaps needs its `label_at`. A move too small to read at the scale of the site needs a close-up (`focus`).
+
+**Style.** Put every colour, line weight, font and text size the project's drawing standard gives into `style`, under the keys listed below, and none of your own. Keys it doesn't give, and the whole `style` without a standard, fall back to black lines on white with one accent colour.
+
+**Spatial signs.** An arrow only for what moves or connects (air, water, people, a link). A barrier is an arrow stopped by a bar (`ends: stop`). An opening is a gap with its removed part dashed (`clears`). A crossing is a raised deck (a `volume` with `base`). Shelter or a landmark is height. Rays mark only the one place the story centres on. Neutral placeholder blocks (`field`) are allowed for moves that act on built mass; they aren't a design, and the footer says so. A number the narrative marks as assumed isn't a label: name the thing ("lower housing"); the footer already says sizes are assumed.
+
+## The file
+
 One JSON file, `spec.json`, describes the whole set. Paths in it are relative to the spec. Coordinates are metres, x east and y north of the site's centre, as `draw_diagrams.py info` prints them.
 
 ```json
