@@ -5,13 +5,13 @@
                           [--floor-height M] [--no-terrain] [--options FILE] [--views FILE]
 
 Reads <proposal>/massing/massing.geojson, the project's site folder and, if there,
-<proposal>/narrative/narrative.md and drawing-graphics/standard.md. Writes into <proposal>/perspective/.
+<proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief or
+drawing-graphics/standard.md: the number of views comes with --count and the tones with 'style' in --options.
 Needs shapely, pyproj, numpy and requests, and Chrome or Edge for the PNGs. Calls no image model.
 """
 import argparse
 import csv
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -20,29 +20,11 @@ import find_views
 import scene as scene_module
 import terrain
 
-NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
-
-
-def required_count(scene):
-    """How many perspectives the brief asks for, read from its checklist or Markdown."""
-    root = scene.proposal.parent.parent
-    places = [scene.proposal / "brief-reader" / "checklist.md", *sorted((root / "brief").glob("*.md"))]
-    for p in places:
-        if p.exists() and not p.name.endswith("summary.md"):
-            m = re.search(r"\b(one|two|three|four|five|six|\d)\s+(?:eye-level\s+)?(?:perspectives|spatial representations)", p.read_text(encoding="utf-8", errors="replace"), re.I)
-            if m:
-                word = m.group(1).lower()
-                return NUMBERS.get(word) or int(word), p.name
-    return None, None
-
 
 def number_of_views(scene, given):
     if given:
         return given, "asked for with --count"
-    n, source = required_count(scene)
-    if n:
-        return n, f"the number {source} asks for"
-    scene.warn("The brief's number of perspectives wasn't found: two views were made.")
+    scene.warn("No --count was given: two views were made. Read the number from the brief and pass it.")
     return 2, "default"
 
 
@@ -89,6 +71,15 @@ def main():
     out = scene.proposal / "perspective"
     out.mkdir(parents=True, exist_ok=True)
     prefix = "TEST_" if scene.is_test else ""
+    unused = sorted(set(style) - set(draw_view.STYLE))
+    if unused:
+        scene.warn("Style keys the views don't use: " + ", ".join(unused) + ".")
+    if style:
+        scene.used.append("style from --options")
+    if not (scene.proposal / "drawing-graphics" / "standard.md").exists():
+        scene.absent.append("drawing-graphics/standard.md")
+    elif not style:
+        scene.warn("drawing-graphics/standard.md is there, but no style was passed: the views use the script's own tones.")
     if args.no_terrain:
         scene.warn("Terrain was switched off: the ground is drawn flat.")
     else:
@@ -98,7 +89,6 @@ def main():
         else:
             scene.warn("No terrain data: the ground is drawn flat.")
 
-    count, count_source = number_of_views(scene, args.count)
     if args.views:
         spec = json.loads(Path(args.views).read_text(encoding="utf-8"))
         picks = [dict(v, heading=v["heading_deg"], hfov=v["hfov_deg"]) for v in spec["views"]]
@@ -107,6 +97,7 @@ def main():
         scored = []
         count_source = f"redrawn from {Path(args.views).name}"
     else:
+        count, count_source = number_of_views(scene, args.count)
         picks, scored = find_views.choose(scene, count, args.hfov)
     if not picks:
         (out / "summary.md").write_text(f"{'TEST OUTPUT. ' if scene.is_test else ''}No views made.\n0 views.\n" + "; ".join(scene.warnings) + "\n", encoding="utf-8")
@@ -154,10 +145,12 @@ def main():
     write_assumptions(scene, out / "assumptions.md", views, count_source)
     head = "TEST OUTPUT from a stand-in massing, not for the panels. " if scene.is_test else ""
     made = ", ".join(f"{v['stem']} ({v['situation']})" for v in views)
+    flat = [w for w in scene.warnings if w.endswith("the ground is drawn flat.")]
+    unsure = " ".join(dict.fromkeys(flat + scene.warnings[:1])) or "nothing flagged."
     (out / "summary.md").write_text(
         f"{head}Eye-level base views, no scale, at {args.eye_height} m: {made}.\n"
         f"{len(views)} views {f'from {len(scored)} scored candidates' if scored else 'redrawn from earlier cameras'}; {len(scene.warnings)} warnings.\n"
-        f"Unsure: {scene.warnings[0] if scene.warnings else 'nothing flagged'} All assumed numbers are in assumptions.md.\n", encoding="utf-8")
+        f"Unsure: {unsure} All assumed numbers are in assumptions.md.\n", encoding="utf-8")
     print(f"{len(views)} views in {out}; {len(scene.warnings)} warnings:")
     for w_ in scene.warnings:
         print(" -", w_)

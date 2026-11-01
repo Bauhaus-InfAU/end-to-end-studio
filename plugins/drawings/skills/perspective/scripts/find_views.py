@@ -2,7 +2,8 @@
 
 Four situations are looked for. Candidates stand on public ground and are scored by casting
 rays through the frame in plan: how much new building, public space, landscape, depth and
-tree they show, and whether anything blocks the eye. The narrative sets the situations' order.
+tree they show, and whether anything blocks the eye. The narrative sets the situations' order,
+by the English words in WORDS; with none of them, the order stays as in WORDS, with a warning.
 """
 import math
 import re
@@ -43,6 +44,8 @@ def narrative_order(scene):
         if best and pattern.search(best):
             evidence[k] = best[:160]
     scene.used.append("narrative/narrative.md")
+    if not any(counts.values()):
+        scene.warn("narrative/narrative.md has none of the English words the views are ordered by: the views follow the geometry alone. Read it, edit views.json to fit, and redraw with --views.")
     return sorted(WORDS, key=lambda k: -counts[k]), evidence
 
 

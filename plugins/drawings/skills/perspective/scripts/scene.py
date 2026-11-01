@@ -37,7 +37,6 @@ ASSUMED = {
 }
 GONE = {"demolished", "removed", "replaced", "to-demolish", "to_demolish"}
 DUPLICATE, REPLACED = 0.5, 0.2   # shares of the smaller footprint that overlap
-TEST_MARKS = ("stand-in", "standin")
 
 
 def merge(base, extra):
@@ -132,14 +131,14 @@ class Scene:
             raise SystemExit(f"{massing_path} has no features. Nothing to draw.")
         self.used.append("massing/massing.geojson")
 
-        summary = self.proposal / "massing" / "summary.md"
-        text = summary.read_text(encoding="utf-8", errors="replace").lower() if summary.exists() else ""
-        self.is_test = bool(collection.get("standin")) or any(m in text for m in TEST_MARKS) or self.proposal.name == "test"
+        self.is_test = bool(collection.get("standin")) or self.proposal.name == "test"
 
         self.site_dir = Path(site).resolve() if site else find_site(self.proposal)
-        site_features = self.read("site.geojson") if self.site_dir else []
+        site_features = [f for f in self.read("site.geojson") if f.get("geometry")] if self.site_dir else []
         if not self.site_dir:
             self.warn("No site folder found: the views show the massing alone. Pass it with --site.")
+        elif not site_features:
+            self.warn("site.geojson gave no site polygon: the massing's outline is used as the site.")
         anchor = shape(site_features[0]["geometry"]) if site_features else unary_union(
             [shape(f["geometry"]) for f in self.massing if f.get("geometry")])
         lon, lat = anchor.centroid.x, anchor.centroid.y
@@ -168,9 +167,14 @@ class Scene:
         if not p.exists():
             self.absent.append(name)
             return []
-        features = json.loads(p.read_text(encoding="utf-8")).get("features") or []
+        data = json.loads(p.read_text(encoding="utf-8"))
         self.used.append(f"{p.parent.name}/{name}")
-        return features
+        if data.get("type") == "FeatureCollection":
+            return data.get("features") or []
+        self.warn(f"{name} is a {data.get('type')}, not a FeatureCollection: it was read as one feature; check it.")
+        if data.get("type") == "Feature":
+            return [data]
+        return [{"geometry": data, "properties": {}}] if "coordinates" in data else []
 
     def geom(self, f, label):
         """A feature's valid metric geometry, else None with a warning."""
@@ -364,7 +368,10 @@ class Scene:
                 self.public_parts.append((g, use))
         for f in self.by_kind.get("tree", []):
             g, p = self.geom(f, "massing trees"), f["properties"]
-            if g is None or g.geom_type != "Point":
+            if g is None:
+                continue
+            if g.geom_type != "Point":
+                self.warn("Massing trees that aren't single points were left out.")
                 continue
             self.trees.append((g.x, g.y, number(p.get("height_m")) or self.assumed["tree_height"]))
         built = [b["geom"].buffer(2) for b in self.buildings if b["group"] != "context"]

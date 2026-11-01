@@ -233,7 +233,7 @@ def draw_block(scene, cam, style, buf, items, geom, height, tone, cls, floors=No
                 mid = math.hypot((a[0] + b[0]) / 2 - cam.ex, (a[1] + b[1]) / 2 - cam.ey)
                 if mid > FAR + n / 2:
                     continue
-                if isinstance(tone, tuple):
+                if isinstance(tone, (tuple, list)):       # a list when it comes from a JSON style
                     lit = .5 + .5 * (nx * .6 + ny * .8)   # only separates the faces
                     fill = grey(tone[0] + (tone[1] - tone[0]) * lit)
                 else:
