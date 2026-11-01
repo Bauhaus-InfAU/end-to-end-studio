@@ -109,6 +109,13 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
 .contract div:last-child{border-right:0}
 .contract h2{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:0 0 6px}
 .contract p{margin:0 0 10px;color:var(--ink-2);max-width:42ch}
+.runs{border-top:1.5px solid var(--ink-2);margin-top:26px;padding-top:16px}
+.runs h2{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:0 0 6px}
+.runs h3{font:600 15px var(--sans);margin:16px 0 4px}
+.runs h3 span{font-weight:400;color:var(--ink-3);margin-left:10px}
+.runs p{margin:0 0 12px;color:var(--ink-2);max-width:80ch}
+.pnl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:1100px}
+.pnl img{display:block;width:100%;height:auto;background:#fff;border:1px solid var(--rule)}
 .foot{display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:space-between;border-top:1px solid var(--rule);margin:30px 0 40px;padding-top:12px;font-size:13px;color:var(--ink-3)}
 .foot a{margin-right:18px}
 
@@ -126,6 +133,7 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
   .groups{margin-left:0}
   .contract{grid-template-columns:1fr}
   .contract div{border-right:0;margin-right:0;border-bottom:1px solid var(--rule)}
+  .pnl{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
   .link,.node,.loop,.tick,.strip{transition:none}
@@ -172,6 +180,18 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
     <div><h2>Reads</h2><p>The brief, the site, the site data, and the skills on your <code>Reads:</code> line. Nothing you didn't list is guaranteed to exist when you start.</p></div>
     <div><h2>Writes</h2><p>Everything into <code>&lt;your-skill&gt;/</code> in the proposal folder, <code>competition/proposals/&lt;date&gt;_&lt;label&gt;/</code>, and nowhere else. Drawings as SVG with a PNG next to each, images as PNG, tables as CSV.</p></div>
     <div><h2>Leaves</h2><p>A <code>summary.md</code> of three lines: what you found or made, the one number that matters, and the one thing you're unsure of.</p></div>
+  </section>
+
+  <section class="runs">
+    <h2>Runs</h2>
+    <p>The panels each run of the studio made, newest first. Click a panel to open it full size.</p>
+    <h3>Pre-run, Sun 01.11.<span>2026-11-01_run-1 · 4 of 20 skills: narrative, massing, site-section, panel-layout</span></h3>
+    <p><i>Field Lines: the lines that cut the site, made green.</i> 3,204 homes, 18.8 ha of public green, 3 of the 9 drawings the brief asks for. The empty space on the panels is where the skills still to come belong.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-01_run-1/panel-1.png"><img src="runs/2026-11-01_run-1/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of the pre-run: title, idea, and the site section as it is"></a>
+      <a href="runs/2026-11-01_run-1/panel-2.png"><img src="runs/2026-11-01_run-1/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of the pre-run: the massing plan, the design section and key figures"></a>
+      <a href="runs/2026-11-01_run-1/panel-3.png"><img src="runs/2026-11-01_run-1/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of the pre-run: section excerpts on the design and the phases"></a>
+    </div>
   </section>
 
   <footer class="foot">
