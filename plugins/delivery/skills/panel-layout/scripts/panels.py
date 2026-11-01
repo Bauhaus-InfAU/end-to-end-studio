@@ -108,7 +108,7 @@ def scan(folder):
     folder = Path(folder).resolve()
     inv = {"proposal": str(folder), "skills": {}, "drawings": [], "tables": [], "texts": [],
            "checklist": None, "standard": None, "missing": []}
-    for sub in sorted(p for p in folder.iterdir() if p.is_dir() and p.name != OWN):
+    for sub in sorted(p for p in folder.iterdir() if p.is_dir() and p.name != OWN and not p.name.startswith(".")):
         summary_path = sub / "summary.md"
         summary = summary_path.read_text(encoding="utf-8", errors="replace") if summary_path.exists() else ""
         inv["skills"][sub.name] = {"summary": summary.strip() or None}
@@ -246,9 +246,10 @@ def place(panel, fmt, reserved, style, folder, inv_by_file, notes):
             if x > m and x + it["w"] > m + content_w + 0.01:
                 x, y, row_h = m, y + row_h + g, 0
             box = {"x": x, "y": y, "w": it["w"], "h": it["h"]}
-        if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > W + 0.01 or box["y"] + box["h"] > H - m + 0.01:
-            unplaced.append((it, f"needs {box['w']:.0f} x {box['h']:.0f} mm at ({box['x']:.0f}, {box['y']:.0f}); "
-                                 f"runs past the panel's edge or bottom margin"))
+        if box["x"] < m - 0.01 or box["y"] < m - 0.01 or box["x"] + box["w"] > W - m + 0.01 or box["y"] + box["h"] > H - m + 0.01:
+            unplaced.append((it, f"{box['w']:.0f} x {box['h']:.0f} mm at ({box['x']:.0f}, {box['y']:.0f}) runs into the {m:g} mm margin; "
+                                 + (f"it must be at most {content_w:.0f} mm wide: ask its skill to cut or split it, never shrink it"
+                                    if box["w"] > content_w + 0.01 else "move it inside the margins")))
             continue
         clash = [r.get("what", "reserved area") for r in reserved if overlaps(box, r)]
         clash += [p["id"] for p, b in placed if overlaps(box, b)]
@@ -500,9 +501,11 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         lines.append("")
     req = L.get("required", [])
     missing = [q for q in req if not q.get("id") or q["id"] not in ids]
+    refused = {it["id"] for r in results for it, _ in r["unplaced"]}
     lines.append("## What the brief asks for")
     for q in req:
-        state = "**MISSING**" if q in missing else f"on the panels, `{q['id']}`"
+        state = (f"on the panels, `{q['id']}`" if q not in missing else
+                 f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else "**MISSING: no input**")
         lines.append(f"- {q['what']} ({q.get('source', '')}): {state}"
                      + (f". {q['note']}" if q.get("note") else ""))
     if not req:
@@ -513,9 +516,12 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
     lines.append("")
     lines.append("## Inputs missing")
     lines += [f"- {m}" for m in inv["missing"] + L.get("missing", [])] or ["- none"]
+    notes = notes + L.get("notes", [])
     if notes:
         lines += ["", "## Notes"] + [f"- {n}" for n in notes]
-    lines += ["", f"Problems: {problems}. Required items missing: {len(missing)} of {len(req)}."]
+    not_fit = sum(q.get("id") in refused for q in missing)
+    lines += ["", f"Problems: {problems}. Required items missing: {len(missing)} of {len(req)} "
+                  f"({len(missing) - not_fit} without input, {not_fit} did not fit)."]
     text = "\n".join(lines) + "\n"
     (out / "report.md").write_text(text, encoding="utf-8")
     return text
