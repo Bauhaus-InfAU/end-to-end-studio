@@ -87,7 +87,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `concept-diagrams` | Three to six pictograms that tell the idea | `nouranmoustafa` |
 | | `perspective` | Eye-level views with people, from a view in the massing | `Isabelacano` |
 | delivery | `panel-layout` | The panels the brief asks for, along the storyline | `bengunur` |
-| | `jury` | Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict | open |
+| | `jury` | Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict | `nandimateo` |
 | studio | `competition-proposal` | The lead: runs the others, keeps the versions | `YegorGaidukov` |
 
 "Who" is the GitHub username of the person responsible. "open" means nobody has the skill yet. Egor (`YegorGaidukov`) keeps this column, so don't change it in your pull request.
