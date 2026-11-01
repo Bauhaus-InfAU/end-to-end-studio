@@ -501,7 +501,7 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         lines.append("")
     req = L.get("required", [])
     missing = [q for q in req if not q.get("id") or q["id"] not in ids]
-    refused = {it["id"] for r in results for it, _ in r["unplaced"]}
+    refused = {it["id"] for r in results for it, _ in r["unplaced"] if "_error" not in it}  # a missing file is missing, not too big
     lines.append("## What the brief asks for")
     for q in req:
         state = (f"on the panels, `{q['id']}`" if q not in missing else
