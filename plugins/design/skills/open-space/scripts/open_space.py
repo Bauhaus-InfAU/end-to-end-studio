@@ -220,7 +220,7 @@ def main():
             catch[i] += g.intersection(site).area * c
     play_u = unary_union(playgrounds) if playgrounds else None
     avoid = unary_union([play_u.buffer(5) if play_u is not None else shapely.Polygon(), keep_free])
-    basins, pools = [], []
+    basins, pools, no_room = [], [], 0
     for i, park in enumerate(parks):
         vol = catch[i] * cfg["design_rain_mm"] / 1000
         if vol <= 0:
@@ -232,6 +232,8 @@ def main():
                 g, deep, held = got
                 pools.append((g, deep))
                 basins.append((g, vol, held, catch[i]))
+            else:
+                no_room += 1
             continue
         room = park.buffer(-3).difference(avoid)
         want = vol / cfg["retention_depth_m"]
@@ -240,6 +242,8 @@ def main():
         g = grow(seed, min(want, cap), room) if seed is not None else None
         if g is not None and not g.is_empty:
             basins.append((g, vol, g.area * cfg["retention_depth_m"], catch[i]))
+        else:
+            no_room += 1
 
     # Ground cover: wet meadow round the water, lawn near the homes, groves beside the kept woods, meadow elsewhere.
     water_u = unary_union([b[0] for b in basins]) if basins else shapely.Polygon()
@@ -336,7 +340,7 @@ def main():
     kept_a = kept_u.area
     play_a = area_of(playgrounds)
     need_green = cfg["residents"] * cfg["green_m2_per_resident"]
-    need_vol = sum(b[1] for b in basins)
+    need_vol = sum(catch) * cfg["design_rain_mm"] / 1000  # every park's rain, held or not
     held_vol = sum(b[2] for b in basins)
     src = cfg_in.get("sources", {})
     rows = [
@@ -346,7 +350,7 @@ def main():
         ("homes buildings beyond play reach", 0, unreached, "buildings", f"{cfg['play_reach_m']} m reach"),
         ("parks without a green link", 0, alone, "parks", "links may cross streets, not buildings"),
         ("rain retention volume", need_vol, held_vol, "m3", f"{cfg['design_rain_mm']} mm on new roofs, streets, squares"),
-        ("parks that can't hold their rain", 0, sum(1 for b in basins if b[2] < b[1] * 0.95), "parks",
+        ("parks that can't hold their rain", 0, no_room + sum(1 for b in basins if b[2] < b[1] * 0.95), "parks",
          "the massing leaves them too little room"),
         ("corridors", "", sum(1 for c in corridor if c), "parks",
          f"at least {cfg['corridor_min_length_m']} m long and {cfg['corridor_min_width_m']} m wide"),
