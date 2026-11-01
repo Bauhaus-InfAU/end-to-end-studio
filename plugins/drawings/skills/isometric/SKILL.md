@@ -11,7 +11,7 @@ Draw only what the files hold: the project's site folder, `massing/massing.geojs
 
 **View.** A true isometric from the side where the fewest tall buildings stand in front of the new ones, framing them with about 100 m of city, cut by the frame. Without a massing: the site with 200 m around it, its boundary in the accent, and say the design is missing.
 
-**What it shows.** New buildings in the accent with floor lines, roofs only where the massing names them; existing buildings pale (count the default heights); streets as surfaces at their width, rail, water, green, and only the trees the data has. No labels, arrows or people.
+**What it shows.** New buildings in the accent with floor lines, roofs only where the massing names them; existing buildings pale (count the default heights); streets as surfaces at their width, rail, water, green, and only the trees the data has. The new reads first: the strongest tone in the drawing; the design's parks and gardens told apart from fields. No labels, arrows or people.
 
 **Scale and look.** The brief's site plan scale, or the next smaller usual one if the drawing is wider than the panel; print size in mm. The look comes from the standard; without it, black on white and one accent. Check the PNG: new buildings cut or floating are mistakes.
 
