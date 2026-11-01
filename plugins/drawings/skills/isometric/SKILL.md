@@ -1,20 +1,18 @@
 ---
 name: isometric
-description: Draws an isometric overview of a district, its buildings extruded to their real heights on the ground with streets, rail, water and the project site, first of the site as it is and again on the design. Use when asked for an isometric, an isometry, an axonometric overview or a 3D view of a site or district.
+description: Draws an isometric of an urban design, zoomed in on its new buildings with about 100 m of the city around them, the new in the accent and the existing pale; without a design yet, the site as it is. Use when asked for an isometric, an isometry, an axonometric or a 3D overview of a design or a site.
 ---
 # Isometric
 
-Reads: drawing-graphics, brief-reader
-Reads (end): massing, narrative
+Reads: site-kit
+Reads (end): massing
 
-Inputs: the project's site folder (the site polygon and its buildings, plots, streets, water and rail), the brief's checklist for the scales, the drawing standard for the look, and at the end `massing/massing.geojson`. Never invent data; if one is missing, say so in `summary.md`. Work in Python with `shapely` and `pyproj` in a metric projection and write the SVG directly; make the PNG with a headless Chrome or Edge, giving it absolute paths. No Rhino.
+Inputs: the project's site folder (site polygon, buildings, plots, streets, water, rail), `massing/massing.geojson` once it exists, the brief for its scales and panel size (or `brief-reader/` if there), and `drawing-graphics/standard.md` if there. Never invent data: draw only what these files hold, and state every assumed size in `summary.md`. Python with `shapely` and `pyproj` in a metric projection, the SVG written directly, the PNG from a headless Chrome or Edge. No Rhino.
 
-**The view.** A true isometric (30°, no perspective), looking from the side that shows the site's main front and hides the least behind tall buildings; say in `summary.md` which way you look. Of the site as it is, draw about 200 m past the site on every side; on the design, zoom in on the new buildings with about 100 m around them, so they fill the drawing and the neighbours show. Buildings stand on their footprints at their height from the data; say how many heights are defaults. Draw far buildings first, so near ones cover them.
+**The view.** A true isometric, from the side where the fewest tall existing buildings stand in front of the new ones. Frame the new buildings with about 100 m around them and let the frame cut the city. Without a massing, frame the site with about 200 m around it, mark its boundary in the accent, and say in `summary.md` that the design is missing.
 
-**What it shows.** The new is the subject, the city around it the quiet ground: existing buildings plain and pale, new buildings in the accent. Streets are surfaces at their width, not lines; rail shows its tracks; water, parks, forest and meadows are surfaces, with trees on them and along streets where the data or the design puts them (state any assumed tree size). Let the frame cut the surroundings; never show the edge of the data.
+**What it shows.** New buildings in the accent at their height, with floor lines, and their roofs only where the massing says what is on them. Existing buildings pale, at their data height; count the default heights. Streets as surfaces at their width (state the widths you assume), rail as tracks, water and green as surfaces, trees where the data or the massing has them. No labels, arrows or people.
 
-**Large and small.** Small, the whole site at the brief's site plan scale: buildings as volumes, trees in clusters, no people; up to three arrows with a short label each for the main moves of the narrative, and symbols for mobility points, stops and centres where the design or `mobility/` names them. Large, an excerpt of about 300 m at the brief's largest scale, around its detail area if it names one: floor lines on the new buildings, what their roofs carry (green, solar, terraces) where the design says, single trees, people and what the open spaces hold (play, water, gardens). Name the design's measures there with short labels on thin leader lines, taken from the massing and the narrative, never made up, and keep them clear of each other. Of the site as it is, draw only the small one, with the site boundary in the accent.
+**Scale and look.** The brief's site plan scale; if the drawing is then wider than the brief's panel, the next smaller usual scale, and say why. Give the SVG its print size in mm. Colours, line weights and fonts come from the standard; without it, black lines on white and one accent. Open the PNG: new buildings cut by the frame or floating are mistakes.
 
-**The look.** Colours, line weights and fonts come from `drawing-graphics/standard.md`. Without it, black lines on white and one accent for the site boundary and what is new. Open every PNG before you finish: buildings that float, new buildings cut by the frame or overlapping labels are mistakes.
-
-**What to write**, into `isometric/` in the proposal folder: `isometric_<scale>.svg` and `.png` for the whole site, `isometric_excerpt_<scale>.svg` and `.png` once there is a design, and `summary.md` in three lines: what you drew and at which scale, the number of buildings and how many heights are defaults, what you are unsure of. Write the scale in a file name as `1-2000`, and give each SVG its width and height in mm at its scale, so it prints true to scale.
+**What to write**, into `isometric/` in the proposal folder: `isometric_<scale>.svg` and `.png` (scale as `1-3000`), and `summary.md` in three lines: what you drew and at which scale, the number of new buildings and of default heights, what you are unsure of.
