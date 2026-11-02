@@ -198,6 +198,7 @@ function list(el, pane, payload, remembered) {
   Object.entries(payload).forEach(([group, files]) => {
     const h = document.createElement("h3"); h.textContent = group; el.appendChild(h);
     Object.entries(files).forEach(([name, fc]) => {
+      if (name === "buildings" && files["buildings-3d"]) return;  // the 3D buildings replace the flat boxes
       const id = group + "/" + name;
       const colour = name.startsWith("buildings") && group === "site" ? EXISTING : name === "site" && group === "site" ? "#1f1a17" : PALETTE[i++ % PALETTE.length];
       const lab = document.createElement("label");
