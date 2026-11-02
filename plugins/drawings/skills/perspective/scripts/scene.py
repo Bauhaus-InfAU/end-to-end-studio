@@ -153,7 +153,7 @@ class Scene:
         self._buildings()
         self._design_ground()
         self._context()
-        self.public = unary_union([g for g, _ in self.public_parts]) if self.public_parts else None
+        self.public = unary_union([(g if g.is_valid else g.buffer(0)) for g, _ in self.public_parts]) if self.public_parts else None
 
     def warn(self, text):
         if text not in self.warnings:
@@ -429,6 +429,7 @@ class Scene:
             g = self.geom(f, "rail.geojson")
             if g is not None:
                 self.flats.append((66, self._cut(g.buffer(self.assumed["rail_width"] / 2, cap_style="flat")), "rail"))
+        self.flats = [(o, (g if g.is_valid else g.buffer(0)), t) for o, g, t in self.flats]
         self.flats = [x for x in self.flats if not x[1].is_empty]
         self.flats.sort(key=lambda x: x[0])
         self.warn("The site data doesn't say what's on a bridge or in a tunnel, so every street and railway lies on the ground.")
