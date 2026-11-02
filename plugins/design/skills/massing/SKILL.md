@@ -4,9 +4,10 @@ description: Places the buildings, streets and open spaces of an urban design on
 ---
 # Massing
 
-Reads: brief-reader, structure-plan, programme, analysis, drawing-graphics
+Reads: brief-reader, narrative, structure-plan, programme, analysis, drawing-graphics
+Model: opus
 
-Never invent data, and never write a site, a city or a number of this project into the skill or a script it makes: the script reads every number from the inputs. Take the site from the project's `site.geojson` and its layers, the rules of the brief (heights, setbacks, what must stay, the scales) from `brief-reader/`, the urban figure from `structure-plan/`, the homes and areas from `programme/`, and what must stay from `analysis/`. If one is missing, read the brief for it yourself, cite the page, and say so in `summary.md`; take the programme only from the brief, never from a guess. Use `site.geojson` as it is, even where it differs from the brief's plans: what lies inside it is existing, and the mismatch goes in `summary.md`.
+Never invent data, and never write a site, a city or a number of this project into the skill or a script it makes: the script reads every number from the inputs. Take the site from the project's `site.geojson` and its layers, the rules of the brief (heights, setbacks, what must stay, the scales) from `brief-reader/`, the idea and its principles from `narrative/`, the urban figure from `structure-plan/`, the homes and areas from `programme/`, and what must stay from `analysis/`. If one is missing, read the brief for it yourself, cite the page, and say so in `summary.md`; take the programme only from the brief, never from a guess. Use `site.geojson` as it is, even where it differs from the brief's plans: what lies inside it is existing, and the mismatch goes in `summary.md`.
 
 **How.** Work in Python with `shapely` and `pyproj` (`pip install shapely pyproj`) in a metric projection, and write WGS84, longitude first. No Rhino.
 

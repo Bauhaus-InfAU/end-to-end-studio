@@ -44,7 +44,7 @@ Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJS
 
 ## The order
 
-Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist. `everything` means every skill that doesn't wait for this one; `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
+Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist. `everything` means every skill that doesn't wait for this one; `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
 
 ## The tools
 

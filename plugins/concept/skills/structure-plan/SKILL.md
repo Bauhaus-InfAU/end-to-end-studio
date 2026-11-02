@@ -5,6 +5,7 @@ description: Sets the urban figure before any building is placed: neighbourhoods
 # Structure plan
 
 Reads: narrative, climate
+Model: opus
 
 Work in the proposal folder you are given and write only into `structure-plan/`. Take the idea from `narrative/`, the corridors to keep open from `climate/`, the site and its layers from the project's site folder, and the brief's checklist and the site analysis from `brief-reader/` and `analysis/` where they exist, else from the brief's Markdown; name each missing input in `summary.md`. If there is no site, ask for it. Work on `site.geojson` as it is; where it disagrees with the brief's plans, say so in `summary.md`. This is a framework, not a masterplan: stop at neighbourhoods, centres, green, routes and gateways, and leave buildings, street widths, hubs, planting and detail areas to the skills that follow.
 

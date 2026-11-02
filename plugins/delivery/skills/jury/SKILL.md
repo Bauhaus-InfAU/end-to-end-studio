@@ -5,6 +5,7 @@ description: Reads a finished competition entry as the competition's jury would,
 # Jury
 
 Reads: brief-reader, panel-layout, narrative
+Model: opus
 
 Work in the proposal folder you are given, else the newest in the project's `proposals/`; write only to its `jury/`. Read every panel as an image, the plans up close, then `narrative/`, the checklist in `brief-reader/` and the brief (where the project's `CLAUDE.md` says, else `brief/`). With no panels, say so in `summary.md` and give no verdict. Judge only what the entry shows and the brief says, and never look up results or other entries. Trust the drawing over the caption: what the text promises and the plan doesn't show is missing. Recompute the entry's numbers against the brief's exact requirement, compare its figure and boundary with the brief's plans, and cite a panel or brief page for each claim.
 
