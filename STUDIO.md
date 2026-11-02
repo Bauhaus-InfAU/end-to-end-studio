@@ -59,7 +59,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 ## Shared rules
 
 - Never invent data. Every number has its source or its assumption next to it.
-- The look comes from `drawing-graphics`, which turns the project's reference images (here `competition/references/`) into a standard. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
+- The look comes from `drawing-graphics`: a best-practice base, fitted to the entry's narrative, then to the project's reference images if there are any (here `competition/references/`). It writes `drawing-graphics/standard.md` and `style.json`. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
 - Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
 - Look at a drawing once or twice, not after every change. Check widths, scales and counts in code.
@@ -82,7 +82,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |
 | | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | `basak-unver` |
 | | `streets` | One clean street surface at real widths, existing and new, for every drawing | `YegorGaidukov` |
-| drawings | `drawing-graphics` | The studio's drawing standard, made from the reference images | open |
+| drawings | `drawing-graphics` | The studio's drawing standard: a best-practice base, fitted to the narrative, then to the reference images. Example | `YegorGaidukov` |
 | | `figure-ground` | The figure-ground plan of the district in its city | open |
 | | `plans` | Every plan the brief asks for, at its scales: the overall plan and the detail areas | open |
 | | `site-section` | A long section through the site, and elevations if the brief asks for them | `yhemayll` |

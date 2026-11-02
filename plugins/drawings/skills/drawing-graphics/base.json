@@ -1,0 +1,12 @@
+{
+ "source": "base: the studio's best-practice standard",
+ "paper": "#ffffff", "background": "#ffffff", "ink": "#1a1a1a",
+ "accent": "#c8442b", "new": "#c8442b",
+ "existing": "#cfcfcf", "context": "#e4e4e4", "building": "#9a9a9a", "street": "#f2f2f2", "path": "#bcbcbc",
+ "park": "#c9dcbc", "kept": "#a9c79a", "lawn": "#dbe8cf", "meadow": "#e6ecd2", "wet-meadow": "#cfe0d8",
+ "grove": "#8fb27f", "water": "#9ec5d8",
+ "ramp": ["#f3f1ec", "#e3d6bf", "#cfae85", "#b07d52", "#7a4a2c"],
+ "font": "Inter, 'Helvetica Neue', Arial, sans-serif",
+ "thin": 0.13, "mid": 0.25, "thick": 0.5, "line": 0.25, "line_mm": 0.25, "outline": 0.35,
+ "text": 3.2, "title": 5.6, "body_pt": 11, "heading_pt": 20
+}
