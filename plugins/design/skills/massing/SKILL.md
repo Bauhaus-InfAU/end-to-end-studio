@@ -17,6 +17,8 @@ Never invent data, and never write a site, a city or a number of this project in
 - **Heights.** One floor more within 40 m of a main route and within 150 m of the centre, one less beside the green, unless the structure plan says otherwise. Then scale floors per use until the floor area meets the programme, within the brief's height limit; the two buildings nearest the centre rise above it only where the brief allows landmarks. Take 3 m a floor unless the brief says otherwise, and list each assumption, with every default above you used, in `assumptions.md`.
 - **Trees and squares.** A street tree every 12 m along every street, 4 m off its middle; a square of about 30 m around each centre.
 
+**Start from the scripts.** `${CLAUDE_SKILL_DIR}/scripts/` does all of the above. Copy `config.example.json` to `massing/config.json` and fill in every value from the brief's checklist, each with its page or the reason for an assumption, then run `python "${CLAUDE_SKILL_DIR}/scripts/massing.py" --proposal <proposal folder> --site <site folder> --config <proposal folder>/massing/config.json` and `draw.py --proposal ... --site ...`. Look at the plan, and change a script only where this brief asks for something it doesn't do, such as a use it doesn't know; say what you changed in `summary.md`.
+
 **What to write.** Everything into `massing/` in the proposal folder:
 
 - `massing.geojson`: every feature with a `kind`. `building` (footprint, `floors`, `height_m`, `use`, `type`, `phase` if known, `existing`), `street` (`width` in m), `open-space` (`use`: park, square, garden, water) and `tree`.

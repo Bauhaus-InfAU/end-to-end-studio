@@ -1,0 +1,86 @@
+{
+ "site_plan_scale": {
+  "value": 1000,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "height_limit_m": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "landmark_floors": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "m2_per_home": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "homes_target": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "commerce_target": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "school_gfa": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "school_yard": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "school_sports": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "pool_gfa": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "pool_plot": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "daycare_gfa": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "daycares": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "daycare_play": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "green_target": {
+  "value": 0,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "density": {
+  "value": {
+   "<neighbourhood name in structure-plan.geojson>": "low | medium | high | urban | commercial"
+  },
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "phase1": {
+  "value": [
+   "<neighbourhood name>"
+  ],
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "setback_h_factor": {
+  "value": 0.0,
+  "source": "optional: the brief's distance to the street as a share of the height"
+ },
+ "setback_min_m": {
+  "value": 0.0,
+  "source": "optional: the brief's least distance to the street"
+ },
+ "food_market": {
+  "value": "",
+  "source": "optional: a shop the brief asks for near the centre, as a note"
+ }
+}
