@@ -31,7 +31,10 @@ def main():
     feats, rules, notes, sources = [], [], [], []
 
     def rule(kind, topic, text, g, reason):
-        g = g.intersection(site) if not g.geom_type.endswith("LineString") else g.intersection(site.buffer(1))
+        if g.geom_type.endswith("LineString"):
+            g = g.intersection(site.buffer(1))
+        else:  # a zone stays (Multi)Polygon: cutting it to the site can leave stray lines and points
+            g = shapely.union_all([q for q in shapely.get_parts(g.intersection(site)) if q.geom_type.endswith("Polygon")] or [shapely.Polygon()])
         if g.is_empty:
             return
         feats.append((g, {"kind": kind, "topic": topic, "rule": text, "reason": reason, **({"use": "air corridor"} if topic == "fresh air" else {})}))
@@ -60,8 +63,9 @@ def main():
              "fresh-air.geojson, corridor")
     flows = [(g, p) for g, p in S.layer("fresh-air", out) if p["kind"] == "flow" and g.intersects(site)]
     if flows:
+        fa = read(out / "fresh-air.json") if (out / "fresh-air.json").exists() else {}
         d = np.radians([p["direction_deg"] for _, p in flows])
-        mean = round(float(np.degrees(np.arctan2(np.sin(d).mean(), np.cos(d).mean())) % 360))
+        mean = fa.get("flow_towards_deg") or round(float(np.degrees(np.arctan2(np.sin(d).mean(), np.cos(d).mean())) % 360))  # one direction, as in fresh-air.json
         rule("do", "fresh air", f"Run streets, green strips and building rows along the air flow (towards about {mean}°), with gaps between buildings.",
              shapely.union_all([g for g, _ in flows]), "fresh-air.geojson, flow")
     sun = read(out / "sun.json") if (out / "sun.json").exists() else None

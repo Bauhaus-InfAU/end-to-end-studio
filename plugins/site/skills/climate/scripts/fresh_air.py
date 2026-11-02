@@ -132,6 +132,20 @@ def erode(m, r):
     return ~dilate(~m, r)
 
 
+def circ_mean(degs):
+    """Average of directions in degrees (so 350 and 10 give 0), or None."""
+    if not len(degs):
+        return None
+    d = np.radians(degs)
+    return round(float(np.degrees(np.arctan2(np.sin(d).mean(), np.cos(d).mean())) % 360))
+
+
+def flow_direction(feats, S):
+    """The one air direction every file uses: the average of all flow arrows that touch the site."""
+    d = [p["direction_deg"] for g, p in feats if p["kind"] == "flow" and g.intersects(S.poly)]
+    return dict(flow_towards_deg=circ_mean(d), flow_basis=f"average direction of the {len(d)} flow arrows that touch the site")
+
+
 def colour_mask(im, c):
     """Pixels of a class: by hue (hue_deg +- hue_tol, strong colour only), or by an RGB box (rgb_min, rgb_max)."""
     if "hue_deg" not in c:
@@ -210,7 +224,8 @@ def trace(a):
                 n += 1
                 feats.append((line, {"kind": "flow", "label": c["label"], "direction_deg": round(brg),
                                      "source": f'{C["source"]}; axis {acc}, sense read by eye'}))
-            info.append(dict(label=c["label"], arrows=n, median_direction_deg=round(float(np.median(dirs))) if dirs else None))
+            in_site = [p["direction_deg"] for g_, p in feats[-n:] if g_.intersects(S.poly)] if n else []
+            info.append(dict(label=c["label"], arrows=n, arrows_in_site=len(in_site), towards_deg_in_site=circ_mean(in_site)))
     S.write_geojson(Path(a.out) / "fresh-air.geojson", feats)
     # trace-check.png: the map with what was taken as corridor (green outline) and as flow (black), to compare by eye
     from PIL import ImageDraw
@@ -226,6 +241,7 @@ def trace(a):
     pic.save(Path(a.out) / "trace-check.png")
     corr = shapely.union_all([g for g, p in feats if p["kind"] == "corridor"])
     summary = dict(method="traced", classes=info, site_share_in_corridor_pct=round(100 * corr.intersection(S.poly).area / S.poly.area, 1),
+                   **flow_direction(feats, S),
                    fit_m_per_px=T["m_per_px"], fit_residual_m=T["residual_m"], sources=[C["source"], f"Georeferenced on OpenStreetMap streets, {acc}"])
     write_json(Path(a.out) / "fresh-air.json", summary)
     print(summary)
@@ -261,7 +277,7 @@ def derive(a):
         feats.append((line, {"kind": "flow", "label": "likely cold air flow, downhill over open land", "slope_pct": round(100 * float(slope[i, j]), 1),
                              "direction_deg": round(float(np.degrees(np.arctan2(u[0], u[1])) % 360)), "source": "derived"}))
     S.write_geojson(Path(a.out) / "fresh-air.geojson", feats)
-    write_json(Path(a.out) / "fresh-air.json", dict(method="derived", flows=len(feats), sources=[
+    write_json(Path(a.out) / "fresh-air.json", dict(method="derived", flows=len(feats), **flow_direction(feats, S), sources=[
         "Derived: Open-Meteo elevation (Copernicus DEM GLO-90), downhill direction over open land from the site folder's plots; no climate study"]))
     print(len(feats), "flow arrows derived")
 
