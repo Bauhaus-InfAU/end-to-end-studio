@@ -77,11 +77,24 @@ class Site:
             if not ll.is_valid:  # rounding to WGS84 can make a ring cross itself; repair, and keep a polygon a polygon
                 fixed = shapely.make_valid(ll)
                 if g.geom_type.endswith("Polygon"):
-                    parts = [q for q in shapely.get_parts(fixed) if q.geom_type == "Polygon"]
-                    fixed = parts[0] if len(parts) == 1 else shapely.MultiPolygon(parts)
+                    fixed = polygons(fixed)
+                    if abs(fixed.area - ll.buffer(0).area) > 0.001 * max(ll.buffer(0).area, 1e-12):
+                        print(f"WARNING {Path(path).name}: repairing a shape changed its area; check {p}")
                 ll = fixed
             out.append({"type": "Feature", "geometry": mapping(ll), "properties": p})
         write_json(path, {"type": "FeatureCollection", "features": out})
+
+
+def polygons(g):
+    """Only the polygons of a shape, however deeply they are nested (a collection can hold MultiPolygons)."""
+    parts, todo = [], [g]
+    while todo:
+        q = todo.pop()
+        if q.geom_type == "Polygon":
+            parts.append(q)
+        elif q.geom_type in ("MultiPolygon", "GeometryCollection"):
+            todo += list(q.geoms)
+    return parts[0] if len(parts) == 1 else shapely.MultiPolygon(parts)
 
 
 def grid(poly, cell):
