@@ -8,7 +8,7 @@ This repo has two halves. `plugins/` holds the tools: skills for architecture co
 - The site: `competition/site/`, made by `site-kit`: `site.geojson` and its layers.
 - The climate: `competition/climate/`, made once by `climate` and copied into each run. It isn't committed.
 - The reference images the drawings take their look from: `competition/references/`.
-- The proposals: `competition/proposals/`, one folder per run. They stay on this computer. Test a skill in `competition/proposals/test/`.
+- The proposals: `competition/proposals/`, one folder per run. They stay on this computer. Test a skill in `competition/proposals/test/`. A map of the site, the climate and every run's geometry: `competition/proposals/preview/index.html`, remade after each run by the lead's `preview.py`.
 - The studio's own checks: `tests/`, run with `python -m pytest tests`.
 
 I study architecture or design and don't write code. Explain each step in a sentence or two of plain words. After a change, say which files you changed and what I should look at.

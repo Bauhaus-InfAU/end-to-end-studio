@@ -16,6 +16,7 @@ Never hard-code a site, a city or a bounding box in this skill or in a script it
 
 - `site.geojson`: one polygon, WGS84, longitude first, `kind: "site"`.
 - `buildings.geojson`: `height`, `floors`, `use`, `height_source`.
+- `buildings-3d.geojson`, when the 3D building data has roofs: every wall and roof surface as a polygon with x, y and z, z in metres above the building's lowest ground point, with the building's `id` and `surface` (`wall` or `roof`).
 - `plots.geojson`: `landuse` (OSM landuse, natural and leisure polygons).
 - `streets.geojson`, `water.geojson`, `rail.geojson`: lines, with names and types where known.
 - `street-land.geojson`, if the cadastre has it: polygons, `use` street, square or path, `name`, `source`.

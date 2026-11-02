@@ -1,3 +1,3 @@
-Collected OpenStreetMap buildings (3185), streets (1048 ways), landuse (241 polygons), water and rail for the project site plus a 600 m margin (about 2.8 x 2.7 km), from the brief's map and OSM.
-Site area: 109.1 ha traced and snapped, against 107 ha in the brief (1.9 percent more).
-Unsure: the boundary is traced from a small aerial map and is good to about 30 to 50 m; floors and heights are mostly defaults (1972 of 3185 buildings), not measured.
+Remade from today's data: 4,059 buildings with LoD2 heights (3,880 `lod2`, 179 default; 1,296 are LoD2-only footprints), a 1 m DGM1 GeoTIFF (`terrain-dgm1.tif`, 2.8 x 2.9 km, EPSG:25832), OSM streets, rail, water and land use, ALKIS street land kept; real parcels are not open in Bavaria (only a WMS picture), so `plots.geojson` stays OSM land use.
+Site area: new 112.8 ha, re-traced from the brief plans pp. 36-37 (97 percent overlap with the run-5 check outline of 113.8 ha, outline moved 225 m north); old 109.4 ha (109.1 as first reported), brief about 107 ha.
+Unsure: outline good to 30 to 50 m; LoD2 heights are roof tops from 2021-22; geometry repair touched streets 9 (multi-part lines split), street-land 3 (duplicates dropped), other layers 0; street-land margin north only 270 m.
