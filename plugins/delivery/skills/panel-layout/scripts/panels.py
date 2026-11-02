@@ -31,6 +31,12 @@ OWN = "panel-layout"
 DRAWING_EXT = {".svg", ".png", ".jpg", ".jpeg"}
 MM_PER = {"mm": 1.0, "cm": 10.0, "in": 25.4, "pt": 25.4 / 72, "pc": 25.4 / 6}
 PX_MM = 25.4 / 96  # CSS pixel
+MIN_PT = 9  # 12 px: no text on a panel is smaller, whatever the layout or the standard asks
+COLUMN_EM = 32  # a text wider than this is set in columns, about 65 characters a line
+
+
+def pt_(v):
+    return max(float(v), MIN_PT)
 SCALE_RE = re.compile(r"1\s*:\s*(\d{1,3}(?:[,.  ]\d{3})+(?!\d)(?!\s*(?:k?m|ha)\b)|\d+)")
 
 
@@ -292,7 +298,7 @@ def item_html(it, box, style, folder):
             length = nice_length(it["_img_w"] * 0.25 * sc / 1000)
             bar_mm = length * 1000 / sc
             lw = style["line_mm"]
-            fs = style["body_pt"] * 25.4 / 72 * 0.7  # label size follows the body text
+            fs = pt_(style["body_pt"] * 0.7) * 25.4 / 72  # label size follows the body text, never below 12 px
             inner += (f'<svg class="bar" width="{bar_mm + 30:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 30:.2f} 7">'
                       f'<rect x="0.2" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="{style["text"]}"/>'
                       f'<rect x="{bar_mm / 2 + 0.2:.2f}" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
@@ -310,7 +316,7 @@ def item_html(it, box, style, folder):
     else:
         head = f"<h2>{html.escape(it['heading'])}</h2>" if it.get("heading") else ""
         pt = it.get("pt")
-        st = f' style="font-size:{pt}pt;line-height:1.1;font-weight:{it.get("weight", 400)}"' if pt else ""
+        st = f' style="font-size:{pt_(pt)}pt;line-height:1.1;font-weight:{it.get("weight", 400)}"' if pt else ""
         inner = f"{head}<div{st}>{paragraphs(it.get('text', ''))}</div>"
     return f'<div class="box {kind}" id="{html.escape(it["id"])}" style="{s}">{inner}</div>'
 
@@ -334,6 +340,7 @@ window.addEventListener('load', () => {
 
 def panel_html(n, total, placed, fmt, reserved, marks, style, ctx, folder):
     W, H = fmt["width_mm"], fmt["height_mm"]
+    style = {**style, "heading_pt": pt_(style["heading_pt"]), "body_pt": pt_(style["body_pt"])}
     c = {**ctx, "n": n, "total": total}
     parts = [item_html(it, b, style, folder) for it, b in placed]
     for r in reserved:
@@ -342,7 +349,7 @@ def panel_html(n, total, placed, fmt, reserved, marks, style, ctx, folder):
     for mk in marks:
         align = mk.get("align", "left")
         pos = f"top:{mk['y']}mm;" + (f"right:{mk['x']}mm;" if align == "right" else f"left:{mk['x']}mm;")
-        parts.append(f'<div class="mark" style="{pos}font-size:{mk.get("pt", 14)}pt;font-weight:{mk.get("weight", 400)};'
+        parts.append(f'<div class="mark" style="{pos}font-size:{pt_(mk.get("pt", 14))}pt;font-weight:{mk.get("weight", 400)};'
                      f'text-align:{align}">{html.escape(fill(mk["text"], c))}</div>')
     nonce = secrets.token_hex(16)  # only the page's own check may run; nothing loads from the network
     csp = f"default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; script-src 'nonce-{nonce}'"
@@ -363,7 +370,9 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 .box table {{ border-collapse: collapse; width: 100%; }}
 .box td {{ border-top: {style['line_mm']}mm solid {style['text']}; padding: 1.2mm 2mm 1.2mm 0; vertical-align: top; }}
 .box td.v {{ font-weight: 700; color: {style['accent']}; white-space: nowrap; }}
-.box td.src {{ opacity: .6; font-size: .8em; }}
+.box td.src {{ opacity: .6; font-size: max(.8em, 12px); }}
+.box.text > div {{ column-width: {COLUMN_EM}em; column-gap: 6mm; }}
+.box.text > div p {{ break-inside: avoid-column; }}
 </style></head><body>
 {chr(10).join(parts)}
 {CHECK_JS.replace("{nonce}", nonce)}</body></html>"""
