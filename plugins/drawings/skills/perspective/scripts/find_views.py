@@ -13,6 +13,9 @@ import shapely
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
+from draw_view import H, HORIZON, W
+
+EYE = 1.65                                  # the usual eye height: frame_new is an estimate for ranking
 RAYS, REACH, MIN_APART = 41, 220.0, 120.0
 WORDS = {
     "square": ["square", "plaza", "piazza", "centre", "center", "hub", "station", "stop", "market", "mobility"],
@@ -145,9 +148,10 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         first = ts.argmin(axis=1)
         dist = np.minimum(ts.min(axis=1), REACH)
         hit = np.where(np.isfinite(ts.min(axis=1)), k[solid][first], -1)
-        rise = np.degrees(np.arctan2(up[solid][first], dist))     # how high it stands in the frame
+        wall = up[solid][first]
+        rise = np.degrees(np.arctan2(wall, dist))     # how high it stands in the frame
     else:
-        dist, hit, rise = np.full(RAYS, REACH), np.full(RAYS, -1), np.zeros(RAYS)
+        dist, hit, rise, wall = np.full(RAYS, REACH), np.full(RAYS, -1), np.zeros(RAYS), np.zeros(RAYS)
     tree = t[:, ~solid].min(axis=1) if (~solid).any() and t.size else np.full(RAYS, np.inf)
     m = {
         "new": float(np.mean(hit == 0)),
@@ -160,7 +164,13 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         "tree_near": float(np.mean(tree < 12)),
         "green_wall": float(np.mean((hit == 3) & (dist < 40))),   # woodland close in front: a grey slab in the view
         "depth": float(np.std(np.log(np.maximum(dist, 1)))),
+        "void": float(np.mean(dist > 80)),          # the eye runs out with nothing to stop it
+        "framed": min(float(np.mean(dist[:RAYS // 3] < 60)), float(np.mean(dist[-(RAYS // 3):] < 60))),   # held on both sides
     }
+    spread = np.radians(np.linspace(-hfov / 2, hfov / 2, RAYS))
+    f, z, width = W / 2 / np.tan(np.radians(hfov) / 2), dist * np.cos(spread), 1 / np.cos(spread) ** 2   # rays are even in angle, pixels in its tangent
+    top, foot = np.clip(H * HORIZON - f * (wall - EYE) / z, 0, H), np.clip(H * HORIZON + f * EYE / z, 0, H)
+    m["frame_new"] = float(np.sum(width / width.sum() * (foot - top) / H * (hit == 0)))   # share of the picture that is new building
     samples = np.outer(np.array([12.0, 25, 45]), np.sin(angles[::4])) + x, np.outer(np.array([12.0, 25, 45]), np.cos(angles[::4])) + y
     m["public"] = float(np.mean(shapely.contains_xy(scene.public, samples[0], samples[1]))) if scene.public is not None else 0.0
     green = getattr(scene, "green_union", None)
@@ -174,6 +184,8 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         + 0.4 * min(1, m["open"] / 0.5)             # room in the foreground, for people
         + 0.4 * min(1, m["depth"] / 0.8)            # near and far
         + 0.2 * min(1, m["trees"] / 0.15)
+        + 0.5 * min(1, m["framed"] / 0.5)           # a space, not a block beside a field
+        - 0.8 * m["void"]
         - 2.0 * m["blocked"] - 1.5 * m["tree_near"] - 1.5 * min(1, m["green_wall"] / 0.25), 3)
     return m
 
@@ -195,7 +207,7 @@ def choose(scene, count, hfov):
         if not shapely.contains_xy(scene.public, x, y) or shapely.contains_xy(bad, x, y):
             continue
         m = score(scene, seg, kind, tall, x, y, heading, hfov)
-        if m["new"] >= 0.1:
+        if m["frame_new"] >= 0.1:
             scored.append({"situation": sit, "x": x, "y": y, "heading": heading % 360, **m})
     scored.sort(key=lambda c: -c["score"])
     picks = []

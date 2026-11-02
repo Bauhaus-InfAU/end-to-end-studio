@@ -118,7 +118,7 @@ def main():
                       "why": v.get("why"), "narrative": v.get("narrative"),
                       "eye": [round(lon, 7), round(lat, 7)], "eye_height_m": args.eye_height, "ground_m": round(ground, 2),
                       "heading_deg": round(v["heading"] % 360, 1), "hfov_deg": v["hfov"], "score": v.get("score"),
-                      "metrics": v.get("metrics") or {k: round(v[k], 3) for k in ("new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near") if k in v},
+                      "metrics": v.get("metrics") or {k: round(v[k], 3) for k in ("new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near", "framed", "void", "frame_new") if k in v},
                       "frame_shares": made["frame_shares"],
                       "files": {"base_svg": f"{stem}_base.svg", "base_png": f"{stem}_base.png", "depth_png": f"{stem}_depth.png",
                                 "ids_png": f"{stem}_ids.png"}, "x": v["x"], "y": v["y"], "heading": v["heading"]})
