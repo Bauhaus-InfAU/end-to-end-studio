@@ -120,6 +120,11 @@ def reach(pt, before, target, limit, barrier):
 
 def beside(line, band, old_lines, cfg, step=10.0):
     """The parts of a new street that don't run along an existing one, longer than one step."""
+    if line.geom_type == "MultiLineString":
+        r = []
+        for part in line.geoms:
+            r += beside(part, band, old_lines, cfg, step)
+        return r
     if not old_lines or line.length < step:
         return [line]
     tree = shapely.STRtree(old_lines)
