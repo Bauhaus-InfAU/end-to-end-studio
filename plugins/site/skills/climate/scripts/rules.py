@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import shapely
 
-from common import Site, read, write_json
+from common import Site, polygons, read, write_json
 
 DEFAULT = dict(day_homes=55, day_robust=65, night_homes=45,
                source="default guide values of DIN 18005 (Germany): general residential 55/45 dB(A) day/night, commercial 65 dB(A) day; "
@@ -34,7 +34,7 @@ def main():
         if g.geom_type.endswith("LineString"):
             g = g.intersection(site.buffer(1))
         else:  # a zone stays (Multi)Polygon: cutting it to the site can leave stray lines and points
-            g = shapely.union_all([q for q in shapely.get_parts(g.intersection(site)) if q.geom_type.endswith("Polygon")] or [shapely.Polygon()])
+            g = polygons(g.intersection(site))
         if g.is_empty:
             return
         feats.append((g, {"kind": kind, "topic": topic, "rule": text, "reason": reason, **({"use": "air corridor"} if topic == "fresh air" else {})}))
