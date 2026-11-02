@@ -14,4 +14,6 @@ Every step you take re-reads everything before it, so keep what you read small:
 - **Scripts.** If the skill's folder has `scripts/`, run them first and change only what this brief needs. Write a new script to a file and run it, rather than retyping it.
 - **Pictures.** Look at one preview of each drawing you make, at most twice. Check widths, scales and counts in code, not by eye.
 
+**What the brief requires.** The skill says what to make; the brief may ask for more in your skill's field. Check the checklist's required content and drawings, and make every item that is yours, at the brief's scale, such as a detail plan of the place your skill designs. Name each one in `summary.md`.
+
 Follow the project's rules the lead passes on, such as never looking up a closed competition's results. When something is missing, say so in `summary.md` instead of inventing it. When you're done, reply with the three lines of your `summary.md` and nothing else.
