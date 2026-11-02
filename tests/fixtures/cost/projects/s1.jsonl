@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"Your proposal folder is proposals/2026-01-01_x/"}}
+{"type":"assistant","message":{"id":"L1","model":"claude-sonnet-5-5","usage":{"input_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}}}
