@@ -7,7 +7,7 @@ description: Draws an isometric of an urban design, zoomed in on its new buildin
 Reads: site-kit, drawing-graphics
 Reads (end): massing
 
-Draw only what the files hold: the project's site folder, `massing/massing.geojson` once it exists, the brief's scales and panel size, and `drawing-graphics/standard.md` if there. State every assumed size in `summary.md`. Python with `shapely` and `pyproj`, the SVG written directly, the PNG from a headless Chrome or Edge; if neither is installed, say so in `summary.md`. Without a site folder, draw nothing: say which site files you need (the site outline with its buildings, streets, water, green) and write it in `summary.md`.
+Draw only what the files hold: the project's site folder, `massing/massing.geojson` once it exists, the brief's scales and panel size, and `drawing-graphics/standard.md` if there. State every assumed size in `summary.md`. Run `python3 ${CLAUDE_SKILL_DIR}/isometric.py <site folder> <proposal folder> <site plan scale> <panel width mm>` (`pip install shapely pyproj`), with the scale and panel width from the brief and, if there is a standard, its colours as `--style style.json` (keys in the script). It writes the SVG, the PNG from a headless Chrome or Edge, and `summary.md`; fix the script, never the drawing. Without a site folder, draw nothing: say which site files you need (the site outline with its buildings, streets, water, green) and write it in `summary.md`.
 
 **View.** A true isometric from the side where the fewest tall buildings stand in front of the new ones, framing them with about 100 m of city, cut by the frame. Without a massing: the site with 200 m around it, its boundary in the accent, and say the design is missing.
 
