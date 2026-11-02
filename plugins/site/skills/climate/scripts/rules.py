@@ -34,7 +34,7 @@ def main():
         g = g.intersection(site) if not g.geom_type.endswith("LineString") else g.intersection(site.buffer(1))
         if g.is_empty:
             return
-        feats.append((g, {"kind": kind, "topic": topic, "rule": text, "reason": reason}))
+        feats.append((g, {"kind": kind, "topic": topic, "rule": text, "reason": reason, **({"use": "air corridor"} if topic == "fresh air" else {})}))
         rules.append(dict(kind=kind, topic=topic, rule=text, reason=reason,
                           area_ha=round(g.area / 1e4, 1) if g.area else None, site_share_pct=round(100 * g.area / site.area, 1) if g.area else None))
 

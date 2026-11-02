@@ -9,9 +9,13 @@
       Writes transform.json (residuals in m) and fit-check.png: the site and its streets drawn over the map. Look at it.
   python fresh_air.py trace MAP.png --transform transform.json --classes classes.json --site SITE_DIR --out DIR
       classes.json: {"source": "brief p. N, Fig. M, author", "classes": [
-          {"kind": "corridor", "label": "...", "rgb_min": [r, g, b], "rgb_max": [r, g, b]},
-          {"kind": "flow", "label": "...", "rgb_min": [...], "rgb_max": [...], "sense_deg": 180}]}
-      sense_deg is the way the arrows point, read by eye on the map: a blurred raster doesn't show the heads reliably.
+          {"kind": "corridor", "label": "...", "hue_deg": 330},
+          {"kind": "flow", "label": "...", "rgb_min": [r, g, b], "rgb_max": [r, g, b], "sense_deg": 180}]}
+      A class is a hue (hue_deg, or at_px [x, y]: a pixel on it whose hue is read; hue_tol 30, only strong colour: sat_min 0.5, val_min 0.35, so pale tints of the same hue
+      are left out) or an RGB box (rgb_min, rgb_max). Corridors: close_px 4 closes gaps, open_m 10 drops strands narrower
+      than 20 m (roads), min_area_m2 10000. The output gives the site share at half and double close_px and warns when they
+      differ by more than 5 points; trace-check.png shows what was taken. sense_deg is the way the arrows point, read by eye
+      on the map: a blurred raster doesn't show the heads reliably.
   python fresh_air.py derive --site SITE_DIR --out DIR
       no map: downhill flow over open, unsealed land from terrain (Open-Meteo elevation, about 90 m), marked derived.
 """
@@ -105,6 +109,43 @@ def mask_geom(m):
     return shapely.union_all(boxes)
 
 
+def hue_of(rgb):
+    r, g, b = np.asarray(rgb, float) / 255
+    mx, mn = max(r, g, b), min(r, g, b)
+    if mx == mn:
+        return 0.0
+    d = mx - mn
+    return float((((g - b) / d) % 6 if mx == r else (b - r) / d + 2 if mx == g else (r - g) / d + 4) * 60)
+
+
+def dilate(m, r):
+    out = m.copy()
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dy * dy <= r * r and (dx or dy):
+                out[max(0, dy):m.shape[0] + min(0, dy), max(0, dx):m.shape[1] + min(0, dx)] |= \
+                    m[max(0, -dy):m.shape[0] - max(0, dy), max(0, -dx):m.shape[1] - max(0, dx)]
+    return out
+
+
+def erode(m, r):
+    return ~dilate(~m, r)
+
+
+def colour_mask(im, c):
+    """Pixels of a class: by hue (hue_deg +- hue_tol, strong colour only), or by an RGB box (rgb_min, rgb_max)."""
+    if "hue_deg" not in c:
+        return np.all((im >= np.array(c["rgb_min"])) & (im <= np.array(c["rgb_max"])), axis=2)
+    f = im / 255.0
+    mx, mn = f.max(2), f.min(2)
+    d = np.where(mx > mn, mx - mn, 1)
+    r, g, b = f[..., 0], f[..., 1], f[..., 2]
+    hue = np.where(mx == r, (g - b) / d % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    off = np.abs((hue - c["hue_deg"] + 180) % 360 - 180)
+    return (off <= c.get("hue_tol", 30)) & (sat >= c.get("sat_min", 0.5)) & (mx >= c.get("val_min", 0.35)) & (mx > mn)
+
+
 def trace(a):
     from PIL import Image
     S = Site(a.site)
@@ -117,17 +158,37 @@ def trace(a):
     acc = f"traced from the map, about {max(T['residual_m'] + [2 * T['m_per_px']]):.0f} m"
     feats, info = [], []
     for c in C["classes"]:
-        lo, hi = np.array(c["rgb_min"]), np.array(c["rgb_max"])
-        m = np.all((im >= lo) & (im <= hi), axis=2)
-        g = mask_geom(m)
+        if "at_px" in c:  # the hue of the pixels around a point the reader picked on the corridor
+            x, y = c["at_px"]
+            patch = im[max(0, y - 3):y + 4, max(0, x - 3):x + 4].reshape(-1, 3)
+            c = dict(c, hue_deg=hue_of(np.median(patch, 0)))
+            rgb = np.median(patch, 0)
+            print(f'{c["label"]}: hue {c["hue_deg"]:.0f} deg read at pixel {x}, {y} (colour {rgb.astype(int).tolist()})'
+                  + ("; WARNING: a pale or grey pixel, pick one in the strong colour" if (rgb.max() - rgb.min()) / max(rgb.max(), 1) < 0.5 else ""))
+        m = colour_mask(im, c)
         if c["kind"] == "corridor":
-            g = to_m(g.buffer(c.get("close_px", 6)).buffer(-c.get("close_px", 6)).simplify(1.5)).intersection(reach)
-            parts = [p for p in getattr(g, "geoms", [g]) if p.area >= c.get("min_area_m2", 10000)]
+            op = max(1, round(c.get("open_m", 10) / T["m_per_px"]))
+
+            def corridor(close_px):
+                mm = erode(dilate(m, close_px), close_px)  # close gaps
+                mm = dilate(erode(mm, op), op)             # drop strands narrower than 2 x open_m, such as roads
+                h = to_m(mask_geom(mm).simplify(1.5)).intersection(reach)
+                return [p for p in getattr(h, "geoms", [h]) if p.area >= c.get("min_area_m2", 10000)]
+            close = c.get("close_px", 4)
+            parts = corridor(close)
+            spread = {k: round(100 * sum(p.intersection(S.poly).area for p in corridor(k)) / S.poly.area, 1) for k in (max(1, close // 2), close, close * 2)}
             for p in parts:
                 feats.append((p.simplify(5), {"kind": "corridor", "label": c["label"], "area_ha": round(p.area / 1e4, 1),
                                               "in_site_ha": round(p.intersection(S.poly).area / 1e4, 1), "source": f'{C["source"]}; {acc}'}))
-            info.append(dict(label=c["label"], parts=len(parts), in_site_ha=round(sum(p.intersection(S.poly).area for p in parts) / 1e4, 1)))
+            info.append(dict(label=c["label"], parts=len(parts), in_site_ha=round(sum(p.intersection(S.poly).area for p in parts) / 1e4, 1),
+                             site_share_pct_by_close_px=spread))
+            if not parts:
+                print(f"WARNING {c['label']}: no corridor found with this colour. Look at trace-check.png and pick a pixel on the corridor.")
+            if max(spread.values()) - min(spread.values()) > 5:
+                print(f"WARNING {c['label']}: the share of the site changes from {min(spread.values())} to {max(spread.values())} % with close_px; "
+                      "the colour range likely catches more than the corridor. Look at trace-check.png.")
         else:
+            g = mask_geom(m)
             n, dirs = 0, []
             sense = np.radians(c["sense_deg"])
             for blob in getattr(g, "geoms", [g]):
@@ -151,6 +212,18 @@ def trace(a):
                                      "source": f'{C["source"]}; axis {acc}, sense read by eye'}))
             info.append(dict(label=c["label"], arrows=n, median_direction_deg=round(float(np.median(dirs))) if dirs else None))
     S.write_geojson(Path(a.out) / "fresh-air.geojson", feats)
+    # trace-check.png: the map with what was taken as corridor (green outline) and as flow (black), to compare by eye
+    from PIL import ImageDraw
+    pic = Image.open(a.map).convert("RGB")
+    dr = ImageDraw.Draw(pic)
+    inv = np.linalg.inv(np.r_[M.T, [[0, 0, 1]]])
+    to_px = lambda x, y: tuple((inv @ [x, y, 1])[:2])
+    for g_, p in feats:
+        for part in getattr(g_, "geoms", [g_]):
+            ring = part.exterior.coords if part.geom_type == "Polygon" else part.coords
+            dr.line([to_px(*xy) for xy in ring], fill=(0, 170, 0) if p["kind"] == "corridor" else (0, 0, 0), width=3 if p["kind"] == "corridor" else 1)
+    dr.line([to_px(*xy) for xy in S.poly.exterior.coords], fill=(0, 0, 255), width=2)
+    pic.save(Path(a.out) / "trace-check.png")
     corr = shapely.union_all([g for g, p in feats if p["kind"] == "corridor"])
     summary = dict(method="traced", classes=info, site_share_in_corridor_pct=round(100 * corr.intersection(S.poly).area / S.poly.area, 1),
                    fit_m_per_px=T["m_per_px"], fit_residual_m=T["residual_m"], sources=[C["source"], f"Georeferenced on OpenStreetMap streets, {acc}"])
