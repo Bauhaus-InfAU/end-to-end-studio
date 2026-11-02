@@ -32,7 +32,7 @@ def write_assumptions(scene, path, views, count_source):
     a = scene.assumed
     lines = ["# Assumptions and warnings", ""]
     if scene.is_test:
-        lines += ["**TEST OUTPUT: made from a stand-in massing, not a design. Not for the panels.**", ""]
+        lines += ["**TEST OUTPUT: made in a test folder or from a stand-in massing. Not for the panels.**", ""]
     lines += ["## Data used", *[f"- {u}" for u in scene.used]]
     if scene.absent:
         lines += ["", "## Data not there", *[f"- {u}" for u in scene.absent]]
@@ -121,8 +121,8 @@ def main():
                       "metrics": v.get("metrics") or {k: round(v[k], 3) for k in ("new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near") if k in v},
                       "frame_shares": made["frame_shares"],
                       "files": {"base_svg": f"{stem}_base.svg", "base_png": f"{stem}_base.png", "depth_png": f"{stem}_depth.png",
-                                "ids_png": f"{stem}_ids.png", "final_png": f"{stem}.png"}, "x": v["x"], "y": v["y"], "heading": v["heading"]})
-    draw_view.draw_map(scene, views, out, f"{prefix}views_map")
+                                "ids_png": f"{stem}_ids.png"}, "x": v["x"], "y": v["y"], "heading": v["heading"]})
+    draw_view.draw_map(scene, views, out, f"{prefix}views_map", style)
     for v in views:
         low = [k for k in ("new",) if v["frame_shares"].get(k, 0) < 0.03]
         if low:
@@ -143,7 +143,7 @@ def main():
             w.writeheader()
             w.writerows(scored)
     write_assumptions(scene, out / "assumptions.md", views, count_source)
-    head = "TEST OUTPUT from a stand-in massing, not for the panels. " if scene.is_test else ""
+    head = "TEST OUTPUT, not for the panels. " if scene.is_test else ""
     made = ", ".join(f"{v['stem']} ({v['situation']})" for v in views)
     flat = [w for w in scene.warnings if w.endswith("the ground is drawn flat.")]
     unsure = " ".join(dict.fromkeys(flat + scene.warnings[:1])) or "nothing flagged."

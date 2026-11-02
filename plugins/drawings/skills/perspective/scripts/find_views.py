@@ -158,6 +158,7 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         "open": float(np.mean(dist > 20)),
         "blocked": float(np.mean(dist < 5)),
         "tree_near": float(np.mean(tree < 12)),
+        "green_wall": float(np.mean((hit == 3) & (dist < 40))),   # woodland close in front: a grey slab in the view
         "depth": float(np.std(np.log(np.maximum(dist, 1)))),
     }
     samples = np.outer(np.array([12.0, 25, 45]), np.sin(angles[::4])) + x, np.outer(np.array([12.0, 25, 45]), np.cos(angles[::4])) + y
@@ -173,7 +174,7 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         + 0.4 * min(1, m["open"] / 0.5)             # room in the foreground, for people
         + 0.4 * min(1, m["depth"] / 0.8)            # near and far
         + 0.2 * min(1, m["trees"] / 0.15)
-        - 2.0 * m["blocked"] - 1.5 * m["tree_near"], 3)
+        - 2.0 * m["blocked"] - 1.5 * m["tree_near"] - 1.5 * min(1, m["green_wall"] / 0.25), 3)
     return m
 
 

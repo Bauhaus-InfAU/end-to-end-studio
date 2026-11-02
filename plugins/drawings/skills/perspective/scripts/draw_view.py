@@ -21,7 +21,10 @@ FINE, COARSE, FINE_REACH = 10.0, 40.0, 160.0
 STYLE = {"sky": "#ffffff", "ground": "#e4e4e4", "field": "#dcdcdc", "green": "#c9c9c9", "park": "#c4c4c4", "garden": "#cdcdcd",
          "water": "#8f8f8f", "street": "#b4b4b4", "old_street": "#bababa", "square": "#efefef", "rail": "#9d9d9d", "line": "#000000",
          "forest": "#8c8c8c", "scrub": "#a3a3a3", "tree": "#a6a6a6", "trunk": "#6e6e6e",
-         "new": (205, 250), "kept": (170, 215), "context": (140, 190)}
+         "new": (205, 250), "kept": (170, 215), "context": (140, 190),
+         "edge_base": .6, "edge_top": 1.2, "floor_line": .35, "corner": 1,
+         "map_paper": "#fff", "map_tall": "#d0d0d0", "map_new": "#333", "map_kept": "#777", "map_context": "#bbb",
+         "map_site": "#000", "map_view": "#e0301e"}
 CLASSES = {"sky": 0, "ground": 1, "street": 2, "green": 3, "water": 4, "new": 5, "kept": 6, "context": 7, "forest": 8, "scrub": 9, "tree": 10}
 CLASS_OF_TONE = {"street": 2, "old_street": 2, "square": 2, "rail": 2, "green": 3, "park": 3, "garden": 3, "field": 1, "water": 4}
 
@@ -259,14 +262,14 @@ def draw_block(scene, cam, style, buf, items, geom, height, tone, cls, floors=No
                         def seg(z, w):
                             ends = clip_near([cam.cam(*p0, z), cam.cam(*p1, z), cam.cam(*p1, z + .001)])
                             return line(cam.px(ends[0]), cam.px(ends[1]), line_col, w) if len(ends) >= 3 else ""
-                        s += seg(base, .6) + seg(t, 1.2)
+                        s += seg(base, style["edge_base"]) + seg(t, style["edge_top"])
                         if floors:
                             for k in range(1, int(floors)):
-                                s += seg(base + k * (t - base) / floors, .35)
+                                s += seg(base + k * (t - base) / floors, style["floor_line"])
                         if i == 0 and cam.cam(*p0, 0)[2] >= NEAR:
-                            s += line(cam.px(cam.cam(*p0, base)), cam.px(cam.cam(*p0, t)), line_col, 1)
+                            s += line(cam.px(cam.cam(*p0, base)), cam.px(cam.cam(*p0, t)), line_col, style["corner"])
                         if i == pieces - 1 and cam.cam(*p1, 0)[2] >= NEAR:
-                            s += line(cam.px(cam.cam(*p1, base)), cam.px(cam.cam(*p1, t)), line_col, 1)
+                            s += line(cam.px(cam.cam(*p1, base)), cam.px(cam.cam(*p1, t)), line_col, style["corner"])
                     items.append((math.hypot((p0[0] + p1[0]) / 2 - cam.ex, (p0[1] + p1[1]) / 2 - cam.ey), s))
         if top < cam.ez:
             roof = tone if isinstance(tone, str) else grey(tone[1])
@@ -333,30 +336,31 @@ def _point(cam):
     return Point(cam.ex, cam.ey)
 
 
-def draw_map(scene, views, out, stem):
+def draw_map(scene, views, out, stem, style=None):
     """A plan of the site with each camera on it, to check the choice at a glance."""
+    st = {**STYLE, **(style or {})}
     x0, y0, x1, y1 = scene.site.bounds
     m = 60
     k = 1000 / max(x1 - x0 + 2 * m, y1 - y0 + 2 * m)
     w, h = (x1 - x0 + 2 * m) * k, (y1 - y0 + 2 * m) * k
     pt = lambda x, y: ((x - x0 + m) * k, h - (y - y0 + m) * k)
     d = lambda ring: "M" + "L".join("%.1f %.1f" % pt(*c[:2]) for c in ring) + "Z"
-    s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}"><rect width="100%" height="100%" fill="#fff"/>']
+    s = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}"><rect width="100%" height="100%" fill="{st["map_paper"]}"/>']
     for g, _, _ in scene.tall:
         for part in polys(g):
-            s.append(f'<path d="{d(part.exterior.coords)}" fill="#d0d0d0"/>')
+            s.append(f'<path d="{d(part.exterior.coords)}" fill="{st["map_tall"]}"/>')
     for b in scene.buildings:
-        fill = {"new": "#333", "kept": "#777", "context": "#bbb"}[b["group"]]
+        fill = st["map_" + b["group"]]
         for part in polys(b["geom"]):
             s.append(f'<path d="{d(part.exterior.coords)}" fill="{fill}"/>')
     for part in polys(scene.site):
-        s.append(f'<path d="{d(part.exterior.coords)}" fill="none" stroke="#000" stroke-dasharray="6 4"/>')
+        s.append(f'<path d="{d(part.exterior.coords)}" fill="none" stroke="{st["map_site"]}" stroke-dasharray="6 4"/>')
     for v in views:
         ex, ey = pt(v["x"], v["y"])
         for turn in (-1, 1):
             a = math.radians(v["heading"] + turn * v.get("hfov", 70) / 2)
-            s.append(f'<line x1="{ex:.1f}" y1="{ey:.1f}" x2="{ex + 70 * math.sin(a):.1f}" y2="{ey - 70 * math.cos(a):.1f}" stroke="#e0301e" stroke-width="2"/>')
-        s.append(f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="6" fill="#e0301e"/><text x="{ex + 9:.1f}" y="{ey - 9:.1f}" font-family="sans-serif" font-size="18" fill="#e0301e">{v["name"]}</text>')
+            s.append(f'<line x1="{ex:.1f}" y1="{ey:.1f}" x2="{ex + 70 * math.sin(a):.1f}" y2="{ey - 70 * math.cos(a):.1f}" stroke="{st["map_view"]}" stroke-width="2"/>')
+        s.append(f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="6" fill="{st["map_view"]}"/><text x="{ex + 9:.1f}" y="{ey - 9:.1f}" font-family="sans-serif" font-size="18" fill="{st["map_view"]}">{v["name"]}</text>')
     s.append("</svg>")
     out.mkdir(parents=True, exist_ok=True)
     p = out / f"{stem}.svg"
