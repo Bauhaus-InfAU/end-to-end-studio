@@ -61,6 +61,8 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 - Never invent data. Every number has its source or its assumption next to it.
 - The look comes from `drawing-graphics`, which turns the project's reference images (here `competition/references/`) into a standard. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
+- Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
+- Look at a drawing once or twice, not after every change. Check widths, scales and counts in code.
 - Keep a skill short: two or three paragraphs, a list if it helps. Add a line when you don't like a result, delete lines the model no longer needs.
 
 ## The skills

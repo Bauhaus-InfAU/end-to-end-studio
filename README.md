@@ -62,3 +62,14 @@ Before you change your skill, get what others merged: on your fork on GitHub pre
 ## Run the studio
 
 Ask for "a competition entry, label it run-1". `competition-proposal` runs every skill into `competition/proposals/<date>_run-1/` and writes its `README.md`: what's done, what failed, what nobody has written yet. "Redo the massing of run-1 with courtyards" makes a variant; "compare run-1 and courtyards" puts two versions side by side.
+
+### On a Pro plan
+
+A full run used to cost about $30 at API prices, about three of a Pro plan's 5-hour windows. Started like this, it should fit in one. Open a terminal in the repo and start Claude Code with only the repo's settings and plugins, and none of your own MCP servers:
+
+```
+PowerShell:     $env:ENABLE_CLAUDEAI_MCP_SERVERS="false"; claude --model sonnet --setting-sources project,local --strict-mcp-config --permission-mode auto
+macOS, Linux:   ENABLE_CLAUDEAI_MCP_SERVERS=false claude --model sonnet --setting-sources project,local --strict-mcp-config --permission-mode auto
+```
+
+Your own settings, plugins and permissions are left out for this session only. The lead runs on Sonnet, and every skill runs on Sonnet unless its `Model:` line says otherwise. At the end the lead writes `cost.csv` into the version folder: what each skill cost, in tokens and in dollars. Its total is also in the version's `README.md`. Look there first when you want a run to cost less.
