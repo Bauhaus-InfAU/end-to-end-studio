@@ -22,13 +22,14 @@ Copy one skill folder into another project's `.claude/skills/`, or install its t
 
 ## The inputs
 
-Three things belong to the project, not to one version, and every version reads them:
+Four things belong to the project, not to one version, and every version reads them:
 
 - The brief: the PDFs in the project's `brief/`, each with its Markdown next to it, made by `pdf-to-md`.
+- The brief's checklist: `checklist.md` next to the brief, made once by `brief-reader`, every item with its page. Read it first, and open the brief's Markdown only at the pages it names.
 - The site: the project's `site/`, made by `site-kit`. `site.geojson` is the project site, one polygon in WGS84, longitude first. Next to it are the layers (buildings, plots, streets, water, rail) and their `SOURCES.md`.
 - The references: the images in the project's `references/`, for `drawing-graphics`.
 
-In this repo they're in `competition/`. In another project they're wherever its `CLAUDE.md` says, else at the top. `pdf-to-md` and `site-kit` write there, and the lead runs them only when their output is missing. Every other skill only reads them.
+In this repo they're in `competition/`. In another project they're wherever its `CLAUDE.md` says, else at the top. `pdf-to-md`, `brief-reader` and `site-kit` write there, and the lead runs them only when their output is missing. Every other skill only reads them.
 
 ## The proposal folder
 
@@ -67,7 +68,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | Topic | Skill | What it does | Who |
 | --- | --- | --- | --- |
 | utilities | `pdf-to-md` | PDFs to Markdown with page markers, tables, and the pictures and vector plans in them. Example | `YegorGaidukov` |
-| brief | `brief-reader` | A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for | open |
+| brief | `brief-reader` | A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for. Example | `YegorGaidukov` |
 | site | `site-kit` | The site's boundary and data: buildings, plots, streets, water, rail. Example | `YegorGaidukov` |
 | | `climate` | Fresh-air corridors, sun, wind, noise | `HawarHeidari` |
 | analysis | `analysis` | The site as it is: uses, edges, green and biotopes, walking reach, sealed share, what to keep. At the end the same on the design, and the comparison of every analysis | `roy-mdr` |
