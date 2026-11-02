@@ -22,14 +22,15 @@ Copy one skill folder into another project's `.claude/skills/`, or install its t
 
 ## The inputs
 
-Four things belong to the project, not to one version, and every version reads them:
+Five things belong to the project, not to one version, and every version reads them:
 
 - The brief: the PDFs in the project's `brief/`, each with its Markdown next to it, made by `pdf-to-md`.
 - The brief's checklist: `checklist.md` next to the brief, made once by `brief-reader`, every item with its page. Read it first, and open the brief's Markdown only at the pages it names.
+- The climate: the project's `climate/`, made once by `climate` from the site and the brief. The lead copies it into each version, and remakes it only when the site, the brief or the skill change.
 - The site: the project's `site/`, made by `site-kit`. `site.geojson` is the project site, one polygon in WGS84, longitude first. Next to it are the layers (buildings, plots, streets, water, rail) and their `SOURCES.md`.
 - The references: the images in the project's `references/`, for `drawing-graphics`.
 
-In this repo they're in `competition/`. In another project they're wherever its `CLAUDE.md` says, else at the top. `pdf-to-md`, `brief-reader` and `site-kit` write there, and the lead runs them only when their output is missing. Every other skill only reads them.
+In this repo they're in `competition/`. In another project they're wherever its `CLAUDE.md` says, else at the top. `pdf-to-md`, `brief-reader`, `site-kit` and `climate` write there, and the lead runs them only when their output is missing or out of date. Every other skill only reads them.
 
 ## The proposal folder
 

@@ -45,3 +45,8 @@ def test_no_cycles():
 def test_lead_starts_project_inputs_as_helpers():
     lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
     assert "each as a `studio:studio-helper` too" in lead
+
+
+def test_lead_reuses_shared_inputs_by_key():
+    lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
+    assert "inputs_key.py" in lead and "climate" in lead and "made-from.txt" in lead

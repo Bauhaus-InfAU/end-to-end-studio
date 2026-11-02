@@ -10,3 +10,6 @@ __pycache__/
 /competition/brief/*-images/
 /competition/brief/*-drawings/*.pdf
 /competition/brief/*-drawings/*.svg
+
+# made once per site by climate; anyone can remake it
+/competition/climate/
