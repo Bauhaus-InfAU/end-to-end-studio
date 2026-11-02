@@ -12,6 +12,7 @@ Bounding box, west, south, east, north: 12.110526, 49.037025, 12.148499, 49.0615
 | `streets.geojson`   | OpenStreetMap `highway` ways, all types including paths                                                                       | ODbL 1.0                        |
 | `rail.geojson`      | OpenStreetMap `railway` ways                                                                                                  | ODbL 1.0                        |
 | `water.geojson`     | OpenStreetMap `waterway` lines and `natural=water` polygons                                                                 | ODbL 1.0                        |
+| `street-land.geojson` | ALKIS actual land use (Tatsächliche Nutzung) of Stadt and Landkreis Regensburg, from geodaten.bayern.de (district downloads tn_09362, tn_09375): Straßenverkehr as `street`, Platz as `square`, Weg as `path`, clipped to the bounding box | CC BY 4.0 |
 | `kit.json`          | the skill                                                                                                                       |                                 |
 
 ## Attribution
@@ -19,6 +20,10 @@ Bounding box, west, south, east, north: 12.110526, 49.037025, 12.148499, 49.0615
 Put this line on every map or page that uses the kit:
 
 > Map data © OpenStreetMap contributors (ODbL, https://www.openstreetmap.org/copyright).
+
+And where `street-land.geojson` is used:
+
+> Street land © Bayerische Vermessungsverwaltung, www.geodaten.bayern.de (CC BY 4.0).
 
 ## Defaults and gaps
 
