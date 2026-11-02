@@ -20,13 +20,15 @@ from shapely.geometry import LineString, Point, mapping, shape
 # Defaults for keys config.json leaves out. Each one used is written to assumptions.md with this note.
 DEFAULTS = {
     "keep_landuse": (["forest", "natural:wood", "natural:scrub", "natural:wetland", "meadow", "leisure:park",
-                      "leisure:nature_reserve", "allotments", "orchard"], "OSM land uses kept as existing green"),
+                      "leisure:nature_reserve", "allotments", "orchard", "grass", "leisure:pitch",
+                      "leisure:sports_centre", "leisure:playground"], "OSM land uses kept as existing green"),
     "street_widths_m": ({"motorway": 25, "trunk": 20, "primary": 16, "secondary": 14, "tertiary": 12,
                          "residential": 10, "unclassified": 8, "service": 6, "living_street": 8,
                          "footway": 3, "cycleway": 3, "path": 2.5, "track": 3, "pedestrian": 6, "steps": 2},
                         "width of existing streets by OSM highway type, m"),
     "private_landuse": (["residential", "commercial", "industrial", "retail", "farmyard", "railway", "construction",
                          "garages", "allotments", "cemetery"], "OSM land uses that stay as they are, never parks"),
+    "other_street_width_m": (6, "width of an existing street of a type not in street_widths_m, m"),
     "new_street_width_m": (16, "width of a massing street without a width, m"),
     "min_park_width_m": (12, "free land narrower than this is street green, not a park, m"),
     "min_park_m2": (2000, "smallest piece of free land counted as a park, m²"),
@@ -126,14 +128,15 @@ def main():
     mass = [(f["properties"], m(shape(f["geometry"]))) for f in load(a.massing)]
     new_bld = [g for p, g in mass if p.get("kind") == "building" and not p.get("existing")]
     homes = [g for p, g in mass if p.get("kind") == "building" and not p.get("existing")
-             and str(p.get("use", "")).lower() in ("residential", "housing", "mixed", "homes", "")]
+             and (not p.get("use") or any(w in str(p["use"]).lower() for w in ("residential", "housing", "mixed", "home")))]
     mass_streets = [g if g.geom_type.endswith("Polygon") else g.buffer((p.get("width") or cfg["new_street_width_m"]) / 2, cap_style="flat")
                     for p, g in mass if p.get("kind") == "street"]
     mass_open = [(p, g) for p, g in mass if p.get("kind") == "open-space"]
     mass_squares = [g for p, g in mass_open if p.get("use") == "square"]
 
     # The site today, inside the boundary.
-    old_bld = [g for _, g in layer("buildings") if g.intersects(site)]
+    kept_bld = [g for p, g in mass if p.get("kind") == "building" and p.get("existing")]
+    old_bld = kept_bld or [g for _, g in layer("buildings") if g.intersects(site)]
     noisy, old_streets = [], []
     for p, g in layer("streets"):
         if not g.intersects(site.buffer(cfg["noise_distance_m"])):
@@ -142,7 +145,7 @@ def main():
         if hw in cfg["noisy_highways"]:
             noisy.append(g)
         if g.intersects(site):
-            old_streets.append(g.buffer(cfg["street_widths_m"].get(hw, 6) / 2, cap_style="flat"))
+            old_streets.append(g.buffer(cfg["street_widths_m"].get(hw, cfg["other_street_width_m"]) / 2, cap_style="flat"))
     plots = layer("plots")
     kept = [(p.get("landuse"), g.intersection(site)) for p, g in plots
             if p.get("landuse") in cfg["keep_landuse"] and g.intersects(site)]
@@ -157,7 +160,7 @@ def main():
     streets = unary_union(mass_streets + old_streets).intersection(site)
     sealed = unary_union([buildings, streets]).intersection(site)
     kept_u = unary_union([g for _, g in kept] + water).difference(sealed)
-    taken = unary_union([sealed, kept_u, private] + [g for _, g in mass_open])
+    taken = unary_union([sealed, kept_u, private] + [g for p, g in mass_open if p.get("use") != "park"])
 
     # Parks: the free land wide and big enough; corridors of the structure plan come first.
     free = site.difference(taken)
@@ -176,6 +179,8 @@ def main():
     # The brief's strips (pipes, power lines) and protected land take no pool, playground or path.
     keep_free = shapely.Polygon()
     if a.keep_free:
+        if any("width_m" not in f["properties"] for f in load(a.keep_free) if not shape(f["geometry"]).geom_type.endswith("Polygon")):
+            used_defaults.append(("keep-free width_m", 1, "width of a keep-free line without width_m, m"))
         keep_free = unary_union([m(shape(f["geometry"])).buffer((f["properties"].get("width_m") or 1) / 2)
                                  if not shape(f["geometry"]).geom_type.endswith("Polygon") else m(shape(f["geometry"]))
                                  for f in load(a.keep_free)]).intersection(site)
@@ -340,7 +345,7 @@ def main():
     kept_a = kept_u.area
     play_a = area_of(playgrounds)
     need_green = cfg["residents"] * cfg["green_m2_per_resident"]
-    need_vol = sum(catch) * cfg["design_rain_mm"] / 1000  # every park's rain, held or not
+    need_vol = sum(g.intersection(site).area * c for g, c in pieces) * cfg["design_rain_mm"] / 1000  # all new rain, held or not
     held_vol = sum(b[2] for b in basins)
     src = cfg_in.get("sources", {})
     rows = [
@@ -390,6 +395,9 @@ def main():
                 "levels must be checked.\n- Distances are straight lines, not walking routes.\n"
                 "- The massing's courtyards are private gardens and are not counted as public green.\n")
 
+    src_md = Path(a.layers) / "SOURCES.md"
+    cfg["map_credit"] = next((l.lstrip("> ").split(" (")[0].strip() for l in (src_md.read_text(encoding="utf-8").splitlines() if src_md.exists() else [])
+                              if "©" in l), "")
     draw(out, site, buildings, old_bld, streets, kept_u, water, parks, playgrounds, basins, links, cfg, style, to_ll,
          covers, pools, paths, boardwalks, keep_free)
     print(json.dumps({"parks": len(parks), "park_m2": round(park_a), "need_green_m2": round(need_green),
@@ -568,7 +576,7 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
     els.append(f'<text x="{6 * k}" y="{by + 6 * k}" font-size="{fs}" font-family="{s["font"]}">0</text>')
     els.append(f'<text x="{6 * k + bar}" y="{by + 6 * k}" font-size="{fs}" font-family="{s["font"]}" text-anchor="middle">{bar} m</text>')
     els.append(f'<text x="{6 * k + bar + 12 * k}" y="{by + 2 * k}" font-size="{fs}" font-family="{s["font"]}">'
-               f'1:{scale}   N ↑   Map data © OpenStreetMap contributors</text>')
+               f'1:{scale}   N ↑   {cfg.get("map_credit", "")}</text>')
 
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{wmm:.1f}mm" height="{wmm * H / (x1 - x0):.1f}mm" '
            f'viewBox="0 0 {x1 - x0:.1f} {H:.1f}"><rect width="100%" height="100%" fill="{s["paper"]}"/>'
