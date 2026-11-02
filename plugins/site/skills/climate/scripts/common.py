@@ -68,8 +68,19 @@ class Site:
         return np.array(geoms, dtype=object), np.array(h, float), defaulted, missing
 
     def write_geojson(self, path, feats):
-        """feats: list of (geometry in metres, properties). Written in WGS84, longitude first."""
-        out = [{"type": "Feature", "geometry": mapping(self.to_ll(g)), "properties": p} for g, p in feats if g is not None and not g.is_empty]
+        """feats: list of (geometry in metres, properties). Written in WGS84, longitude first, every shape valid."""
+        out = []
+        for g, p in feats:
+            if g is None or g.is_empty:
+                continue
+            ll = self.to_ll(g)
+            if not ll.is_valid:  # rounding to WGS84 can make a ring cross itself; repair, and keep a polygon a polygon
+                fixed = shapely.make_valid(ll)
+                if g.geom_type.endswith("Polygon"):
+                    parts = [q for q in shapely.get_parts(fixed) if q.geom_type == "Polygon"]
+                    fixed = parts[0] if len(parts) == 1 else shapely.MultiPolygon(parts)
+                ll = fixed
+            out.append({"type": "Feature", "geometry": mapping(ll), "properties": p})
         write_json(path, {"type": "FeatureCollection", "features": out})
 
 
