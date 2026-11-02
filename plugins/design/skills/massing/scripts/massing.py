@@ -22,6 +22,9 @@ def utm_epsg(lon, lat):
 def read_config(path, required=()):
     """config.json: {key: {"value": ..., "source": ...}} or {key: value}. Stops on a missing key."""
     raw = json.load(open(path, encoding='utf8'))
+    # a value left empty (null) or a source still in <angle brackets> counts as not filled in
+    raw = {k: v for k, v in raw.items() if not (isinstance(v, dict) and (v.get('value') is None
+           or str(v.get('source', '')).startswith('<')))}
     missing = [k for k in required if k not in raw]
     if missing:
         sys.exit('missing in config.json: ' + ', '.join(missing) + ' (from the brief, with its page)')
@@ -39,14 +42,16 @@ RUN = os.path.join(ARGS.proposal, '')
 OUT = os.path.join(RUN, 'massing', '')
 SITE = ARGS.site
 BRIEF = ['height_limit_m', 'landmark_floors', 'm2_per_home', 'homes_target', 'commerce_target',
-         'school_gfa', 'school_yard', 'school_sports', 'pool_gfa', 'pool_plot',
-         'daycare_gfa', 'daycares', 'daycare_play', 'green_target', 'density', 'phase1']
+         'green_target', 'density', 'phase1']
+# community uses: built only when the brief asks for them (absent or null: none)
+OPTIONAL = {'school_gfa': 0, 'school_yard': 0, 'school_sports': 0, 'pool_gfa': 0, 'pool_plot': 0,
+            'daycare_gfa': 0, 'daycares': 0, 'food_market': ''}
 DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.0, 'keep_buffer': 4.0,
             'tree_step': 12.0, 'tree_off': 4.0, 'square': 30.0, 'route_bonus_m': 40.0,
             'centre_bonus_m': 150.0, 'green_minus_m': 15.0, 'epsg': None,
             'setback_h_factor': 0.0, 'setback_min_m': 0.0}
 _values, SOURCE = read_config(ARGS.config, BRIEF)
-CONFIG = {**DEFAULTS, **_values}
+CONFIG = {**OPTIONAL, **DEFAULTS, **_values}
 _c = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry']).centroid
 EPSG = CONFIG['epsg'] or utm_epsg(_c.x, _c.y)
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
@@ -68,6 +73,11 @@ def load(p):
     return json.load(open(p, encoding='utf8'))['features']
 
 
+def load_if(p):
+    """A layer another skill or the site may not have: empty when the file is missing."""
+    return load(p) if os.path.exists(p) else []
+
+
 def m(g):
     return transform(TO_M, shape(g))
 
@@ -78,11 +88,14 @@ nbh = [(f['properties'], m(f['geometry'])) for f in SP if f['properties']['kind'
 centres = [(f['properties'], m(f['geometry'])) for f in SP if f['properties']['kind'] == 'centre']
 greens = [(f['properties'], m(f['geometry'])) for f in SP if f['properties']['kind'] == 'green']
 routes = [(f['properties'], m(f['geometry'])) for f in SP if f['properties']['kind'] == 'route']
-main_centre = [g for p, g in centres if p.get('level') == 'main'][0]
+_main = [g for p, g in centres if p.get('level') == 'main']
+if not _main:
+    sys.exit('no main centre in structure-plan.geojson: a feature with kind "centre" and level "main"')
+main_centre = _main[0]
 green_u = unary_union([g for _, g in greens])
-water = [m(f['geometry']) for f in load(os.path.join(SITE, 'water.geojson')) if f['geometry']['type'] in ('Polygon', 'MultiPolygon')]
+water = [m(f['geometry']) for f in load_if(os.path.join(SITE, 'water.geojson')) if f['geometry']['type'] in ('Polygon', 'MultiPolygon')]
 water = [w.intersection(site) for w in water if w.intersects(site)]
-noise = load(RUN + 'climate/noise.geojson')
+noise = load_if(RUN + 'climate/noise.geojson')   # without climate: no loud or quiet land
 loud = unary_union([m(f['geometry']) for f in noise if f['properties']['period'] == 'day' and f['properties']['db_min'] >= 65])
 quiet = unary_union([m(f['geometry']) for f in noise if f['properties']['period'] == 'day' and f['properties']['db_max'] <= 55])
 
@@ -206,7 +219,7 @@ def plot_of(c): return unary_union([c, *[b['geom'] for b in ring_of(c)]])
 ok = [c for c in courts if ring_of(c) and all(b['t'] != 'commercial' for b in ring_of(c))
       and plot_of(c).area >= need + 1000 and not plot_of(c).intersects(loud)]
 cand = [c for c in ok if c.centroid.within(quiet)] or ok
-school_court = min(cand, key=lambda c: c.distance(main_centre)) if cand else None
+school_court = min(cand, key=lambda c: c.distance(main_centre)) if cand and CONFIG['school_gfa'] > 0 else None
 if school_court is not None:
     courts.remove(school_court)
     ring = sorted(ring_of(school_court), key=lambda b: b['geom'].distance(main_centre))
@@ -238,8 +251,8 @@ if school_court is not None:
     sports = rest.difference(yard)
     community += [('square', 'schoolyard', yard), ('park', 'school sports', sports)]
 # pool: the next courtyard block nearest the centre, its ring buildings replaced by one hall
-cand = [c for c in courts if c.area >= CONFIG['pool_plot'] * 0.75]
-pool_court = min(cand, key=lambda c: c.distance(main_centre)) if cand else None
+cand = [c for c in courts if c.area >= max(CONFIG['pool_plot'], 1) * 0.75]
+pool_court = min(cand, key=lambda c: c.distance(main_centre)) if cand and CONFIG['pool_gfa'] > 0 else None
 pool = None
 if pool_court is not None:
     courts.remove(pool_court)
@@ -302,7 +315,7 @@ f_res = solve(home_grp, res_gfa, res_target)
 # daycares: housing building nearest the centre, then those furthest from each other (in quiet-ish, not loud land)
 dc_cand = [b for b in home_grp if not b['geom'].intersects(loud)]
 day = []
-if dc_cand:
+if dc_cand and CONFIG['daycares'] > 0:
     day.append(min(dc_cand, key=lambda b: b['geom'].distance(main_centre)))
     while len(day) < CONFIG['daycares']:
         day.append(max([b for b in dc_cand if b not in day], key=lambda b: min(b['geom'].distance(d['geom']) for d in day)))
@@ -426,15 +439,15 @@ spt = sum(g.area for u, t, g in community if t == 'school sports')
 green_land = green_u.intersection(site).area + sum(g.difference(s).area for (_, g), s in zip(centres, sq_all))
 total = sum(gfa(b) for b in new)
 rows = [
-    ('homes (count)', CONFIG['homes_target'], round(homes), '%s; design homes = housing floor area / %d m2 per home (%s)' % (SOURCE['homes_target'], CONFIG['m2_per_home'], SOURCE['m2_per_home'])),
-    ('housing floor area', round(res_target), round(H_m2), '%d homes x %d m2 (%s)' % (CONFIG['homes_target'], CONFIG['m2_per_home'], SOURCE['m2_per_home'])),
-    ('commerce floor area', round(CONFIG['commerce_target']), round(C_m2), SOURCE['commerce_target'] + '; halls, buildings in the 65 dB(A) strip, ground floors of mixed blocks'),
-    ('daycare floor area', round(CONFIG['daycare_gfa'] * CONFIG['daycares']), round(dcm), '%s, %d x %d m2' % (SOURCE['daycare_gfa'], CONFIG['daycares'], CONFIG['daycare_gfa'])),
-    ('primary school floor area', round(CONFIG['school_gfa']), round(school), SOURCE['school_gfa']),
-    ('schoolyard (land)', round(CONFIG['school_yard']), round(yard), SOURCE['school_yard']),
-    ('school sports (land)', round(CONFIG['school_sports']), round(spt), SOURCE['school_sports']),
-    ('indoor pool floor area', round(CONFIG['pool_gfa']), round(poolg), SOURCE['pool_gfa']),
-    ('public green (land)', round(CONFIG['green_target']), round(green_land), SOURCE['green_target'] + '; structure plan greens inside the site plus centre grounds, courtyards not counted'),
+    ('homes (count)', CONFIG['homes_target'], round(homes), '%s; design homes = housing floor area / %d m2 per home (%s)' % (SOURCE.get('homes_target', 'not in the brief'), CONFIG['m2_per_home'], SOURCE.get('m2_per_home', 'not in the brief'))),
+    ('housing floor area', round(res_target), round(H_m2), '%d homes x %d m2 (%s)' % (CONFIG['homes_target'], CONFIG['m2_per_home'], SOURCE.get('m2_per_home', 'not in the brief'))),
+    ('commerce floor area', round(CONFIG['commerce_target']), round(C_m2), SOURCE.get('commerce_target', 'not in the brief') + '; halls, buildings in the 65 dB(A) strip, ground floors of mixed blocks'),
+    ('daycare floor area', round(CONFIG['daycare_gfa'] * CONFIG['daycares']), round(dcm), '%s, %d x %d m2' % (SOURCE.get('daycare_gfa', 'not in the brief'), CONFIG['daycares'], CONFIG['daycare_gfa'])),
+    ('primary school floor area', round(CONFIG['school_gfa']), round(school), SOURCE.get('school_gfa', 'not in the brief')),
+    ('schoolyard (land)', round(CONFIG['school_yard']), round(yard), SOURCE.get('school_yard', 'not in the brief')),
+    ('school sports (land)', round(CONFIG['school_sports']), round(spt), SOURCE.get('school_sports', 'not in the brief')),
+    ('indoor pool floor area', round(CONFIG['pool_gfa']), round(poolg), SOURCE.get('pool_gfa', 'not in the brief')),
+    ('public green (land)', round(CONFIG['green_target']), round(green_land), SOURCE.get('green_target', 'not in the brief') + '; structure plan greens inside the site plus centre grounds, courtyards not counted'),
 ]
 with open(OUT + 'areas.csv', 'w', newline='', encoding='utf8') as fh:
     w = csv.writer(fh); w.writerow(['use', 'programme_m2', 'design_m2', 'difference_m2', 'source'])

@@ -76,6 +76,11 @@ def describe(helper):
         return ""
 
 
+def labelled(description, label):
+    """The lead names each helper `<skill> <label>` or `<skill> <label> second`; the label is a whole word."""
+    return label in description.split()[1:]
+
+
 def find_session(projects, name):
     label = name.split("_", 1)[-1]
     best, best_n = None, -1
@@ -85,7 +90,7 @@ def find_session(projects, name):
                 continue
         except OSError:
             continue
-        n = sum(label in describe(h) for h in helpers(f))
+        n = sum(labelled(describe(h), label) for h in helpers(f))
         if n > best_n or (n == best_n and f.stat().st_mtime > best.stat().st_mtime):
             best, best_n = f, n
     return best
@@ -113,7 +118,9 @@ def main(argv=None):
         sys.exit(f"no transcript in {projects} mentions {version.name}")
     rows, total = [], dict.fromkeys(KEYS, 0)
     total.update(model="", steps=0, usd=0.0)
-    for h in helpers(lead):
+    label = version.name.split("_", 1)[-1]
+    mine = [h for h in helpers(lead) if labelled(describe(h), label)] or helpers(lead)
+    for h in mine:
         words = describe(h).split()
         t = tally(h)
         run = "2" if any(w in ("second", "rerun") for w in words) else "1"

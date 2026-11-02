@@ -66,3 +66,51 @@ def test_massing_missing_key_stops(tmp_path):
     out = massing_run(tmp_path, drop="homes_target")
     r = run(MASSING / "massing.py", "--proposal", out, "--site", SITE, "--config", out / "massing/config.json", check=False)
     assert r.returncode != 0 and "homes_target" in r.stderr
+
+
+def run_massing(out):
+    return run(MASSING / "massing.py", "--proposal", out, "--site", out.parent / "site", "--config", out / "massing/config.json", check=False)
+
+
+def with_site(out, drop=()):
+    site = out.parent / "site"
+    shutil.copytree(SITE, site, ignore=shutil.ignore_patterns(*drop))
+    return out
+
+
+@needs_run3
+def test_massing_example_config_stops(tmp_path):
+    out = with_site(massing_run(tmp_path))
+    shutil.copy(MASSING / "config.example.json", out / "massing/config.json")
+    r = run_massing(out)
+    assert r.returncode != 0 and "height_limit_m" in r.stderr and "homes_target" in r.stderr
+
+
+@needs_run3
+def test_massing_without_school_pool_daycare(tmp_path):
+    out = with_site(massing_run(tmp_path))
+    cfg = json.loads((out / "massing/config.json").read_text(encoding="utf-8"))
+    for k in ["school_gfa", "school_yard", "school_sports", "pool_gfa", "pool_plot", "daycare_gfa", "daycares", "daycare_play"]:
+        cfg.pop(k)
+    (out / "massing/config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    r = run_massing(out)
+    assert r.returncode == 0, r.stderr[-1500:]
+    uses = {b["use"] for b in buildings(out / "massing/massing.geojson")}
+    assert not uses & {"school", "indoor pool"} and not any("daycare" in u for u in uses)
+
+
+@needs_run3
+def test_massing_without_climate_and_water(tmp_path):
+    out = with_site(massing_run(tmp_path), drop=("water.geojson",))
+    shutil.rmtree(out / "climate")
+    r = run_massing(out)
+    assert r.returncode == 0, r.stderr[-1500:]
+
+
+@needs_run3
+def test_massing_no_main_centre_stops(tmp_path):
+    out = with_site(massing_run(tmp_path))
+    sp = out / "structure-plan/structure-plan.geojson"
+    sp.write_text(sp.read_text(encoding="utf-8").replace('"level": "main"', '"level": "local"'), encoding="utf-8")
+    r = run_massing(out)
+    assert r.returncode != 0 and "main centre" in r.stderr

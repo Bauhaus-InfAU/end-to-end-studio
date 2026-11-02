@@ -40,3 +40,8 @@ def test_no_cycles():
 
     for s in graph:
         visit(s, [])
+
+
+def test_lead_starts_project_inputs_as_helpers():
+    lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
+    assert "each as a `studio:studio-helper` too" in lead

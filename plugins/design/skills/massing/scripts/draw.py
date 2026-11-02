@@ -19,6 +19,9 @@ def utm_epsg(lon, lat):
 def read_config(path, required=()):
     """config.json: {key: {"value": ..., "source": ...}} or {key: value}. Stops on a missing key."""
     raw = json.load(open(path, encoding='utf8'))
+    # a value left empty (null) or a source still in <angle brackets> counts as not filled in
+    raw = {k: v for k, v in raw.items() if not (isinstance(v, dict) and (v.get('value') is None
+           or str(v.get('source', '')).startswith('<')))}
     missing = [k for k in required if k not in raw]
     if missing:
         sys.exit('missing in config.json: ' + ', '.join(missing) + ' (from the brief, with its page)')
