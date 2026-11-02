@@ -24,6 +24,7 @@ FALLBACK_STYLE = {
     "outline": 1.3, "line": 0.8, "heavy": 3.2, "box": 0.6, "thin": 0.7, "hatch": 0.5, "rule": 0.5,
     "sign": 1.5, "sign_old": 0.9, "ghost": 0.9, "leader": 0.6, "tee": 2.5, "halo": 3,
     "dash": "5 3", "ghost_dash": "3 2", "tint_opacity": 0.2, "solid_opacity": 0.85,
+    "min_width": 3,  # px: the narrowest a strip is drawn, so it never vanishes small
     # text sizes, px
     "label_size": 11, "small_size": 9, "title_size": 16, "title_weight": "bold",
     "caption_size": 11.5, "footer_size": 8.5, "footer_style": "italic",
@@ -63,8 +64,27 @@ def load_layer(path, where, project):
     return unary_union(gs) if gs else None
 
 
-def parts(g):
-    return list(g.geoms) if hasattr(g, "geoms") else [g]
+def parts(g):  # every simple part: multi-geometries and collections opened all the way down
+    if g is None or g.is_empty:
+        return []
+    return [q for p in g.geoms for q in parts(p)] if hasattr(g, "geoms") else [g]
+
+
+def polygons(g):  # every polygon of g, each with its holes; none dropped for being small
+    return [p for p in parts(g) if p.geom_type == "Polygon"]
+
+
+def rings_of(g):  # the outline and holes of every polygon
+    return [r for p in polygons(g) for r in (p.exterior, *p.interiors)]
+
+
+def areal(g, what):
+    """The polygons of g as one geometry (a Polygon or MultiPolygon, holes kept), saying what isn't an area."""
+    ps = polygons(g)
+    other = len(parts(g)) - len(ps)
+    if other:
+        print(f"{what}: {other} part(s) that are not areas (lines, points) left out of it", file=sys.stderr)
+    return None if not ps else ps[0] if len(ps) == 1 else shapely.MultiPolygon(ps)
 
 
 # ---------- info ----------
@@ -72,11 +92,16 @@ def parts(g):
 def info(args):
     site_path = args[args.index("--site") + 1]
     project, _ = make_projection(site_path)
-    site = project(unary_union([shape(f["geometry"]) for f in read_features(site_path)]))
+    site = areal(project(unary_union([shape(f["geometry"]) for f in read_features(site_path)])), "site")
     x0, y0, x1, y1 = site.bounds
-    print(f"site: {site.area / 1e4:.1f} ha, x {x0:.0f}..{x1:.0f} m, y {y0:.0f}..{y1:.0f} m (0,0 = centre)")
-    outline = max(parts(site.simplify(30)), key=lambda p: p.area)
-    print("outline, simplified 30 m:", " ".join(f"{x:.0f},{y:.0f}" for x, y in outline.exterior.coords))
+    ps = polygons(site)
+    nh = sum(len(p.interiors) for p in ps)
+    print(f"site: {site.area / 1e4:.2f} ha, {len(ps)} polygon{'s' * (len(ps) != 1)}, {nh} hole{'s' * (nh != 1)}, "
+          f"x {x0:.0f}..{x1:.0f} m, y {y0:.0f}..{y1:.0f} m (0,0 = centre)")
+    for i, p in enumerate((q.simplify(30) if q.simplify(30).geom_type == "Polygon" and not q.simplify(30).is_empty else q for q in ps), 1):  # every part, smallest included
+        print(f"outline {i}, simplified 30 m:", " ".join(f"{x:.0f},{y:.0f}" for x, y in p.exterior.coords))
+        for h in p.interiors:
+            print(f"  hole:", " ".join(f"{x:.0f},{y:.0f}" for x, y in h.coords))
     for spec in [a for i, a in enumerate(args) if i and args[i - 1] == "--layer"]:
         name, path = spec.split("=", 1)
         near = site.buffer(100)
@@ -146,11 +171,15 @@ def element_geom(e, base, project):
     k = e["kind"]
     if e.get("geojson"):
         g = load_layer(e["geojson"], e.get("where"), project)
-        return g.buffer(e["width"] / 2, cap_style=2) if k == "strip" and g is not None else g
+        if g is not None and k == "strip":
+            e["axis"] = g
+            return g.buffer(e.get("width", 30) / 2, cap_style=2)
+        return areal(g, f"{k} from {e['geojson']}") if g is not None and k in ("area", "volume") else g
     if k in ("area", "volume"):
         return Polygon(e["coords"], e.get("holes"))
     if k == "strip":
-        return LineString(e["coords"]).buffer(e.get("width", 30) / 2, cap_style=2)
+        e["axis"] = LineString(e["coords"])
+        return e["axis"].buffer(e.get("width", 30) / 2, cap_style=2)
     if k == "point":
         return Point(e["at"]).buffer(e.get("radius", 40))
     if k in ("arrow", "flow"):
@@ -207,7 +236,7 @@ def esc(t):
 
 
 def frame_defs(v, site, n, W, DH):  # per frame, as frames can differ in view
-    clip = f'<clipPath id="site{n}"><polygon points="{v.pts(site.exterior.coords)}"/></clipPath>' if site is not None else ""
+    clip = f'<clipPath id="site{n}"><path d="{rings_d(v, site)}" clip-rule="evenodd"/></clipPath>' if site is not None else ""
     return f'<defs>{clip}<clipPath id="frame{n}"><rect width="{W}" height="{DH}"/></clipPath></defs>'
 
 
@@ -223,7 +252,7 @@ def defs(st):
 
 def box(v, st, g, h, fill, z0=0):
     H = h if callable(h) else (lambda p: h)
-    rings = [list(r.coords)[:-1] for r in [g.exterior, *g.interiors]]
+    rings = [list(r.coords)[:-1] for r in rings_of(g)]
     attrs = f'fill="{fill}" stroke="{st["ink"]}" stroke-width="{st["box"]}" stroke-linejoin="round"'
     top = lambda zf: "".join("M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in (v(p, zf(p)) for p in q)) + "Z" for q in rings)
     if v.plan:
@@ -256,7 +285,7 @@ def ghost(v, e, attrs):
     H = H if callable(H) else (lambda p, h=H: h)
     z0 = e.get("base", 0) + e.get("lift", 0)
     out = ""
-    for r in [e["geom"].exterior, *e["geom"].interiors]:
+    for r in rings_of(e["geom"]):
         q = list(r.coords)
         for zf in (lambda p: z0, H):
             out += f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in (v(p, zf(p)) for p in q))}" {attrs}/>'
@@ -281,20 +310,23 @@ def guides(v, st, e):
     if not e.get("lift"):
         return ""
     z0 = e.get("base", 0)
-    q = list(e["geom"].exterior.coords)[:-1]
-    pick = q if len(q) <= 8 else q[::max(1, len(q) // 8)]
+    pick = [p for pg in polygons(e["geom"]) for q in [list(pg.exterior.coords)[:-1]] for p in (q if len(q) <= 8 else q[::max(1, len(q) // 8)])]
     return "".join(f'<line x1="{v(p, z0)[0]:.1f}" y1="{v(p, z0)[1]:.1f}" x2="{v(p, z0 + e["lift"])[0]:.1f}" y2="{v(p, z0 + e["lift"])[1]:.1f}" '
                    f'stroke="{st["ink"]}" stroke-width="{st["thin"]}" stroke-dasharray="{st["ghost_dash"]}"/>' for p in pick)
 
 
+def rings_d(v, g, z=0, to=None):  # an SVG path of every polygon's outline and holes; `to` moves screen points (an inset)
+    to = to or (lambda p: p)
+    return "".join("M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in (to(v(c, z)) for c in r.coords)) + "Z" for r in rings_of(g))
+
+
 def poly(v, g, attrs, z=0):
-    ring = lambda r: "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in (v(c, z) for c in r.coords)) + "Z"
-    return "".join(f'<path d="{"".join(ring(r) for r in [p.exterior, *p.interiors])}" fill-rule="evenodd" {attrs}/>'
-                   for p in parts(g) if p.geom_type == "Polygon")
+    return "".join(f'<path d="{rings_d(v, p, z)}" fill-rule="evenodd" {attrs}/>' for p in polygons(g))
 
 
-def line(v, g, attrs, z=0):
-    return "".join(f'<polyline points="{v.pts(l.coords, z)}" fill="none" {attrs}/>' for l in parts(g) if l.geom_type == "LineString")
+def line(v, g, attrs, z=0):  # lines, and the outlines of a layer's polygons
+    ls = [l for l in parts(g) if l.geom_type in ("LineString", "LinearRing")] + rings_of(g)
+    return "".join(f'<polyline points="{v.pts(l.coords, z)}" fill="none" {attrs}/>' for l in ls)
 
 
 def place_labels(st, reqs, obstacles, W, DH, n):
@@ -356,7 +388,11 @@ def render(spec_path, out_dir):
     project, site = (lambda g: g), None
     if sp.get("site"):
         project, site_ll = make_projection(sp["site"])
-        site = max(parts(project(site_ll).simplify(sp.get("simplify", 30))), key=lambda p: p.area)
+        whole = areal(project(site_ll), "site")
+        site = areal(whole.simplify(sp.get("simplify", 30)), "site") if whole is not None else None
+        if site is None or len(polygons(site)) != len(polygons(whole)) or len(rings_of(site)) != len(rings_of(whole)):
+            print(f"site: simplify {sp.get('simplify', 30)} m loses polygons or holes; drawn unsimplified, lower `simplify`", file=sys.stderr)
+            site = whole
     base = {}
     for b in sp.get("base", []):
         g = load_layer(b["geojson"], b.get("where"), project)
@@ -382,7 +418,7 @@ def render(spec_path, out_dir):
                     els.append(e)
 
     # a row stops where an earlier move cleared the ground
-    clearing = lambda e: e["geom"] if e["geom"].geom_type != "LineString" else e["geom"].buffer(e.get("width", 20) / 2)
+    clearing = lambda e: e["geom"] if "Line" not in e["geom"].geom_type else e["geom"].buffer(e.get("width", 20) / 2)
     els = [e for e in els if not (e.get("along") and any(c.get("clears") and c["frame"] < e["frame"] and
                                                           e["geom"].intersects(clearing(c)) for c in els))]
 
@@ -425,9 +461,9 @@ def render(spec_path, out_dir):
     top = top_of_set(els)
     if site is not None:
         x0, y0, x1, y1 = site.bounds
-        extent = list(site.buffer(0.02 * max(x1 - x0, y1 - y0)).exterior.coords)
+        extent = [c for p in polygons(site.buffer(0.02 * max(x1 - x0, y1 - y0))) for c in p.exterior.coords]
     else:
-        extent = [c[:2] for e in els for c in (e["geom"].envelope.exterior.coords if e["geom"].area else e["geom"].coords)]
+        extent = [c for e in els for b in [e["geom"].bounds] for c in ((b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3]))]
     DH = min(DH, math.ceil(View(sp.get("view", {}), W, DH, extent, top).content_h))  # size is the most; no empty bands
     ts, cs, fz = st["title_size"], st["caption_size"], st["footer_size"]
     y1 = DH + 1.4 * ts
@@ -452,18 +488,35 @@ def render(spec_path, out_dir):
         obstacles = [(rect(W - 52, 14, W - 4, 72), 1)] if site is not None else []
         if site is not None:
             ground.append(poly(v, site, f'fill="{st["paper"]}" stroke="{K}" stroke-width="{st["outline"]}"'))
-            obstacles.append((sl(site.exterior.coords).buffer(1.5), 0.3))
+            for r in rings_of(site):
+                obstacles.append((sl(r.coords).buffer(1.5), 0.3))
         clip = f' clip-path="url(#site{n})"' if site is not None else ""
-        for e in live:
-            if e["kind"] in ("area", "strip", "point") and e.get("fill") != "none":
-                solid = e.get("fill", "tint") == "solid" or e["kind"] == "point"
-                if solid:
-                    obstacles.append((Polygon([v(c) for c in e["geom"].exterior.coords]), 1))
-                if hot(e):
-                    attrs = f'fill="{A}" fill-opacity="{st["solid_opacity"] if solid else st["tint_opacity"]}" stroke="none"'
-                else:
-                    attrs = f'fill="{K if e["kind"] == "point" else st["paper"]}" stroke="{K}" stroke-width="{st["thin"]}"' if solid else 'fill="url(#hatch)" stroke="none"'
-                ground.append(f'<g{clip}>{poly(v, e["geom"], attrs, e.get("lift", 0))}</g>' + guides(v, st, e))
+        surfaces = [e for e in live if e["kind"] in ("area", "strip", "point") and e.get("fill") != "none"]
+        is_solid = lambda e: e.get("fill", "tint") == "solid" or e["kind"] == "point"
+        drawn = {}
+        for e in surfaces:  # a strip too narrow to see at this size is drawn at the standard's narrowest width
+            drawn[id(e)] = e["geom"]
+            if e.get("axis") is not None and e.get("width", 30) * v.s < st["min_width"]:
+                drawn[id(e)] = e["axis"].buffer(st["min_width"] / v.s / 2, cap_style=2)
+                if new(e):
+                    print(f"frame {n}: '{e.get('label') or e['kind']}' is {e.get('width', 30) * v.s:.1f} px wide here, drawn at min_width "
+                          f"({st['min_width']} px); fewer, wider strips read better small", file=sys.stderr)
+        for e in sorted(surfaces, key=lambda e: not is_solid(e)):  # solids first: a pale strip is never beneath one
+            solid = is_solid(e)
+            # an opening, or a pale strip over a solid, cuts its gap through the surfaces laid before it: the void reads as paper
+            cut = [drawn[id(c)] for c in surfaces if c is not e and c["frame"] >= e["frame"] and
+                   (c.get("clears") or (solid and c["kind"] == "strip" and not is_solid(c)))]
+            g = drawn[id(e)].difference(unary_union(cut)) if cut else drawn[id(e)]
+            if solid:
+                for p in polygons(g):
+                    obstacles.append((Polygon([v(c) for c in p.exterior.coords]), 1))
+            if hot(e):  # a new tint keeps a thin edge, so a narrow one still reads small
+                edge = "none" if solid else A
+                attrs = f'fill="{A}" fill-opacity="{st["solid_opacity"] if solid else st["tint_opacity"]}" stroke="{edge}" stroke-width="{st["thin"]}"'
+            else:
+                edge = f'stroke="{K}" stroke-width="{st["hatch"]}"' if e["kind"] == "strip" else 'stroke="none"'
+                attrs = f'fill="{K if e["kind"] == "point" else st["paper"]}" stroke="{K}" stroke-width="{st["thin"]}"' if solid else f'fill="url(#hatch)" {edge}'
+            ground.append(f'<g{clip}>{poly(v, g, attrs, e.get("lift", 0))}</g>' + guides(v, st, e))
         for name, b in base.items():
             hl = name in fr.get("highlight", [])
             w = st["heavy"] if b.get("weight") == "heavy" else st["line"] * 1.6
@@ -471,9 +524,8 @@ def render(spec_path, out_dir):
             if b.get("only_in") and n not in b["only_in"]:
                 continue
             ground.append(line(v, b["shown"], f'stroke="{A if hl else K}" stroke-width="{w * (1.15 if hl else 0.65)}"{dash}'))
-            for l in parts(b["shown"]):
-                if l.geom_type == "LineString":
-                    obstacles.append((sl(l.coords).buffer(w / 2 + 2), 1))
+            for l in [l for l in parts(b["shown"]) if l.geom_type == "LineString"] + rings_of(b["shown"]):
+                obstacles.append((sl(l.coords).buffer(w / 2 + 2), 1))
             if hl and b.get("label"):
                 c = b["shown"].interpolate(0.5, normalized=True) if b["shown"].geom_type == "LineString" else b["shown"].representative_point()
                 labels.append((v((c.x, c.y)), b["label"], A))
@@ -484,7 +536,6 @@ def render(spec_path, out_dir):
         marked = unary_union([e["geom"] for e in live if new(e) and e.get("marks")] or [Polygon()])
         for vol in [f for f in field if not gone(f, n)] + [e for e in live if e["kind"] == "volume"]:
             fill = A if hot(vol) or marked.contains(vol["geom"].centroid) else st["paper"]
-            c = vol["geom"].centroid
             z0 = vol.get("base", 0) + vol.get("lift", 0)
             cut_fill = fill if fill != st["paper"] else K  # what the cut passes through is solid: ink, or the accent if new
             if v.cut_z is not None:  # floor plan: above the cut dashed, cut solid, below outlined
@@ -499,18 +550,20 @@ def render(spec_path, out_dir):
                         vols.append((v.depth((part.centroid.x, part.centroid.y)) - z0 * 10, box(v, st, part, top_of(vol), fill, z0)))
                 vols.append((-1e8, section_faces(v, st, vol, f'fill="{cut_fill}" stroke="{K}" stroke-width="{st["box"]}"')))
             else:
-                vols.append((v.depth((c.x, c.y)) - z0 * 10, box(v, st, vol["geom"], top_of(vol), fill, z0)))
+                for p in polygons(vol["geom"]):  # each part by its own depth, so a near one is drawn over a far one
+                    vols.append((v.depth((p.centroid.x, p.centroid.y)) - z0 * 10, box(v, st, p, top_of(vol), fill, z0)))
             ground.append(guides(v, st, vol))
-            q = vol["geom"].exterior.coords
-            obstacles.append((shapely.MultiPoint([v(p, z) for p in q for z in (z0, vol.get("height", 10) + vol.get("lift", 0))]).convex_hull, 1))
+            for p in polygons(vol["geom"]):
+                obstacles.append((shapely.MultiPoint([v(q, z) for q in p.exterior.coords for z in (z0, vol.get("height", 10) + vol.get("lift", 0))]).convex_hull, 1))
         for e in live:
             col = A if hot(e) else K
             if e["kind"] in ("arrow", "flow"):
-                coords = list(e["geom"].coords)
+                coords = [list(l.coords) for l in parts(e["geom"]) if l.geom_type == "LineString"]
+                coords, more = coords[0], coords[1:]
                 ends = e.get("ends", "end")
                 mid = "tee" if ends == "stop" else ("ahA" if new(e) else "ahK")
                 mk = f' marker-end="url(#{mid})"' + (f' marker-start="url(#{mid})"' if ends == "both" else "")
-                lines = [coords]
+                lines = [coords] + more
                 if e["kind"] == "flow":
                     (ax, ay), (bx, by) = coords[0][:2], coords[-1][:2]
                     L = math.hypot(bx - ax, by - ay) or 1
@@ -538,7 +591,7 @@ def render(spec_path, out_dir):
             if e.get("label") and new(e) or e["kind"] == "label" and new(e):
                 at = e.get("label_at") or e.get("at") or (lambda c: (c.x, c.y))(e["geom"].representative_point())
                 z = e.get("label_z", (e.get("height", 10) if e["kind"] == "volume" else e.get("z", 0)) + e.get("lift", 0))
-                if e["kind"] in ("arrow", "flow") and len(e["coords"][0]) > 2 and not e.get("label_at"):  # a rising arrow: label its middle
+                if e["kind"] in ("arrow", "flow") and e.get("coords") and len(e["coords"][0]) > 2 and not e.get("label_at"):  # a rising arrow: label its middle
                     mid = e["coords"][len(e["coords"]) // 2] if len(e["coords"]) > 2 else [(a + b) / 2 for a, b in zip(e["coords"][0], e["coords"][-1])]
                     at, z = mid[:2], e.get("label_z", mid[2])
                 elabels.append((v(at, z), e.get("label") or e.get("text"), col if e["kind"] != "label" else e.get("color") == "accent" and A or K))
@@ -560,8 +613,9 @@ def render(spec_path, out_dir):
         lv = View(dict(sp.get("view", {}), exaggerate=0), lw, lh, extent, 0)
         x0, y0, x1, y1 = v.focus
         tr = lambda pts: " ".join(f"{W - lw - 6 + x:.1f},{DH - lh - 6 + y:.1f}" for x, y in (lv(c) for c in pts))
+        inset = lambda p: (W - lw - 6 + p[0], DH - lh - 6 + p[1])
         return (f'<rect x="{W - lw - 6}" y="{DH - lh - 6}" width="{lw}" height="{lh}" fill="{st["paper"]}" stroke="{st["ink"]}" stroke-width="{st["rule"]}"/>'
-                f'<polygon points="{tr(site.exterior.coords)}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>'
+                f'<path d="{rings_d(lv, site, to=inset)}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}" data-locator="site"/>'
                 f'<polygon points="{tr([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])}" fill="none" stroke="{st["accent"]}" stroke-width="{st["sign"]}"/>')
 
     def footer(v, n):
@@ -621,6 +675,8 @@ def render(spec_path, out_dir):
         v, inner = body(n, fr)
         first_v = first_v or v
         name = fr.get("file") or f"{n:02d}"
+        if Path(name).name != name or name.startswith("."):  # never written outside the output folder
+            sys.exit(f"frame {n}: file '{name}' must be a plain name, not a path")
         svg = out_dir / f"{name}.svg"
         svg.write_text(doc(W, H, v, inner), encoding="utf-8")
         made.append(svg)
