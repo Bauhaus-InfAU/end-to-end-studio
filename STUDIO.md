@@ -77,7 +77,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | design | `massing` | Buildings, streets and open spaces on the structure plan | `TukaElGhazaly` |
 | | `phasing` | The construction phases and what comes first | open |
 | | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |
-| | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | open |
+| | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | `basak-unver` |
 | drawings | `drawing-graphics` | The studio's drawing standard, made from the reference images | open |
 | | `figure-ground` | The figure-ground plan of the district in its city | open |
 | | `plans` | Every plan the brief asks for, at its scales: the overall plan and the detail areas | open |
