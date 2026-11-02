@@ -114,6 +114,8 @@ def main():
         assumed = []
         if "lme_day" in src:
             lme = {"day": src["lme_day"], "night": src.get("lme_night", src["lme_day"] - 8)}
+            if "lme_night" not in src:
+                assumed.append("night level 8 dB below the day level")
         elif "trains_per_day" in src or "trains_day" in src:
             lme, assumed = rail_emission(src)
             n = src.get("trains_per_day", src.get("trains_day", 0) + src.get("trains_night", 0))
@@ -122,6 +124,7 @@ def main():
         else:
             md, mn, pd, pn = CLASSES[src.get("road_class", "local")]
             v = float(src.get("speed_kmh", 50))
+            assumed += [t for k, t in (("road_class", "road class local"), ("speed_kmh", "speed 50 km/h")) if k not in src]
             lme = {"day": emission(md * src["aadt"], pd, v), "night": emission(mn * src["aadt"], pn, v)}
         used.append(dict(name=src["name"], lme_day=round(lme["day"], 1), lme_night=round(lme["night"], 1),
                          **{k: src[k] for k in src if k.endswith("source") or k in ("aadt", "speed_kmh", "road_class", "trains_per_day", "trains_day", "trains_night")},
@@ -180,7 +183,7 @@ def main():
                  if rail["included"] else rail["label"])
     summary = dict(sources_used=used, notes=notes, rail=rail, receiver_height_m=hr, share_of_site_pct=share,
                    buildings=dict(used=len(G), heights_defaulted=n_def),
-                   sources=[f'{u["name"]}: ' + ", ".join(f"{k} {v}" for k, v in u.items() if k.endswith("source")) for u in used] + [rail_line] +
+                   sources=[f'{u["name"]}: ' + ", ".join(f"{k} {v}" for k, v in u.items() if k.endswith("source") or k == "assumed") for u in used] + [rail_line] +
                    [f"Method: RLS-90 partial sources, screening by the existing buildings (single diffraction over the highest roof on each path, heights on a {a.raster:g} m raster), "
                     "flat ground, no reflections; an estimate, not a noise study",
                     f"Buildings: site data, {n_def} of {len(G)} heights are defaults"])
