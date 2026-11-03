@@ -191,7 +191,7 @@ class Map:
         fy = self.oy + max(self.mh, 150) + 6
         o.append(self.text(self.ox, fy, "Sources", weight="bold"))
         src = sources + [f"Base map: the project's site folder (see its SOURCES.md). Projection {self.S.crs.name}."]
-        for ln in textwrap.wrap("  ·  ".join(src), int((self.W - 2 * self.PAD) / (st["text"] * 0.5)))[:4]:
+        for ln in textwrap.wrap("  ·  ".join(src), int((self.W - 2 * self.PAD) / (st["text"] * 0.5)))[:6]:
             fy += st["text"] * 1.3
             o.append(self.text(self.ox, fy, ln, st["text"] * 0.9))
         o.append("</svg>")
@@ -321,6 +321,11 @@ def main():
             sub = "Estimated level at about 4 m above ground, existing buildings screening"
             if r.get("included") and "assumed" in r.get("label", "").lower():
                 sub += ". RAIL TRAFFIC ASSUMED, NOT FROM DATA"
+            nj = meta(out, "noise")
+            if nj.get("traffic_ranges"):
+                sub += ". At the high end of the traffic range"
+            if nj.get("speeds_assumed"):
+                sub += ". SPEEDS ASSUMED"
             m = new(f"{'Road and rail' if r.get('included') else 'Road'} noise, {period}", sub)
             m.context(buildings=False)
             cols = ramp(len(G), st)

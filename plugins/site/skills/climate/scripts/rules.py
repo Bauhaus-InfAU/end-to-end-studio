@@ -53,6 +53,17 @@ def main():
         rule("careful", "noise", f"Homes only behind a shielding edge ({th['day_homes']}-{th['day_robust']} dB(A) by day): closed side to the road, "
              "bedrooms and outdoor space on the quiet side. Offices, shops and services fit.", mid,
              f"noise.geojson, day {th['day_homes']}-{th['day_robust']} dB(A)")
+        nj = read(out / "noise.json") if (out / "noise.json").exists() else {}
+        if nj.get("traffic_ranges"):
+            low, high = nj["share_of_site_pct_low"]["day"], nj["share_of_site_pct"]["day"]
+            t1, t2 = f'>={th["day_homes"]}', f'>={th["day_robust"]}'
+            notes.append(f"Noise zones at the high end of the traffic range ({'; '.join(nj['traffic_ranges'])}). At the low end "
+                         f"{low.get(t2, '?')} % instead of {high.get(t2, '?')} % of the site is at {th['day_robust']} dB(A) or more by day, "
+                         f"{low.get(t1, '?')} % instead of {high.get(t1, '?')} % at {th['day_homes']} or more.")
+        if nj.get("speeds_assumed"):
+            notes.append(f"Speeds ASSUMED: {', '.join(nj['speeds_assumed'])}.")
+        if nj and not nj.get("rail", {}).get("included"):
+            notes.append("Railway not assessed: no train numbers. The strip along it may be louder than shown.")
         night = [(g, p) for g, p in noise if p["period"] == "night" and p["db_min"] >= th["night_homes"]]
         if night:
             notes.append(f"At night {round(100 * shapely.union_all([g for g, _ in night]).intersection(site).area / site.area)} % of the site is "
@@ -100,7 +111,12 @@ def main():
     if flows:
         key["air_flow_towards_deg"] = mean
     if day:
-        key["noise_day_pct_at_or_above"] = read(out / "noise.json")["share_of_site_pct"]["day"]
+        nj = read(out / "noise.json")
+        key["noise_day_pct_at_or_above"] = nj["share_of_site_pct"]["day"]
+        if nj.get("traffic_ranges"):
+            key["noise_day_pct_at_or_above_low"] = nj["share_of_site_pct_low"]["day"]
+            key["noise_traffic"] = f'high end of the range ({"; ".join(nj["traffic_ranges"])}); _low is the low end'
+        key["railway_noise"] = "assessed" if nj.get("rail", {}).get("included") else "not assessed: no train numbers"
     if sun:
         key.update(sun_hours_open_ground=sun["weather"]["sun_hours_open"], sun_hours_site_mean=sun["site_mean_sun_hours"],
                    radiation_site_mean_kwh_m2=sun["site_mean_radiation_kwh_m2"], noon_sun_altitude_deg=sun["noon_altitude"])
