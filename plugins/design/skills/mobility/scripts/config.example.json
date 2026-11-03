@@ -1,4 +1,7 @@
 {
+ "site": {"value": null, "source": "<brief file> p. N: only without a site folder, the site's outline as [[lon, lat], ...] traced from the brief's site plan"},
+ "places": {"value": null, "source": "<brief file> p. N: only without a structure plan, [{\"name\": ..., \"kind\": \"gateway\" or \"centre\", \"at\": [lon, lat], \"holds\": ...}]"},
+ "routes": {"value": null, "source": "<brief file> p. N: only without a structure plan, [{\"name\": ..., \"level\": \"main\" or \"local\", \"mode\": \"<words>\", \"via\": [place names or [lon, lat]]}]"},
  "hub": {"value": null, "source": "<brief file> p. N: the structure plan's centre the brief or programme asks a hub for; leave null when none asks"},
  "main_stop": {"value": null, "source": "<brief file> p. N: the structure plan's gateway or centre that is the main public-transport stop; leave null when there is none"},
  "main_stop_mode": {"value": null, "source": "<brief file> p. N: rail, bus or tram at the main stop"},
@@ -9,6 +12,6 @@
  "stops": {"value": [{"at": "<gateway or centre name>", "mode": "bus"}], "source": "<brief file> p. N, or assumption: why"},
  "garages": {"value": [{"at": "<centre or gateway name>", "what": "district garage"}], "source": "<brief file> p. N, or assumption: why"},
  "modes": {"value": {"<route name>": ["car", "bus"]}, "source": "<brief file> p. N: only where the structure plan's words are unclear"},
- "scale": {"value": null, "source": "<brief file> p. N: the site plan scale"},
+ "scale": {"value": null, "source": "<brief file> p. N: the site plan scale, as a number (3000 for 1:3,000)"},
  "labels": {"value": {"title": "Mobility plan"}, "source": "assumption: the legend in the brief's language; English when left out"}
 }
