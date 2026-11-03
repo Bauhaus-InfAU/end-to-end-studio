@@ -56,10 +56,18 @@ def test_mobility_runs_on_synthetic(massed):
     assert sizes and min(sizes) / k >= 3.2 - 1e-6, min(sizes) / k
 
 
-def test_mobility_missing_hub_stops(massed):
+def test_mobility_without_hub_runs(massed):
+    """A brief with no hub: the plan is made without one."""
     out, site_dir = massed
     cfg = {k: v for k, v in CONFIG.items() if k != "hub"}
-    r = mobility(out, site_dir, cfg, check=False)
+    assert mobility(out, site_dir, cfg).returncode == 0
+    assert not [p for p in features(out) if p["kind"] == "hub" and p.get("level") == "main"]
+
+
+def test_mobility_unknown_hub_stops(massed):
+    """A hub named in config.json but not in the structure plan stops the script with its name."""
+    out, site_dir = massed
+    r = mobility(out, site_dir, {**CONFIG, "hub": "Nowhere"}, check=False)
     assert r.returncode != 0
     assert "hub" in r.stderr
 
