@@ -145,6 +145,7 @@ def main():
     in_site = shapely.contains(S.poly, pts)
     summary = dict(
         time_zone=tz or "none found; local solar time used",
+        grid_margin_m=a.margin, grid_cell_m=a.cell,
         weather=dict(source=E["source"], place=E["place"], lat=E["lat"], lon=E["lon"], utc_offset_header=E["tz_header"], utc_offset_used=E["tz"], ghi_kwh_m2=round(E["ghi"].sum() / 1000),
                      sun_hours_open=hmax, possible_daylight_hours=int((alt > 0).sum())),
         noon_altitude={k: max(r["altitude_deg"] for r in rows if r["day"] == k) for k in DAYS},
