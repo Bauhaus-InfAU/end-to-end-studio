@@ -1,22 +1,23 @@
-"""The mobility plan of a design: routes by mode, stops, hubs and car access, the walking distance to the main stop.
+"""The mobility plan of a design: routes by mode, stops, hubs and car access, the walking distance to the main stop, else the nearest stop.
 
     python mobility.py --proposal <proposal folder> --site <site folder> --config <proposal>/mobility/config.json
                        [--style <proposal>/drawing-graphics/style.json]
 
 config.json holds the brief's values, each as {"value": ..., "source": "<brief file> p. N" or "assumption: ..."}:
-hub, main_stop, walk_limits_m, car_access and scale are required; main_stop_mode, no_car_link, bike_destinations,
+walk_limits_m, car_access and scale are required; hub, main_stop, main_stop_mode, no_car_link, bike_destinations,
 stops, garages, modes and labels are optional, and any key of DEFAULTS may be overridden. Every name is a name in
 structure-plan/structure-plan.geojson. Reads the structure plan (required), the massing, the streets skill's
 surface and centrelines when they exist, and the drawing standard. Writes mobility.geojson, stats.json, walk.json,
 assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/.
 """
+import numpy as np
 import argparse, json, math, os, re, subprocess, sys
 from xml.sax.saxutils import escape
 import networkx as nx
 import pyproj
 import shapely
 from shapely.geometry import shape, mapping, Point, box
-from shapely.ops import transform, unary_union, linemerge
+from shapely.ops import unary_union, linemerge
 from shapely.strtree import STRtree
 
 
@@ -93,7 +94,7 @@ A.add_argument('--style', help='the drawing standard\'s style.json')
 ARGS = A.parse_args()
 RUN, SITE = ARGS.proposal, ARGS.site
 OUT = os.path.join(RUN, 'mobility')
-CFG, SOURCE = read_config(ARGS.config, ['hub', 'main_stop', 'walk_limits_m', 'car_access', 'scale'])
+CFG, SOURCE = read_config(ARGS.config, ['walk_limits_m', 'car_access', 'scale'])
 D = {k: CFG.get(k, v) for k, (v, _) in DEFAULTS.items()}
 USED = set()
 LAB = {**LABELS, **(CFG.get('labels') or {})}
@@ -109,6 +110,10 @@ TITLE = max(TXT, float(S.get('title') or 0))
 
 site_ll = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry'])
 EPSG = CFG.get('epsg') or utm_epsg(site_ll.centroid.x, site_ll.centroid.y)
+def transform(f, g):   # a projection over every coordinate (shapely.ops.transform is deprecated)
+    return shapely.transform(g, lambda c: np.column_stack(f(c[:, 0], c[:, 1])))
+
+
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
 TO_LL = pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True).transform
 site = transform(TO_M, site_ll)
@@ -202,11 +207,11 @@ def add(geom, **props):
 
 
 # ---------------- routes ----------------
-hub_name, stop_name = CFG['hub'], CFG['main_stop']
-if lower(hub_name) not in CENTRES:
+hub_name, stop_name = CFG.get('hub'), CFG.get('main_stop')   # either may be left out: no hub, no main stop
+if hub_name and lower(hub_name) not in CENTRES:
     sys.exit('hub: no centre named "%s" in the structure plan (centres: %s)'
              % (hub_name, ', '.join(p.get('name') for p, g in CENTRES.values())))
-if lower(stop_name) not in GATES and lower(stop_name) not in CENTRES:
+if stop_name and lower(stop_name) not in GATES and lower(stop_name) not in CENTRES:
     sys.exit('main_stop: no gateway or centre named "%s" in the structure plan' % stop_name)
 
 dest = {lower(b.get('route')): b.get('to') for b in (CFG.get('bike_destinations') or [])}
@@ -239,8 +244,9 @@ for p, g in MASS:
                 source='massing %s street' % lvl, basis='massing')
 
 # ---------------- stops, hubs, accesses ----------------
-stop_pt = place(stop_name)
-add(stop_pt, kind='stop', name=stop_name, mode=CFG.get('main_stop_mode', 'rail'), main=True, source=SOURCE.get('main_stop', ''))
+stop_pt = place(stop_name) if stop_name else None
+if stop_pt is not None:
+    add(stop_pt, kind='stop', name=stop_name, mode=CFG.get('main_stop_mode'), main=True, source=SOURCE.get('main_stop', ''))
 bus_lines = [g for p, g in feats if p.get('kind') == 'route' and p.get('mode') == 'bus']
 for s in CFG.get('stops') or []:
     at = place(s.get('at'))
@@ -251,18 +257,22 @@ for s in CFG.get('stops') or []:
         at = near.interpolate(near.project(at))
     add(at, kind='stop', name=s.get('name') or s.get('at'), mode=s.get('mode', 'bus'), main=False, source=SOURCE.get('stops', ''))
 
-hub_p, hub_g = CENTRES[lower(hub_name)]
-USED.add('hub_words')
-hb = [g for p, g in MASS if p.get('kind') == 'building' and has_word(p.get('use'), D['hub_words'])]
-if hb:
-    b = min(hb, key=lambda g: g.distance(hub_g))
-    hub_pt, hub_on = b.representative_point(), 'on the hub building of the massing'
-else:
-    hub_pt, hub_on = place(hub_name), 'at the centre\'s middle (the massing has no hub building)'
-add(hub_pt, kind='hub', name=hub_name, level='main', function=hub_p.get('holds') or 'main stop', source=SOURCE.get('hub', '') + '; ' + hub_on)
+# the walking distance is measured from the main stop, else from the nearest of the stops
+ORIGINS = [stop_pt] if stop_pt is not None else [g for p, g in feats if p.get('kind') == 'stop']
+hub_on = 'none: no hub in config.json'
+if hub_name:
+    hub_p, hub_g = CENTRES[lower(hub_name)]
+    USED.add('hub_words')
+    hb = [g for p, g in MASS if p.get('kind') == 'building' and has_word(p.get('use'), D['hub_words'])]
+    if hb:
+        b = min(hb, key=lambda g: g.distance(hub_g))
+        hub_pt, hub_on = b.representative_point(), 'on the hub building of the massing'
+    else:
+        hub_pt, hub_on = place(hub_name), 'at the centre\'s middle (the massing has no hub building)'
+    add(hub_pt, kind='hub', name=hub_name, level='main', function=hub_p.get('holds') or 'main stop', source=SOURCE.get('hub', '') + '; ' + hub_on)
 USED.add('local_hub_words')
 for n, (p, g) in CENTRES.items():
-    if n != lower(hub_name) and has_word(p.get('holds'), D['local_hub_words']):
+    if n != lower(hub_name or '') and has_word(p.get('holds'), D['local_hub_words']):
         add(place(n), kind='hub', name=p.get('name'), level='local', function=p.get('holds'), source='the centre holds mobility')
 for gar in CFG.get('garages') or []:
     at = place(gar.get('at'))
@@ -361,14 +371,17 @@ WG, joins = network(wl, float(D['join_m']))
 USED.add('housing_words')
 homes = [(p, g) for p, g in MASS if p.get('kind') == 'building' and not p.get('existing') and has_word(p.get('use'), D['housing_words'])]
 gfa = lambda p, g: float(p.get('gfa_m2') or (p.get('footprint_m2') or g.area) * float(p.get('floors') or 1))
-walk = dict(from_stop=stop_name, network=walk_base, limits_m=limits, buildings=len(homes), new_buildings_only=True,
+walk = dict(from_stop=stop_name or 'the nearest stop', network=walk_base, limits_m=limits, buildings=len(homes), new_buildings_only=True,
             nodes=WG.number_of_nodes(), edges=WG.number_of_edges(), parts=nx.number_connected_components(WG) if WG.number_of_nodes() else 0,
             joins=joins, source=SOURCE.get('walk_limits_m', ''))
 tot = sum(gfa(p, g) for p, g in homes)
 walk['housing_gfa_m2'] = round(tot)
-if WG.number_of_nodes() and tot:
-    s0, d0 = snap(WG, stop_pt)
-    dist = nx.single_source_dijkstra_path_length(WG, s0, weight='w')
+if WG.number_of_nodes() and tot and ORIGINS:
+    dist = {}
+    for o_pt in ORIGINS:   # each node's walk to its nearest origin, the step onto the network included
+        s0, d0 = snap(WG, o_pt)
+        for n, dd in nx.single_source_dijkstra_path_length(WG, s0, weight='w').items():
+            dist[n] = min(dist.get(n, math.inf), d0 + dd)
     within, unreached = {L: 0.0 for L in limits}, 0.0
     for p, g in homes:
         c = g.centroid
@@ -376,7 +389,7 @@ if WG.number_of_nodes() and tot:
         if n not in dist:
             unreached += gfa(p, g)
             continue
-        dd = d0 + dist[n] + dn
+        dd = dist[n] + dn
         for L in limits:
             within[L] += gfa(p, g) if dd <= L else 0
     for L in limits:
@@ -395,6 +408,8 @@ stats['hub'] = hub_on
 stats['features'] = {k: sum(1 for p, g in feats if p['kind'] == k) for k in ('route', 'stop', 'hub', 'access')}
 stats['routes_by_mode'] = {m: sum(1 for p, g in feats if p['kind'] == 'route' and p['mode'] == m) for m in ORDER}
 stats['names_not_found'] = sorted(set(map(str, not_found)))
+if not_found:   # a name left unfilled or misspelt in config.json: skipped, so say so
+    print('names in config.json not found in the structure plan, skipped: ' + ', '.join(stats['names_not_found']), file=sys.stderr)
 
 
 # ---------------- the plan ----------------
@@ -503,9 +518,10 @@ if NEWB:   # the standard's colour for new, light enough for the routes to read 
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
-X, Y = P(stop_pt.x, stop_pt.y)
 ring_boxes = []   # the boxes of the rings' labels, which the other labels keep clear of
-for i, L in enumerate(limits):
+if stop_pt is not None:
+    X, Y = P(stop_pt.x, stop_pt.y)
+for i, L in enumerate(limits if stop_pt is not None else []):   # rings only around a main stop
     da = f' stroke-dasharray="{f2(2 * k)} {f2(1.5 * k)}"' if i else ''
     o.append(f'<circle cx="{f2(X)}" cy="{f2(Y)}" r="{f2(L)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"{da}/>')
     legend.setdefault('ring', ('ring',))
