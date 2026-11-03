@@ -65,7 +65,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
 - Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
 - Look at a drawing once or twice, not after every change. Check widths, scales and counts in code.
-- No text in a drawing or on a panel is smaller than 12 px printed. A drawing at a scale fits the panel's width at that scale; crop it to what the brief asks to show.
+- No text in a drawing or on a panel is smaller than 12 px printed.
 - Keep a skill short: two or three paragraphs, a list if it helps. Add a line when you don't like a result, delete lines the model no longer needs.
 
 ## The skills

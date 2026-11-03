@@ -1,6 +1,6 @@
 ---
 name: plans
-description: Draws the plans a brief asks for from the finished design layers, at their scales and cropped to the panel: the site plan with storeys, the detail areas and the figure-ground. Use when asked for the site plan, a detail plan, the figure-ground or the plans for the panels.
+description: Draws the plans a brief asks for from the finished design layers, at their scales: the site plan with storeys, the detail areas and the figure-ground. Use when asked for the site plan, a detail plan, the figure-ground or the plans for the panels.
 ---
 # Plans
 
