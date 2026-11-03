@@ -1,0 +1,14 @@
+{
+ "scale": {
+  "value": null,
+  "source": "only if the brief fixes a scale for this drawing and there is no frame in panel-layout/layout.json: <brief file> p. N; left empty, 1:500"
+ },
+ "panel_width_mm": {
+  "value": null,
+  "source": "the panel's width from the brief's checklist: <brief file> p. N; left empty, the width is not checked"
+ },
+ "floor_height_m": {
+  "value": null,
+  "source": "only for buildings without height_m: <brief file> p. N, or assumption: why; left empty, 3 m, marked as assumed"
+ }
+}
