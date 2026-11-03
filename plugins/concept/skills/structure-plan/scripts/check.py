@@ -99,6 +99,11 @@ def checks(feats, F, distance, proposal=None):
         L.append(f"  {p.get('name', ''):<{w}}  {p.get('action', ''):<6} {ha(g):7.2f} ha{noise}")
     for a in ('new', 'change', 'keep'):
         L.append(f"  total {a}: {sum(ha(g) for p, g in nb if p.get('action') == a):.2f} ha")
+    for ph in sorted({str(p['phase']) for p, g in nb if p.get('phase') is not None}):
+        part = [(p, g) for p, g in nb if str(p.get('phase')) == ph]
+        L.append(f"  phase {ph}: {sum(p.get('homes') or 0 for p, g in part)} homes on {sum(ha(g) for p, g in part):.2f} ha")
+    if any(p.get('action') in ('new', 'change') and p.get('phase') is None for p, g in nb):
+        L.append('  some new or changed neighbourhoods have no phase: the homes per phase cannot be checked')
     taken = unary_union([g for p, g in nb + gr + ce] + [g.buffer(C['route_buffer_m']) for p, g in ro])
     left = F.site.difference(taken)
     L.append(f'  site assigned to nothing (not a neighbourhood, green, centre or within {C["route_buffer_m"]} m of a route): '
