@@ -35,6 +35,9 @@ def main():
             g = g.intersection(site.buffer(1))
         else:  # a zone stays (Multi)Polygon: cutting it to the site can leave stray lines and points
             g = polygons(g.intersection(site))
+            if topic in ("noise", "sun"):  # the grid leaves ragged edges and small bits round every building; draw one calm zone
+                g = polygons(g.buffer(20).buffer(-20).buffer(-20).buffer(20).simplify(8))
+                g = shapely.union_all([q for q in getattr(g, "geoms", [g]) if q.area > 1500]) if not g.is_empty else g
         if g.is_empty:
             return
         feats.append((g, {"kind": kind, "topic": topic, "rule": text, "reason": reason, **({"use": "air corridor"} if topic == "fresh air" else {})}))

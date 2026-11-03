@@ -96,7 +96,9 @@ def main():
     gx, gy = np.meshgrid(rx0 + (np.arange(nx) + .5) * R, ry0 + (np.arange(ny) + .5) * R)
     hgrid = np.zeros(gx.size, np.float32)
     if len(G):
-        pi, bi = shapely.STRtree(G).query(shapely.points(gx.ravel(), gy.ravel()), predicate="within")
+        thin = 2 * shapely.area(G) / np.maximum(shapely.length(G), 1e-6) < R  # a wall thinner than a cell would fall between cell centres
+        Gr = np.where(thin, shapely.buffer(G, R / 2, cap_style="flat", join_style="mitre"), G)
+        pi, bi = shapely.STRtree(Gr).query(shapely.points(gx.ravel(), gy.ravel()), predicate="within")
         np.maximum.at(hgrid, pi, H[bi].astype(np.float32))
     hgrid = hgrid.reshape(gx.shape)
     xs, ys = grid(zone, a.cell)
