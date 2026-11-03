@@ -4,7 +4,7 @@ description: Lays out the public open space of an urban design on its massing as
 ---
 # Open space
 
-Reads: brief-reader, programme, massing, structure-plan, climate, analysis, streets, drawing-graphics
+Reads: brief-reader, programme, massing, structure-plan, climate, analysis, streets, drawing-graphics, panel-layout
 
 Never invent data, and never write a site, a city or a number of one project into the skill or its config by heart: every number comes from the inputs. Take the site and its layers (buildings, plots, streets, water) and its terrain (a GeoTIFF, else `terrain.csv` with `lon, lat, ele`) from the project's site folder, the design from `massing/massing.geojson`, the residents from `programme/programme.csv`, the green corridors from `structure-plan/`, the fresh-air corridors from `climate/`, and what must stay (biotopes, trees, water, basins) from `analysis/`. From the brief take the green area per resident, the play area per resident and its minimum, any rain or retention rule, the green, water and strips that must be kept free (pipes, power lines, protected land), and the site plan scale. Cite each page as the brief's Markdown counts it. Without a programme, take the residents from the brief, its planned figure where it gives a range, never from the floor area. Without an analysis, draw the green the brief keeps (biotopes, compensation land) into `keep-free.geojson` too. Without the massing, stop and say so in `summary.md`: this skill adds a layer to it and never changes it.
 
@@ -24,7 +24,7 @@ The script makes these choices; each number is a default in its `DEFAULTS`, whic
 - **Playgrounds.** The brief's play area in the fewest places that bring every home within 300 m, 50 m from busy roads.
 - **Paths and links.** A loop path with rounded bends in every park over 8,000 m², a boardwalk over water. Green links join the parks and the landscape within 300 m; they may cross streets, never buildings.
 
-For `--style`, put the colours, line weights and font of `drawing-graphics/standard.md` into a JSON with the keys of `FALLBACK_STYLE`; without it the plan is black lines on white, greys for the ground cover and one accent colour for water. The plan is at the brief's site plan scale and shows the pools, ground cover, paths and playgrounds; for a small overview, keep only the corridors, parks, water and links. Open the PNG. If the green or the play area falls short, a park stays unlinked or can't hold its rain, or no park is a corridor, say in the third line of `summary.md` what the massing should change, rather than forcing it.
+For `--style`, put the colours, line weights and font of `drawing-graphics/standard.md` into a JSON with the keys of `FALLBACK_STYLE`; without it the plan is black lines on white, greys for the ground cover and one accent colour for water. The plan is at its frame's scale in `panel-layout/layout.json`, else at the brief's site plan scale, shows what the frame's `shows` asks, and shows the pools, ground cover, paths and playgrounds; for a small overview, keep only the corridors, parks, water and links. Open the PNG. If the green or the play area falls short, a park stays unlinked or can't hold its rain, or no park is a corridor, say in the third line of `summary.md` what the massing should change, rather than forcing it.
 
 **What to write**, into `open-space/` in the proposal folder you are told, else the newest in the project's `proposals/`:
 

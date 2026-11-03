@@ -1,7 +1,7 @@
 import re
 from conftest import REPO
 
-OPUS = {"narrative", "structure-plan", "massing", "jury"}
+OPUS = {"narrative", "structure-plan", "massing", "jury", "panel-layout"}
 SKILLS = {p.parent.name: p for p in REPO.glob("plugins/*/skills/*/SKILL.md")}
 
 

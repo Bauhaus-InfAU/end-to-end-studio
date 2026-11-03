@@ -303,7 +303,12 @@ def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults
     if d is None:
         p = folder / f
         if not p.exists():
-            item["_error"] = f"file not found: {f}"
+            fr = item.get("frame")
+            if not fr:
+                item["_error"] = f"file not found: {f}"
+                return
+            # a planned frame whose drawing isn't made yet: printed as a grey labelled frame, never dropped
+            item.update(_empty=True, _cap=cap_mm, _img_w=fr["w"], _img_h=fr["h"], w=fr["w"], h=fr["h"] + cap_mm)
             return
         d = svg_size(p) if p.suffix.lower() == ".svg" else raster_size(p)
     auto = str(item.get("scale", "")).strip().lower() == "auto"
@@ -343,7 +348,8 @@ def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults
             win = crop_window((dw, dh), (fr["w"], fr["h"]) if fr else (dw, dh), item.get("crop"))
             item.update(_img_w=win["w"], _img_h=win["h"], _draw_w=dw, _draw_h=dh, _ox=win["ox"], _oy=win["oy"],
                         _hidden=win["hidden"], _factor=factor, _own=own, _print_scale=sc, _auto=auto,
-                        _framed=bool(fr), _scale_held=True)
+                        _framed=bool(fr), _scale_held=True,
+                        _fills=win["w"] * win["h"] / (fr["w"] * fr["h"]) if fr else 1.0)
             if item.get("w") and not fr and abs(item["w"] - dw) > 0.5:
                 notes.append(f"`{item['id']}`: width {item['w']} mm ignored; at 1:{sc:,} the drawing is {dw:.0f} mm wide: give it a `frame` to crop it")
     elif item.get("frame"):
@@ -431,7 +437,14 @@ def item_html(it, box, style, folder):
     s = f"left:{box['x']:.2f}mm;top:{box['y']:.2f}mm;width:{box['w']:.2f}mm;height:{box['h']:.2f}mm"
     kind = it.get("type", "text")
     inner = ""
-    if kind == "drawing":
+    if kind == "drawing" and it.get("_empty"):
+        sc = scale_number(it.get("scale"))
+        label = " · ".join(x for x in (it["id"], f"1:{sc:,}" if sc else "", it.get("shows", "")) if x)
+        inner = (f'<div class="empty" style="width:{it["_img_w"]:.2f}mm;height:{it["_img_h"]:.2f}mm">'
+                 f'{html.escape(label)}</div>')
+        if it.get("caption"):
+            inner += f'<div class="cap">{html.escape(source_words(it["caption"], folder))}</div>'
+    elif kind == "drawing":
         src = (folder / it["file"]).resolve().as_uri()
         dw, dh = it.get("_draw_w", it["_img_w"]), it.get("_draw_h", it["_img_h"])
         inner = (f'<div class="frame" style="width:{it["_img_w"]:.2f}mm;height:{it["_img_h"]:.2f}mm">'
@@ -513,6 +526,7 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 @media print {{ .reserved {{ border: none !important; }} }}
 .box {{ overflow: hidden; }}
 .box .frame {{ overflow: hidden; }}
+.box .empty {{ background: #e6e6e6; color: #555; padding: 3mm; overflow: hidden; }}
 .box img {{ display: block; max-width: none; }}
 .box h2 {{ font-size: {style['heading_pt']}pt; line-height: 1.15; margin-bottom: 0.4em; font-weight: 700; }}
 .box p {{ margin-bottom: 0.6em; }}
@@ -661,13 +675,18 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         lines.append(f"- covered by items: {100 * area:.0f} % of the panel" + ("  **mostly empty**" if area < 0.35 else ""))
         for it, b in r["placed"]:
             held = ""
-            if it.get("type") == "drawing" and it.get("_print_scale"):
+            if it.get("_empty"):
+                problems += 1
+                held = "  **empty frame: its drawing is not made yet**"
+            elif it.get("type") == "drawing" and it.get("_print_scale"):
                 sc, own, k = it["_print_scale"], it.get("_own"), it["_factor"]
                 held = (f", 1:{sc:,} {'chosen' if it['_auto'] else 'held'}"
                         + (f", rescaled from 1:{own:,} (x{k:.2f})" if abs(k - 1) > 1e-6 else ", not rescaled")
                         + (f", frame {it['_img_w']:.0f} x {it['_img_h']:.0f} mm hides {100 * it['_hidden']:.0f} % of its area"
                            + (" (no smaller usual scale keeps its text at 12 px or more)" if it["_auto"] else "")
                            if it["_hidden"] > 0.005 else ", whole drawing shown"))
+                if it.get("_fills", 1) < 0.8:
+                    held += f", fills {100 * it['_fills']:.0f} % of its frame"
                 if it.get("_bar"):
                     held += ", scale bar added"
                 elif not it.get("_own_bar") and not unscaled(it["file"]):
@@ -690,11 +709,13 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
             lines.append(f"- **{c['problem']}: `{c['id']}`**{extra}")
         lines.append("")
     req = L.get("required", [])
-    missing = [q for q in req if not q.get("id") or q["id"] not in ids]
+    empty = {it["id"] for r in results for it, _ in r["placed"] if it.get("_empty")}
+    missing = [q for q in req if not q.get("id") or q["id"] not in ids or q["id"] in empty]
     refused = {it["id"] for r in results for it, _ in r["unplaced"] if "_error" not in it}  # a missing file is missing, not too big
     lines.append("## What the brief asks for")
     for q in req:
         state = (f"on the panels, `{q['id']}`" if q not in missing else
+                 f"**EMPTY FRAME: `{q['id']}` is planned, its drawing is not made yet**" if q.get("id") in empty else
                  f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else "**MISSING: no input**")
         lines.append(f"- {q['what']} ({q.get('source', '')}): {state}"
                      + (f". {q['note']}" if q.get("note") else ""))

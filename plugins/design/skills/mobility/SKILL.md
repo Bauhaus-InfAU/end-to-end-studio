@@ -4,9 +4,9 @@ description: Plans public transport, bike roads, pedestrian roads and car access
 ---
 # Mobility
 
-Reads: brief-reader, structure-plan, massing, streets, drawing-graphics
+Reads: brief-reader, structure-plan, massing, streets, drawing-graphics, panel-layout
 
-Take the site and its streets from `site.geojson` and its layers, the public transport, allowed accesses, forbidden links and scales from the brief, and the neighbourhoods and streets from the other skills; cite the brief's page for each rule. Work in Python with `shapely`, never writing a place or number into the skill.
+Take the site and its streets from `site.geojson` and its layers, the public transport, allowed accesses, forbidden links and scales from the brief (the plan's scale and what it must show from its frame in `panel-layout/layout.json` when there is one), and the neighbourhoods and streets from the other skills; cite the brief's page for each rule. Work in Python with `shapely`, never writing a place or number into the skill.
 
 Start from the public transport the site and the brief give (a station, stops, lines) and make the main stop the point the routes meet; place hubs only where the brief or the programme asks for them. Keep cars to the edge where the brief allows, on short access streets with no through-route. Draw a few direct main bike routes, each leading to a named place beyond the site, plus local ones, and for pedestrians the main links to the stops and centres and the paths along the edges and through the neighbourhoods. Take the street surface and the centrelines from `streets/streets.geojson` when it exists, for the plan's base and the walking network.
 

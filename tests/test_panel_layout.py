@@ -109,6 +109,31 @@ def test_sources_in_words_not_paths(tmp_path):
     assert panels.paths_left(placed, tmp_path) == ["`g` heading: elsewhere/x.csv"]
 
 
+def test_planned_frame_without_its_drawing_is_an_empty_frame(tmp_path):
+    """On the first run no drawing exists: a drawing with a frame prints as a grey labelled frame, not dropped."""
+    it = measured(tmp_path, {"id": "p", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "scale": "1:3000",
+                             "frame": {"w": 300, "h": 200}, "shows": "the whole district", "caption": "Site plan"})
+    assert it.get("_empty") and "_error" not in it and (it["_img_w"], it["_img_h"]) == (300, 200)
+    h = panels.item_html(it, {"x": 15, "y": 15, "w": it["w"], "h": it["h"]}, STYLE, tmp_path)
+    assert 'class="empty"' in h and "1:3,000" in h and "the whole district" in h and "<img" not in h
+    assert "_error" in measured(tmp_path, {"id": "q", "type": "drawing", "file": "x.svg", "scale": "1:3000"})  # no frame: missing
+
+    results = [{"n": 1, "placed": [(it, {"x": 15, "y": 15, "w": it["w"], "h": it["h"]})], "unplaced": [], "checks": [],
+                "story": "", "paths": []}]
+    text = panels.write_report(tmp_path, {"required": [{"what": "site plan", "id": "p"}]}, {"width_mm": 594, "height_mm": 841},
+                               results, [], {"p"}, [], {"missing": []}, None, 96)
+    assert "EMPTY FRAME" in text and "Required items missing: 1 of 1" in text
+
+
+def test_drawing_smaller_than_its_frame_is_named(tmp_path):
+    f = drawing(tmp_path, "plan_1-1000.svg", 150, 100, font_mm=3.2)
+    it = measured(tmp_path, {"id": "p", "type": "drawing", "file": f, "scale": "1:1000", "frame": {"w": 300, "h": 200}})
+    results = [{"n": 1, "placed": [(it, {"x": 15, "y": 15, "w": it["w"], "h": it["h"]})], "unplaced": [], "checks": [],
+                "story": "", "paths": []}]
+    text = panels.write_report(tmp_path, {}, {"width_mm": 594, "height_mm": 841}, results, [], {"p"}, [], {"missing": []}, None, 96)
+    assert "fills 25 % of its frame" in text
+
+
 def test_added_scale_bar_keeps_the_drawing_in_place():
     """A drawing that gets a scale bar keeps its position and size on the panel."""
     it = {"id": "d", "type": "drawing", "file": "x.svg", "scale": "1:3000",
