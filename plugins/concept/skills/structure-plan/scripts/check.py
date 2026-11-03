@@ -3,13 +3,17 @@
     python check.py --proposal <proposal folder> --site <site folder> [--climate <folder>] [--distance 150]
                     [--style style.json]
 
-Reads <proposal>/structure-plan/structure-plan.geojson, the site and, if there is one, the climate's rules.geojson
-(default <proposal>/climate). Writes into <proposal>/structure-plan/: checks.txt, check-plan.svg and check-plan.png.
+Reads <proposal>/structure-plan/structure-plan.geojson, the site and, where they exist, the climate's rules.geojson
+(default <proposal>/climate), the site's terrain model (terrain*.tif or terrain.csv) and the brief's homes from
+<proposal>/programme/programme.csv, else the brief's checklist. Writes into <proposal>/structure-plan/: checks.txt, check-plan.svg and check-plan.png.
 build.py runs it after every build; it also runs alone.
 """
-import argparse, html, json, math, os, subprocess, sys
+import argparse, csv, html, json, math, os, re, subprocess, sys
 from pathlib import Path
 
+import numpy as np
+import pyproj
+import shapely
 from shapely.geometry import shape, Point
 from shapely.ops import unary_union
 
@@ -20,6 +24,19 @@ DEFAULTS = {
     'distance_m': 150,          # proximity: new land within this straight-line distance of a centre or public green
     'route_buffer_m': 10,       # a route takes this much land on each side when looking for unassigned land
     'loose_end_m': 20,          # a route end farther than this from every other route, street, gateway and the boundary is loose
+    'street_half_m': 8,         # a main or local route becomes a street this wide on each side (a 16 m street)
+    'follows_m': 6,             # a route this close to an existing street or path runs along it
+    'cover_min_m2': 5,          # a building with less than this under a route's street is touched, not covered
+    'foot_share': 0.5,          # a route with more than this share of its length along foot or cycle ways runs along a path
+    'crossing_m': 25,           # an existing way crossing a rail or road this close to where a route crosses it is its crossing
+    'foot_highways': ['footway', 'cycleway', 'path', 'steps', 'pedestrian', 'bridleway'],   # foot or cycle only
+    'barrier_highways': ['motorway', 'motorway_link', 'trunk', 'trunk_link'],            # roads crossed only off grade
+    'phase_reach_m': 50,        # a centre with half its area this close to the first phase's neighbourhoods counts in it
+    'phase_ratio': 0.8,         # warn when the first phase's share of land is below this times its share of homes
+    'water_roles': ['water', 'rain', 'blue', 'retention', 'sponge', 'storm'],   # a role with one of these is a water role
+    'low_buffer_m': 100,        # a green's ground is compared with the ground this far around it
+    'low_step_m': 5,            # the ground is sampled on a grid this fine
+    'low_share': 0.4,           # warn when less than this share of a water green lies below the median ground around it
     'listed': 10,               # at most this many pieces are listed under a check
     'min_piece_m2': 25,         # pieces smaller than this are left out of the lists
     'check_scale': 10000,       # scale of the check plan
@@ -69,7 +86,7 @@ def read_plan(path, F):
     return out
 
 
-def checks(feats, F, distance):
+def checks(feats, F, distance, proposal=None):
     L = []
     by = lambda k: [(p, g) for p, g, b in feats if p.get('kind') == k and g is not None]
     nb, gr, ce, ro, ga = (by(k) for k in ('neighbourhood', 'green', 'centre', 'route', 'gateway'))
@@ -96,6 +113,7 @@ def checks(feats, F, distance):
     public = unary_union([g for p, g in gr if p.get('public', True) is not False])
     L.append(f'  total public green: {ha(public):.2f} ha')
     L.append('')
+    L += low_ground(gr, F) + ['']
     L.append('CENTRES')
     for p, g in ce:
         holds = p.get('holds') or 'nothing (the massing can build nothing there)'
@@ -116,6 +134,7 @@ def checks(feats, F, distance):
         for q in pieces(beyond):
             L.append(f'     {ha(q):.2f} ha at {at(q)}')
     L.append('')
+    L += first_phase(nb, ce, proposal, F) + ['']
     L.append('ROUTES')
     for p, g in ro:
         L.append(f"  {p.get('name', ''):<{w}}  {p.get('level', ''):<9} {g.length:7.0f} m")
@@ -136,6 +155,8 @@ def checks(feats, F, distance):
     L.append(f"  loose ends (more than {C['loose_end_m']} m from every other route, street, gateway and the site "
              f"boundary): {len(loose)}")
     L += loose
+    L += over_buildings(ro, nb, ce, gr, F)
+    L += path_levels(ro, F)
     L.append('')
     L.append('GEOMETRY')
     for what in ('invalid geometry', 'empty geometry'):
@@ -145,6 +166,211 @@ def checks(feats, F, distance):
     for p, g, b in feats:
         counts[p.get('kind')] = counts.get(p.get('kind'), 0) + 1
     L.append(f'  features: {len(feats)} {counts}')
+    return L
+
+
+# ---------------------------------------------------------------- checks that warn on what later skills trip over
+PHASE1 = re.compile(r'\b(phase\s*(1|one|i)\b|first\s+(construction\s+)?phase|1st\s+phase)', re.I)
+HOMES = re.compile(r'\b(homes?|units?|dwellings?|apartments?|flats?)\b', re.I)
+
+
+def is_first(p):
+    """True when a feature says it is the first phase: a `phase` of 1, else 'phase 1' in its name or source."""
+    v = p.get('phase')
+    if v is not None:
+        return str(v).strip().lower() in ('1', 'i', 'one', 'first', '1st', 'phase 1')
+    return bool(PHASE1.search(f"{p.get('name', '')} {p.get('source', '')}"))
+
+
+def numbers(text):
+    """The whole numbers in a text, thousands separators read, page references and file names left out."""
+    t = re.sub(r'\S+\.(md|pdf|csv)\b', ' ', str(text or ''))
+    t = re.sub(r'\b(pp?|pages?)\.?\s*\d+(\s*[-–]\s*\d+)?', ' ', t, flags=re.I)
+    return [int(re.sub(r'[,.\s ]', '', n)) for n in re.findall(r'\d{1,3}(?:[,. ]\d{3})+|\d+', t)]
+
+
+def brief_homes(proposal, F):
+    """(homes in the first phase, total homes as a list, where from), from the programme table, else the checklist."""
+    if proposal:
+        table = Path(proposal) / 'programme' / 'programme.csv'
+        if table.exists():
+            with table.open(encoding='utf-8') as fh:
+                rows = list(csv.DictReader(fh))
+            cols = list(rows[0]) if rows else []
+            col = next((c for c in cols if HOMES.search(c or '')), None)
+            if col:
+                first, total = [], []
+                for r in rows:
+                    n, label = numbers(r.get(col)), str(r.get(cols[0]) or '')
+                    if n and PHASE1.search(label):
+                        first.append((n[0], r.get('source') or ''))
+                    elif n and 'phase' not in label.lower():
+                        total.append(n[0])
+                if first and total:
+                    return first[0][0], total, f"programme/programme.csv: {first[0][1]}".rstrip(': ')
+    for md in ([Path(proposal) / 'brief-reader' / 'checklist.md'] if proposal else []) + \
+              [F.site_dir.parent / 'brief' / 'checklist.md']:
+        if not md.exists():
+            continue
+        first, total = None, None
+        for line in md.read_text(encoding='utf-8').splitlines():
+            if not HOMES.search(line):
+                continue
+            n = [x for x in numbers(line) if x >= 10]
+            if n and first is None and PHASE1.search(line):
+                first = n[0]
+            elif n and total is None and 'phase' not in line.lower():
+                total = n
+        if first and total:
+            return first, [t for t in total if t >= first] or total, f'{md.parent.name}/{md.name}'
+    return None
+
+
+def first_phase(nb, ce, proposal, F):
+    """The first phase's share of the land against its share of the brief's homes: no density assumed."""
+    L = ['FIRST PHASE (its share of the land against its share of the homes, no density assumed)']
+    land = [(p, g) for p, g in nb if p.get('action') in ('new', 'change')]
+    first = [(p, g) for p, g in land if is_first(p)]
+    if not first:
+        L.append('  no new or changed neighbourhood says it is the first phase (phase=1, or "phase 1" in its source): '
+                 'not checked')
+        return L
+    near = unary_union([g for p, g in first]).buffer(C['phase_reach_m'])
+    cen = [(p, g) for p, g in ce if is_first(p) or g.intersection(near).area >= 0.5 * g.area]
+    a1 = ha(unary_union([g for p, g in first + cen]))
+    a = ha(unary_union([g for p, g in land + ce]))
+    share = 100 * a1 / a
+    L.append(f"  first phase: {', '.join(p.get('name', '') for p, g in first)}"
+             + (f"; centres {', '.join(p.get('name', '') for p, g in cen)}" if cen else '')
+             + f': {a1:.2f} of {a:.2f} ha of new and changed neighbourhoods and centres = {share:.0f} % of the land')
+    homes = brief_homes(proposal, F)
+    if not homes:
+        L.append("  the brief's homes in the first phase and in all: not found in programme/programme.csv or the "
+                 'checklist: not compared')
+        return L
+    h1, totals, src = homes
+    lo, hi = min(totals), max(totals)
+    s_lo, s_hi = 100 * h1 / hi, 100 * h1 / lo
+    span = f'{lo:,}' if lo == hi else f'{lo:,} to {hi:,}'
+    pct = f'{s_lo:.0f}' if lo == hi else f'{s_lo:.0f} to {s_hi:.0f}'
+    L.append(f'  the brief puts at least {h1:,} of {span} homes in the first phase = {pct} % of the homes ({src})')
+    if share < C['phase_ratio'] * s_lo:
+        even = f'{round(share / 100 * lo):,}' + ('' if lo == hi else f' to {round(share / 100 * hi):,}')
+        L.append(f'  warning: the first phase has {share:.0f} % of the land for at least {s_lo:.0f} % of the homes; '
+                 f'with the homes spread evenly over the land it holds about {even}, not {h1:,}: give it more land')
+    return L
+
+
+def describe(bp, bg, polys):
+    q = bg.representative_point()
+    what = next((str(bp[k]) for k in ('name', 'building', 'use') if bp.get(k) not in (None, '', 'yes', 'undefined')), '')
+    where = next((f"in {p.get('kind')} {p.get('name')} ({p.get('action')})" for p, g in polys if g.contains(q)),
+                 'in no plan feature')
+    return f"{bp.get('id', '?')}{' ' + what if what else ''} at ({q.x:.0f},{q.y:.0f}) {where}"
+
+
+def over_buildings(ro, nb, ce, gr, F):
+    """Main and local routes whose street would cover an existing building the plan keeps."""
+    half, foot = C['street_half_m'], C['foot_highways']
+    fresh = unary_union([g for p, g in nb + ce if p.get('action') == 'new'])
+    kept = [(p, g) for p, g in F.buildings
+            if F.site.contains(g.representative_point()) and not fresh.contains(g.representative_point())]
+    roads = unary_union([g for p, g in F.streets if p.get('highway') not in foot]).buffer(C['follows_m'])
+    polys = nb + ce + gr
+    L, n = [], 0
+    for p, g in ro:
+        if p.get('level') not in ('main', 'local'):
+            continue
+        own = g if roads.is_empty else g.difference(roads)
+        if own.is_empty:
+            continue
+        band = own.buffer(half)
+        hit = [(bp, bg) for bp, bg in kept if bg.intersects(band) and bg.intersection(band).area >= C['cover_min_m2']]
+        if hit:
+            n += 1
+            more = f'; and {len(hit) - C["listed"]} more' if len(hit) > C['listed'] else ''
+            L.append(f"  warning: {p.get('name', '')} ({p.get('level')}) covers {len(hit)} kept building(s): "
+                     + '; '.join(describe(bp, bg, polys) for bp, bg in hit[:C['listed']]) + more)
+    return [f'  main and local routes over kept buildings (as streets {2 * half:g} m wide, the parts along existing '
+            f'streets left out; kept = existing in the site and not on a new neighbourhood or centre): {n}'] + L
+
+
+def path_levels(ro, F):
+    """Main and local routes that run along a foot or cycle way, or through a crossing that is not a street."""
+    foot_cls, near_m = C['foot_highways'], C['crossing_m']
+    foot = unary_union([g for p, g in F.streets if p.get('highway') in foot_cls]).buffer(C['follows_m'])
+    big = unary_union([g for p, g in F.streets if p.get('highway') in C['barrier_highways']])
+    barriers = []
+    for what, bar, ways in (('the rail', F.rail, F.streets),
+                            ('the road', big, [(p, g) for p, g in F.streets
+                                               if p.get('highway') not in C['barrier_highways']])):
+        if not bar.is_empty:                     # where each existing way crosses it
+            barriers.append((what, bar, [(p.get('highway'), x) for p, g in ways if g.intersects(bar)
+                                         for x in [g.intersection(bar)]]))
+    L = []
+    for p, g in ro:
+        if p.get('level') not in ('main', 'local'):
+            continue
+        why = []
+        s = 0 if foot.is_empty else g.intersection(foot).length / g.length
+        if s > C['foot_share']:
+            why.append(f'{100 * s:.0f} % of it runs along existing foot or cycle ways')
+        for what, bar, ways in barriers:
+            done = []
+            for pt in parts(g.intersection(bar)):
+                pt = pt.representative_point()
+                if any(pt.distance(d) <= near_m for d in done):
+                    continue
+                done.append(pt)
+                cross = [hw for hw, x in ways if x.distance(pt) <= near_m]
+                if cross and all(c in foot_cls for c in cross):
+                    why.append(f"it crosses {what} at ({pt.x:.0f},{pt.y:.0f}), where the only crossing is a "
+                               f"{'/'.join(sorted(set(cross)))}, not a street")
+        if why:
+            L.append(f"  warning: {p.get('name', '')} ({p.get('level')}): {'; '.join(why)}: "
+                     f"probably a landscape route, unless the brief opens it to cars")
+    return [f'  main and local routes on foot or cycle ways (along them, or through a crossing that is not a '
+            f'street): {len(L)}'] + L
+
+
+def low_ground(gr, F):
+    """For each green with a water role: how much of it lies on low ground, from the site's terrain model."""
+    L = ['GREEN ON LOW GROUND (greens with a water role)']
+    wet = [(p, g) for p, g in gr
+           if any(k in str(r).lower() for r in (p.get('roles') or []) for k in C['water_roles'])]
+    if not wet:
+        L.append('  no green has a water role: not checked')
+        return L
+    from terrain import find_terrain
+    to_ll = pyproj.Transformer.from_crs(F.epsg, 4326, always_xy=True)
+    x0, y0, x1, y1 = F.site.buffer(C['low_buffer_m']).bounds
+    t, notes = find_terrain(F.site_dir, (x0 + F.x0, y0 + F.y0, x1 + F.x0, y1 + F.y0), to_ll)
+    if not t:
+        L.append('  no terrain model in the site folder (terrain*.tif or terrain.csv): not checked'
+                 + (f" ({' '.join(notes)})" if notes else ''))
+        return L
+    buf, step = C['low_buffer_m'], C['low_step_m']
+    w = max([len(str(p.get('name', ''))) for p, g in wet] + [10])
+    L.append(f'  ground from {t.source}; low ground is below the median ground within {buf:g} m of the green, '
+             f'the green included')
+    for p, g in wet:
+        ring = g.buffer(buf)
+        bx0, by0, bx1, by1 = ring.bounds
+        xs, ys = np.meshgrid(np.arange(bx0, bx1, step), np.arange(by0, by1, step))
+        xs, ys = xs.ravel(), ys.ravel()
+        inr = shapely.contains_xy(ring, xs, ys)
+        xs, ys = xs[inr], ys[inr]
+        z = t.sample(xs + F.x0, ys + F.y0)
+        ing = shapely.contains_xy(g, xs, ys) & ~np.isnan(z)
+        if not ing.any():
+            L.append(f"  {p.get('name', ''):<{w}}  no ground under it")
+            continue
+        med = float(np.nanmedian(z))
+        share = float((z[ing] < med).mean())
+        warn = (f'  warning: it lies mostly above the ground around it, so little rain runs into it'
+                if share < C['low_share'] else '')
+        L.append(f"  {p.get('name', ''):<{w}}  {100 * share:3.0f} % on low ground  (its median {np.median(z[ing]):.1f} m, "
+                 f'around it {med:.1f} m){warn}')
     return L
 
 
@@ -316,7 +542,7 @@ def run(proposal, F, distance=None, style_path=None):
         raise SystemExit(f'no structure-plan.geojson in {out}: run build.py first')
     distance = C['distance_m'] if distance is None else distance
     feats = read_plan(plan, F)
-    L = checks(feats, F, distance)
+    L = checks(feats, F, distance, proposal)
     style_path = Path(style_path) if style_path else Path(proposal) / 'drawing-graphics' / 'style.json'
     S = dict(STYLE)
     if style_path.exists():
