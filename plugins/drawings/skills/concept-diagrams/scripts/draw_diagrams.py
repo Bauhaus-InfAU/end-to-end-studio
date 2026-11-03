@@ -635,18 +635,21 @@ def render(spec_path, out_dir):
         if not v.plan or site is None:  # a schematic has no true size: no numbers on it
             return ""
         m = max([x for x in (50, 100, 200, 250, 500, 1000, 2000, 5000) if x * v.s < W / 4] or [50])
-        x, y, L = 20, DH - 18, m * v.s
-        t = f'font-family="{esc(st["font"])}" font-size="{st["small_size"]}" fill="{st["ink"]}"'
-        return (f'<rect x="{x}" y="{y}" width="{L / 2:.1f}" height="4" fill="{st["ink"]}"/><rect x="{x + L / 2:.1f}" y="{y}" width="{L / 2:.1f}" height="4" '
-                f'fill="{st["paper"]}" stroke="{st["ink"]}" stroke-width="{st["rule"]}"/><text x="{x}" y="{y - 4}" {t}>0</text><text x="{x + L:.1f}" y="{y - 4}" {t} text-anchor="end">{m} m</text>')
+        x, y, L = 20 + st["small_size"], DH - 12 - 2 * st["small_size"], m * v.s
+        t = f'font-family="{esc(st["font"])}" font-size="{st["small_size"]}" fill="{st["ink"]}" text-anchor="middle"'
+        # a line that steps up and down, a tick and a number at every step
+        n = next(n for n in ((4, 2, 1) if str(m)[0] == "2" else (5, 2, 1)) if L / n >= (len(f"{m:g}") + 1) * 0.6 * st["small_size"] + 3 or n == 1)
+        s = L / n
+        return (f'<path d="{"".join(f"M{x + i * s:.1f},{y + 4 * (i % 2)}h{s:.1f}" for i in range(n))}{"".join(f"M{x + i * s:.1f},{y}v4" for i in range(n + 1))}" '
+                f'fill="none" stroke="{st["ink"]}" stroke-width="{st["rule"]}"/>'
+                + "".join(f'<text x="{x + i * s:.1f}" y="{y + 6 + st["small_size"]}" {t}>{m * i / n:g}{" m" if i == n else ""}</text>' for i in range(n + 1)))
 
-    def north(v):
+    def north(v):  # a circle in outline, a line from its centre to the circle, pointing north
         x, y = W - 26, 48
         dx, dy = (v(( 0, 120))[0] - v((0, 0))[0]), (v((0, 120))[1] - v((0, 0))[1])
         L = math.hypot(dx, dy) or 1
-        dx, dy = 28 * dx / L, 28 * dy / L
-        return (f'<line x1="{x - dx / 2:.1f}" y1="{y - dy / 2:.1f}" x2="{x + dx / 2:.1f}" y2="{y + dy / 2:.1f}" stroke="{st["ink"]}" stroke-width="{st["sign_old"]}" marker-end="url(#ahK)"/>'
-                f'<text x="{x + dx / 2 + 4:.1f}" y="{y + dy / 2 - 2:.1f}" font-family="{esc(st["font"])}" font-size="{st["small_size"]}" fill="{st["ink"]}">N</text>')
+        return (f'<circle cx="{x}" cy="{y}" r="14" fill="none" stroke="{st["ink"]}" stroke-width="{st["sign_old"]}"/>'
+                f'<line x1="{x}" y1="{y}" x2="{x + 14 * dx / L:.1f}" y2="{y + 14 * dy / L:.1f}" stroke="{st["ink"]}" stroke-width="{st["sign_old"]}"/>')
 
     def body(n, fr):
         v, drawing = frame_svg(n, fr)

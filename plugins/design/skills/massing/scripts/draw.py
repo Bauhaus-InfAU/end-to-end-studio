@@ -131,14 +131,12 @@ sx = bx
 for i, fl in enumerate(range(2, 9)):
     o.append(f'<rect x="{sx + i * 34}" y="{by + 38}" width="30" height="12" fill="{grey(fl)}" stroke="#000" stroke-width="0.6"/>'
              f'<text x="{sx + i * 34 + 15}" y="{by + 60}" font-size="7" text-anchor="middle">{fl} fl.</text>')
-s0 = bx + 300
-for i in range(4):
-    o.append(f'<rect x="{s0 + i * 50}" y="{by + 40}" width="50" height="6" fill="{"#000" if i % 2 == 0 else "#fff"}" stroke="#000" stroke-width="0.6"/>')
+s0 = bx + 300  # scale bar: 200 m in four 50 m steps, a line that steps up and down, ticks at every step
+o.append(f'<path d="{"".join(f"M{s0 + i * 50},{by + 40 + 6 * (i % 2)}h50" for i in range(4))}{"".join(f"M{s0 + i * 50},{by + 40}v6" for i in range(5))}" fill="none" stroke="#000" stroke-width="0.6"/>')
 for i in range(5):
-    o.append(f'<text x="{s0 + i * 50}" y="{by + 58}" font-size="7" text-anchor="middle">{i * 50}</text>')
-o.append(f'<text x="{s0 + 205}" y="{by + 58}" font-size="7">m</text>')
-nx, ny = W - 40, 50
-o.append(f'<path d="M{nx},{ny - 30} L{nx - 9},{ny} L{nx},{ny - 8} L{nx + 9},{ny} Z" fill="#000"/><text x="{nx}" y="{ny + 14}" font-size="12" text-anchor="middle">N</text>')
+    o.append(f'<text x="{s0 + i * 50}" y="{by + 58}" font-size="7" text-anchor="middle">{i * 50}{" m" if i == 4 else ""}</text>')
+nx, ny = W - 40, 36  # north: a circle in outline, a line from its centre to the circle, pointing north
+o.append(f'<circle cx="{nx}" cy="{ny}" r="14" fill="none" stroke="#000" stroke-width="0.9"/><line x1="{nx}" y1="{ny}" x2="{nx}" y2="{ny - 14}" stroke="#000" stroke-width="0.9"/>')
 o.append('</svg>')
 svgp = OUT + 'massing.svg'
 open(svgp, 'w', encoding='utf8').write('\n'.join(o))

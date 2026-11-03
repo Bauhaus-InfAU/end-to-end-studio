@@ -28,6 +28,8 @@ How a competition entry's drawings and panels look when nothing else is decided.
 ## Every plan and section
 
 - A title with the scale, a graphic scale bar, a north arrow on plans, a legend for every colour and hatch, a source line for the data.
+- The north arrow: a circle in outline and one line from its centre to the circle, pointing north. No fill, no letter.
+- The scale bar: one thin line that steps up and down, a short tick at every step, the numbers under the ticks and the unit only on the last (0 1 2 3 4 5 m).
 - Drawn at the brief's scale and printed at true size. The drawing's width at that scale fits the panel's width between the margins; crop to the area the brief asks for.
 - What a drawing shows depends on its scale: at 1:500 and larger the block, its entrances and trees; at 1:5,000 and smaller the district in its city, no single buildings labelled.
 - One thing dominates each drawing. Everything else is quieter.

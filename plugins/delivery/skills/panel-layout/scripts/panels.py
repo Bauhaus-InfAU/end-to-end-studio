@@ -299,10 +299,15 @@ def item_html(it, box, style, folder):
             bar_mm = length * 1000 / sc
             lw = style["line_mm"]
             fs = pt_(style["body_pt"] * 0.7) * 25.4 / 72  # label size follows the body text, never below 12 px
-            inner += (f'<svg class="bar" width="{bar_mm + 30:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 30:.2f} 7">'
-                      f'<rect x="0.2" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="{style["text"]}"/>'
-                      f'<rect x="{bar_mm / 2 + 0.2:.2f}" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
-                      f'<text x="0.2" y="6" font-size="{fs:.2f}">0</text><text x="{bar_mm + 1.5:.2f}" y="2.6" font-size="{fs:.2f}">{length:g} m</text></svg>')
+            # a line that steps up and down, a tick and a number at every step, fewer steps if the numbers would touch
+            n = next(n for n in ((4, 2, 1) if f"{length:g}"[0] == "2" else (5, 2, 1))
+                     if bar_mm / n >= (len(f"{length:g}") + 1) * 0.6 * fs + 1 or n == 1)
+            s, x0 = bar_mm / n, 2
+            inner += (f'<svg class="bar" width="{bar_mm + 12:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 12:.2f} 7">'
+                      f'<path d="{"".join(f"M{x0 + i * s:.2f},{1 + 1.5 * (i % 2)}h{s:.2f}" for i in range(n))}{"".join(f"M{x0 + i * s:.2f},1v1.5" for i in range(n + 1))}" '
+                      f'fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
+                      + "".join(f'<text x="{x0 + i * s:.2f}" y="6.4" font-size="{fs:.2f}" text-anchor="middle">{length * i / n:g}{" m" if i == n else ""}</text>' for i in range(n + 1))
+                      + '</svg>')
         if it.get("caption"):
             sc = scale_number(it.get("scale"))
             cap = it["caption"] + (f" · 1:{sc:,}" if sc and it.get("_scale_held") else "")
