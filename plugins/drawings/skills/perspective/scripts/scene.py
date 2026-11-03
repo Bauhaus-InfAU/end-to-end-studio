@@ -335,8 +335,34 @@ class Scene:
         if not self.floor_height:
             self.warn("No floor height is documented, so buildings with floors but no height can't be drawn.")
 
+    def _street_surface(self):
+        """The streets skill's polygons as (properties, metric geometry), or None without its file."""
+        path = self.proposal / "streets" / "streets.geojson"
+        if not path.exists():
+            return None
+        feats = json.loads(path.read_text(encoding="utf-8")).get("features") or []
+        out = []
+        for f in feats:
+            p = f.get("properties") or {}
+            if p.get("kind") in ("street", "path"):
+                g = self.geom(f, "streets/streets.geojson")
+                if g is not None and g.geom_type.endswith("Polygon"):
+                    out.append((p, g))
+        if not out:
+            self.warn("streets/streets.geojson holds no street or path polygons: the streets are buffered from their lines instead.")
+            return None
+        self.used.append("streets/streets.geojson")
+        return out
+
     def _design_ground(self):
         new_parts, self.public_parts, self.streets, self.open_spaces = [], [], [], []
+        self.surface = self._street_surface()
+        for p, g in self.surface or []:   # the streets skill's new streets come first, over the massing's lines
+            if p.get("kind") != "street" or p.get("existing"):
+                continue
+            new_parts.append(g)
+            self.flats.append((70, g, "street"))
+            self.public_parts.append((g, "street"))
         for f in self.by_kind.get("street", []):
             g, p = self.geom(f, "massing streets"), f["properties"]
             if g is None:
@@ -350,6 +376,8 @@ class Scene:
                 area = g.buffer(w / 2, cap_style="flat")
             else:
                 area = g
+            if self.surface is not None:
+                continue
             new_parts.append(area)
             self.flats.append((70, area, "street"))
             self.public_parts.append((area, "street"))
@@ -410,7 +438,12 @@ class Scene:
                 self.flats.append((50, g.buffer(3) if g.geom_type.endswith("String") else g, "water"))
         lanes_used, assumed_w = 0, 0
         widths = self.assumed["street_width"]
-        for f in self.read("streets.geojson"):
+        for p, g in self.surface or []:
+            if p.get("kind") == "path" or p.get("existing"):
+                area = self._cut(g)
+                if not area.is_empty:
+                    self.flats.append((65, area, "old_street"))
+        for f in (self.read("streets.geojson") if self.surface is None else []):
             g, p = self.geom(f, "streets.geojson"), f.get("properties") or {}
             if g is None:
                 continue

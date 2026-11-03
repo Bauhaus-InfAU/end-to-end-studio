@@ -4,5 +4,6 @@ pyproj>=3.6      # coordinates: WGS84 to metres and back
 numpy
 trimesh          # 3D, when a skill needs a mesh
 requests         # downloads: OpenStreetMap, image APIs
+networkx         # street networks: walking distances, car links
 python-dotenv    # reads keys from .env
 # pdf-to-md also needs Docling (about 500 MB of models on first run) and PyMuPDF: pip install docling pymupdf

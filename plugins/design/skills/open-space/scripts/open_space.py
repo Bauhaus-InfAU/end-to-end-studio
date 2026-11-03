@@ -98,6 +98,7 @@ def main():
     ap.add_argument("--structure", nargs="*", default=[])  # GeoJSONs whose corridors (structure plan, climate) are spines
     ap.add_argument("--keep-free")  # GeoJSON of the brief's strips and protected land; lines carry `width_m`
     ap.add_argument("--style")
+    ap.add_argument("--streets", help="the streets skill's streets.geojson; its surface replaces the buffered lines")
     a = ap.parse_args()
 
     cfg_in = load_json(a.config)
@@ -146,6 +147,15 @@ def main():
             noisy.append(g)
         if g.intersects(site):
             old_streets.append(g.buffer(cfg["street_widths_m"].get(hw, cfg["other_street_width_m"]) / 2, cap_style="flat"))
+    streets_src = "buffered from the site's street lines and the massing's, at the widths above"
+    if a.streets and os.path.exists(a.streets):
+        # the streets skill's one surface: existing and new street polygons, instead of buffering lines
+        surf = [(f["properties"], m(shape(f["geometry"]))) for f in load(a.streets)
+                if f["properties"].get("kind") == "street" and shape(f["geometry"]).geom_type.endswith("Polygon")]
+        old_streets = [g.intersection(site) for p, g in surf if p.get("existing")]
+        mass_streets = [g.intersection(site) for p, g in surf if not p.get("existing")]
+        streets_src = "from the streets skill (`streets.geojson`), not buffered lines"
+        used_defaults = [d for d in used_defaults if d[0] not in ("street_widths_m", "other_street_width_m", "new_street_width_m")]
     plots = layer("plots")
     kept = [(p.get("landuse"), g.intersection(site)) for p, g in plots
             if p.get("landuse") in cfg["keep_landuse"] and g.intersects(site)]
@@ -391,7 +401,7 @@ def main():
         f.write("\nDefaults of the script, not from the brief:\n\n")
         for k, v, note in used_defaults:
             f.write(f"- `{k}` = {v}: {note}\n")
-        f.write("\nGeneral:\n\n- Without a terrain model, rain is held in the nearest park, not where it flows; "
+        f.write(f"\nGeneral:\n\n- `streets`: {streets_src}.\n- Without a terrain model, rain is held in the nearest park, not where it flows; "
                 "levels must be checked.\n- Distances are straight lines, not walking routes.\n"
                 "- The massing's courtyards are private gardens and are not counted as public green.\n")
 

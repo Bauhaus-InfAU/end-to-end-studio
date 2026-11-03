@@ -121,26 +121,39 @@ for f in mass:
         svg.append('<path d="%s" fill="%s" stroke="%s" stroke-width="0.4"/>'
                    % (poly_d(rot(transform(tr, shape(f["geometry"])))), fill, S["field_line"]))
 
-# streets as surfaces: the massing's widths, else assumed by class
+# streets as surfaces: the streets skill's surface when it exists, else the massing's widths, else assumed by class
+streets_path = os.path.join(a.proposal, "streets", "streets.geojson")
+street_feats = load(streets_path)   # the streets skill's surface, when it exists
 WIDTH = {"motorway": 28, "trunk": 22, "trunk_link": 9, "primary": 18, "secondary": 15, "tertiary": 13,
          "tertiary_link": 8, "residential": 10, "unclassified": 8, "living_street": 7, "service": 5,
          "pedestrian": 6, "track": 3.5, "cycleway": 3, "footway": 2.5, "path": 2, "steps": 2}
-surf, assumed = [], set()
-for p, g in layer("streets"):
-    w = None
-    try: w = float(p.get("width")) if p.get("width") else float(p.get("lanes")) * 3.25 + 4
-    except (TypeError, ValueError): pass
-    if w is None:
-        w = WIDTH.get(p.get("highway"), 6); assumed.add(p.get("highway"))
-    surf.append(rot(g).buffer(w / 2, cap_style=2, join_style=2))
-for f in mass:
-    p = f["properties"]
-    if p.get("kind") == "street":
-        g = rot(transform(tr, shape(f["geometry"])))
-        surf.append(g if g.geom_type.endswith("Polygon") else g.buffer(float(p.get("width") or 16) / 2, cap_style=2))
+surf, assumed, paths = [], set(), []
+if street_feats:
+    for f in street_feats:
+        p, g = f["properties"], rot(transform(tr, shape(f["geometry"])))
+        if p.get("kind") == "street" and g.geom_type.endswith("Polygon"): surf.append(g)
+        elif p.get("kind") == "path": paths.append(g)
+else:
+    for p, g in layer("streets"):
+        w = None
+        try: w = float(p.get("width")) if p.get("width") else float(p.get("lanes")) * 3.25 + 4
+        except (TypeError, ValueError): pass
+        if w is None:
+            w = WIDTH.get(p.get("highway"), 6); assumed.add(p.get("highway"))
+        surf.append(rot(g).buffer(w / 2, cap_style=2, join_style=2))
+    for f in mass:
+        p = f["properties"]
+        if p.get("kind") == "street":
+            g = rot(transform(tr, shape(f["geometry"])))
+            surf.append(g if g.geom_type.endswith("Polygon") else g.buffer(float(p.get("width") or 16) / 2, cap_style=2))
 if surf:
     svg.append('<path d="%s" fill="%s" stroke="%s" stroke-width="0.5" fill-rule="evenodd"/>'
                % (poly_d(unary_union(surf)), S["street"], S["street_line"]))
+for g in paths:
+    if g.geom_type.endswith("Polygon"):
+        svg.append('<path d="%s" fill="%s" stroke="none"/>' % (poly_d(g), S["street"]))
+    else:
+        svg.append('<path d="%s" fill="none" stroke="%s" stroke-width="0.4"/>' % (line_d(g), S["street_line"]))
 for p, g in layer("rail"):
     g = rot(g)
     for off in (-2.2, -0.8, 0.8, 2.2):
@@ -195,13 +208,13 @@ for _, k, g, h, fl, roof in items:
     if roof and LARGE:
         svg.append('<path d="%s" fill="none" stroke="%s" stroke-width="0.3" stroke-dasharray="1 1"/>' % (poly_d(g.buffer(-1.5), h), line))
 
-# north arrow, turned with the view
+# north: a circle in outline, a line from its centre to the circle, turned with the view
 n = affinity.rotate(Point(0, 50), ROT, origin=(0, 0)); nx, ny = iso(n.x, n.y)
-ax, ay = fx0 + 50, fy1 + 20 - max(ny, 0)
-extra = ('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1.5"/>'
-         '<circle cx="%.1f" cy="%.1f" r="3" fill="%s"/>'
-         '<text x="%.1f" y="%.1f" font-family="Helvetica,Arial" font-size="14" fill="%s">N</text>'
-         % (ax, ay, ax + nx, ay + ny, S["text"], ax + nx, ay + ny, S["text"], ax + nx + 5, ay + ny - 5, S["text"]))
+r = 14 / (math.hypot(nx, ny) or 1)
+ax, ay = fx0 + 50, fy1 + 20
+extra = ('<circle cx="%.1f" cy="%.1f" r="14" fill="none" stroke="%s" stroke-width="1.5"/>'
+         '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1.5"/>'
+         % (ax, ay, S["text"], ax, ay, ax + nx * r, ay + ny * r, S["text"]))
 HT = H + 40
 defs = ('<defs><pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
         '<rect width="7" height="7" fill="%s"/><line x1="0" y1="0" x2="0" y2="7" stroke="%s" stroke-width="0.4"/></pattern>'
@@ -246,10 +259,12 @@ what = ("The design" if new else "The site as it is (no `massing/massing.geojson
 why = "" if scale == a.scale else (" At the site plan scale 1:%d it would be %.0f mm wide, wider than the %.0f mm panel, so the next usual scale."
                                    % (a.scale, W / a.scale * 1000, a.panel_mm))
 widths = ", ".join("%s %g m" % (k, WIDTH.get(k, 6)) for k in sorted(x for x in assumed if x)) or "none"
+streets_note = ("streets from streets/streets.geojson" if street_feats
+                else "street widths assumed by class (%s)" % widths)
 open(summary, "w").write(
     "- %s, isometric at 1:%d, seen from the %s, %.0f × %.0f mm in print.%s\n" % (what, scale, SIDE, mmw, mmh, why) +
     "- %d new buildings%s; %d existing buildings, %d of them at default heights from the site data.\n"
     % (n_new, " with floor lines" if LARGE and n_new else "", n_exist, defaults) +
-    "- Unsure: street widths assumed by class (%s); %s; %s.\n"
-    % (widths, "colours from the drawing standard" if used_standard else "no drawing standard, so the fallback look", png_note))
+    "- Unsure: %s; %s; %s.\n"
+    % (streets_note, "colours from the drawing standard" if used_standard else "no drawing standard, so the fallback look", png_note))
 print(open(summary).read())

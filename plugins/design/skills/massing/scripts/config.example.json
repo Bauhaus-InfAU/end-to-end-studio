@@ -67,6 +67,17 @@
   ],
   "source": "<brief file> p. N, or assumption: why"
  },
+ "homes_target_is_minimum": {
+  "value": null,
+  "source": "optional: true when the brief's homes figure is a minimum, with its page"
+ },
+ "figure": {
+  "value": {
+   "*": {"typology": "rows | open courtyard | courtyard | points | halls", "orientation": "long side | route | <bearing in degrees from north>", "row_gap": 24, "heights": "flat | to centre | from green | alternate", "floors_min": 2, "floors_max": 6},
+   "<neighbourhood name>": {"typology": "...", "orientation": 0, "block": {"L": 90, "D": 70, "d": 13, "gap": 6}}
+  },
+  "source": "<narrative.md principle N, or brief p. N>; optional: without it the figure follows the density"
+ },
  "setback_h_factor": {
   "value": null,
   "source": "optional: the brief's distance to the street as a share of the height"
@@ -74,6 +85,13 @@
  "setback_min_m": {
   "value": null,
   "source": "optional: the brief's least distance to the street"
+ },
+ "community_buildings": {
+  "value": [
+   {"use": "bus station", "gfa": null, "floors": 2, "ground_m2": null, "at": "bus station"},
+   {"use": "market hall", "gfa": null, "floors": 1, "at": "market"}
+  ],
+  "source": "optional: every community building the brief asks for, with its page; `at` is a word in a centre's `holds`"
  },
  "food_market": {
   "value": null,

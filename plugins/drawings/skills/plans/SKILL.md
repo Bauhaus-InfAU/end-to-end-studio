@@ -1,0 +1,13 @@
+---
+name: plans
+description: Draws the plans a brief asks for from the finished design layers, at their scales and cropped to the panel: the site plan with storeys, the detail areas and the figure-ground. Use when asked for the site plan, a detail plan, the figure-ground or the plans for the panels.
+---
+# Plans
+
+Reads: brief-reader, massing, streets, open-space, mobility, structure-plan, drawing-graphics
+
+Copy `${CLAUDE_SKILL_DIR}/scripts/config.example.json` to `plans/config.json` in the proposal folder and fill it from the brief's checklist: the scales of the site plan, the figure-ground and each detail area, whether the site plan shows the storeys, the panel size and margin, and for each detail area the structure plan's centre it is around (or `phase1`, or a point), with the page of each. Then run `python "${CLAUDE_SKILL_DIR}/scripts/plans.py" --proposal <proposal folder> --site <site folder> --config <proposal>/plans/config.json --style <proposal>/drawing-graphics/style.json` (`pip install shapely pyproj`; Chrome or Edge for the PNG). It composites what the design skills wrote: buildings from `massing/`, the street surface from `streets/`, the ground from `open-space/`, stops and hubs from `mobility/`; a layer that is missing is left out and named in `drawings.json`. Look at each PNG once. Never fix a colour or line weight here: the look is the standard's.
+
+**What it shows.** Large (a detail area, 1:1,000 and larger): every building with its storeys, entrances where the data has them, the street surface, paths, trees, pools and playgrounds. The site plan (1:2,000 to 1:5,000): buildings, storeys if the brief asks, streets, green and water, the detail-area windows outlined. Small (the figure-ground, 1:10,000 and smaller): buildings black on white and the site boundary. One thing dominates each plan: the new buildings.
+
+**What to write**, into `plans/`: `site-plan_1-<scale>.svg` and `.png`, `detail-area-<n>_1-<scale>.svg` and `.png`, `figure-ground_1-<scale>.svg` and `.png`, `drawings.json`, and `summary.md` in three lines: each file with its scale on one line (`site-plan_1-3000.svg at 1:3,000 …`); how many of the brief's plans are drawn and fit the panel; what you are unsure of, such as a layer that was missing or a plan that had to be cropped.
