@@ -64,6 +64,8 @@ DEFAULTS = {
     'text_floor_mm': (3.2, 'no text smaller than this on paper (12 px, 9 pt)'),
     'legend_mm': (30.0, 'the least height of the strip under the map, mm'),
     'png_px_per_mm': (4, 'PNG resolution, pixels per printed mm'),
+    'label_gap_mm': (1.2, 'a label sits this far from the edge of its symbol, mm on paper'),
+    'leader_mm': ([7, 11, 15], 'how far out a label on a leader line may go when no place beside its symbol is free, mm'),
     'street_widths': ({'motorway': 28, 'trunk': 22, 'trunk_link': 9, 'primary': 18, 'secondary': 15, 'tertiary': 13,
                        'tertiary_link': 8, 'residential': 10, 'unclassified': 8, 'living_street': 7, 'service': 5,
                        'pedestrian': 6, 'track': 3.5, 'cycleway': 3, 'footway': 2.5, 'path': 2, 'steps': 2},
@@ -464,9 +466,14 @@ def fill(g, colour, key=None, stroke=None, extra=''):
     o.append(f'<path d="{d(g)}" fill="{colour}"{st} fill-rule="evenodd"{extra}/>')
 
 
+heavy = []   # every line drawn at the mid weight or thicker, as drawn, in drawing units: labels keep off them
+
+
 def stroke(g, colour, w, dash=None, key=None, extra=''):
     if key:
         legend.setdefault(key, ('line', colour, w, dash))
+    if w >= lw('mid') - 1e-9:
+        heavy.append(shapely.affinity.affine_transform(g.intersection(fr.buffer(10)), [1, 0, 0, -1, -wx0, wy1]).buffer(w / 2))
     da = f' stroke-dasharray="{f2(dash[0] * k)} {f2(dash[1] * k)}"' if dash else ''
     o.append(f'<path d="{d(g)}" fill="none" stroke="{colour}" stroke-width="{f2(w)}"{da} stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
@@ -497,13 +504,16 @@ stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
 X, Y = P(stop_pt.x, stop_pt.y)
+ring_boxes = []   # the boxes of the rings' labels, which the other labels keep clear of
 for i, L in enumerate(limits):
     da = f' stroke-dasharray="{f2(2 * k)} {f2(1.5 * k)}"' if i else ''
     o.append(f'<circle cx="{f2(X)}" cy="{f2(Y)}" r="{f2(L)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"{da}/>')
     legend.setdefault('ring', ('ring',))
     a = math.radians(45)
-    o.append(f'<text x="{f2(X + L * math.cos(a) + 1.5 * k)}" y="{f2(Y - L * math.sin(a))}" font-size="{f2(fs)}" fill="{S["ink"]}" '
+    rx, ry = X + L * math.cos(a) + 1.5 * k, Y - L * math.sin(a)
+    o.append(f'<text x="{f2(rx)}" y="{f2(ry)}" font-size="{f2(fs)}" fill="{S["ink"]}" '
              f'paint-order="stroke" stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{L:g} m</text>')
+    ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
 LOOK = {'bus': (S['ink'], 'thick', None), 'car': (S['existing'], 'mid', None), 'bike': (S['accent'], 'mid', None),
@@ -545,7 +555,8 @@ def symbol(kind, x, y):
     return f'<path d="M{f2(x)},{f2(y - r)}L{f2(x + r)},{f2(y)}L{f2(x)},{f2(y + r)}L{f2(x - r)},{f2(y)}Z" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
 
 
-labelled = []   # hubs first, the stops on top; one label for a stop and hub at the same place
+SYM_R = {'stop': 2.4, 'bus-stop': 1.4, 'hub': 3.2, 'local-hub': 2.2, 'garage': 1.8, 'access': 1.8}   # mm, as drawn above
+labelled, marks = [], []   # hubs first, the stops on top; one label for a stop and hub at the same place
 for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['kind']) if f[0]['kind'] in ('hub', 'access', 'stop') else 9):
     if p['kind'] in ('stop', 'hub', 'access') and g.intersects(fr):
         kind = {'stop': 'stop' if p.get('main') else 'bus-stop', 'access': 'access'}.get(p['kind'])
@@ -554,10 +565,81 @@ for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['ki
         x, y = P(g.x, g.y)
         o.append(symbol(kind, x, y))
         legend.setdefault(kind, ('symbol', kind))
-        if kind in ('stop', 'hub', 'local-hub') and not any(t == p['name'] and q.distance(g) < 10 * k for t, q in labelled):
-            labelled.append((p['name'], g))
-            o.append(f'<text x="{f2(x + 4 * k)}" y="{f2(y - 2 * k)}" font-size="{f2(fs)}" fill="{S["ink"]}" paint-order="stroke" '
-                     f'stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{escape(str(p["name"]))}</text>')
+        r_ = (SYM_R[kind] + float(S['mid']) / 2) * k
+        marks.append(box(x - r_, y - r_, x + r_, y + r_))
+        if kind in ('stop', 'hub', 'local-hub') and not any(t == p['name'] and q.distance(g) < 10 * k for t, q, *_ in labelled):
+            labelled.append((p['name'], g, x, y, r_, kind))
+
+
+def label_spots(s, x, y, r_):
+    """The places a label may take around its symbol, in order: (text x, baseline y, anchor, box, leader or None).
+    A label's box is its character count times 0.56 of the font size wide, and its font size high."""
+    USED.update(['label_gap_mm', 'leader_mm'])
+    w, gap, pad = tw(s, fs), float(D['label_gap_mm']) * k, 0.4 * k
+    up, dn = 0.75 * fs, 0.25 * fs                              # ascent and descent from the baseline
+
+    def at(bx, by, anchor):                                    # bx: the anchor's x; by: the box's vertical middle
+        x0 = {'start': bx, 'end': bx - w, 'middle': bx - w / 2}[anchor]
+        base = by + (up - dn) / 2
+        return bx, base, anchor, box(x0 - pad, base - up - pad, x0 + w + pad, base + dn + pad)
+
+    e, c, h = r_ + gap, r_ + pad + 0.3 * k, (up + dn) / 2    # c: a corner place clears the symbol's square
+    spots = [at(x + e, y, 'start'), at(x - e, y, 'end'), at(x, y - e - h, 'middle'), at(x, y + e + h, 'middle'),
+             at(x + c, y - c - h, 'start'), at(x + c, y + c + h, 'start'),
+             at(x - c, y - c - h, 'end'), at(x - c, y + c + h, 'end')]
+    spots = [(*sp, None) for sp in spots]
+    for far in D['leader_mm']:                                 # further out, on a short line from the symbol
+        for deg in (0, 180, 45, 135, 315, 225, 90, 270):
+            a = math.radians(deg)
+            ex, ey = x + far * k * math.cos(a), y - far * k * math.sin(a)
+            anchor = 'start' if math.cos(a) > 0.1 else ('end' if math.cos(a) < -0.1 else 'middle')
+            by = ey - h if math.sin(a) > 0.9 else (ey + h if math.sin(a) < -0.9 else ey)
+            sx, sy_ = x + r_ * math.cos(a), y - r_ * math.sin(a)
+            spots.append((*at(ex + (0.5 * k if anchor == 'start' else -0.5 * k if anchor == 'end' else 0), by, anchor),
+                          shapely.LineString([(sx, sy_), (ex, ey)])))
+    return spots
+
+
+# every label keeps clear of the other labels, of every symbol (its own too) and of the map's edge, then of the heavy
+# lines: a place free of all is taken first, else the one least over labels and symbols, then least crossed by lines
+inner = box(0, 0, Wm, Hm)
+taken = list(ring_boxes)
+HEAVY = unary_union(heavy) if heavy else shapely.Polygon()
+lab_stats = dict(placed=0, moved=0, on_leader=0, warned=[], on_lines=[])
+for name, g, x, y, r_, kind in sorted(labelled, key=lambda t: t[5] == 'local-hub'):   # the main stop and hub first
+    s = str(name)
+    own = box(x - r_, y - r_, x + r_, y + r_)
+    others = [m for m in marks if not m.equals(own)]
+    best, best_hit = None, None
+    for i, (tx, ty, anchor, bx_, lead) in enumerate(label_spots(s, x, y, r_)):
+        hit = sum(bx_.intersection(t).area for t in taken + marks) + bx_.difference(inner).area
+        if lead is not None:
+            hit += sum(lead.intersection(t).length for t in taken + others) * fs
+        hit = (round(hit, 6), round(bx_.intersection(HEAVY).area, 6))
+        if hit == (0, 0):
+            best, best_hit = (i, tx, ty, anchor, bx_, lead), hit
+            break
+        if best is None or hit < best_hit:
+            best, best_hit = (i, tx, ty, anchor, bx_, lead), hit
+    i, tx, ty, anchor, bx_, lead = best
+    if best_hit[0]:
+        lab_stats['warned'].append(s)
+        print('label "%s": no free place around its symbol, drawn where it overlaps least' % s, file=sys.stderr)
+    elif best_hit[1]:
+        lab_stats['on_lines'].append(s)
+        print('label "%s": every place clear of labels and symbols is crossed by a route line, drawn where least' % s, file=sys.stderr)
+    elif i == 0:
+        lab_stats['placed'] += 1
+    else:
+        lab_stats['moved'] += 1
+    lab_stats['on_leader'] += lead is not None
+    taken.append(bx_)
+    if lead is not None:
+        o.append(f'<path d="M{f2(lead.coords[0][0])},{f2(lead.coords[0][1])}L{f2(lead.coords[1][0])},{f2(lead.coords[1][1])}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"/>')
+    am = '' if anchor == 'start' else f' text-anchor="{anchor}"'
+    o.append(f'<text x="{f2(tx)}" y="{f2(ty)}" font-size="{f2(fs)}"{am} fill="{S["ink"]}" paint-order="stroke" '
+             f'stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{escape(s)}</text>')
+stats['labels'] = lab_stats
 
 # the walking shares, as one line
 shares = ', '.join(LAB['within'].format(p=round(100 * walk['within_%dm' % L]), m='%g' % L)

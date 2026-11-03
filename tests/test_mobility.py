@@ -79,3 +79,90 @@ def test_mobility_mode_words(massed):
         sp.write_text(held, encoding="utf-8")
     modes = {p["mode"] for p in features(out) if p["kind"] == "route" and p["name"] == "Main road"}
     assert modes == {"foot", "bike"}, modes
+
+
+def label_boxes(svg, names):
+    """{text: its box in the drawing's units} of the labels with these texts."""
+    from shapely.geometry import box
+    boxes = {}
+    for attrs, s in re.findall(r"<text ([^>]*)>([^<]*)</text>", svg):
+        if s in names:
+            a = dict(re.findall(r'([\w-]+)="([^"]*)"', attrs))
+            x, y, fs = float(a["x"]), float(a["y"]), float(a["font-size"])
+            w = len(s) * fs * 0.56
+            x0 = {"start": x, "end": x - w, "middle": x - w / 2}[a.get("text-anchor", "start")]
+            boxes[s] = box(x0, y - 0.75 * fs, x0 + w, y + 0.25 * fs)
+    return boxes
+
+
+def test_mobility_label_off_bus_line(massed):
+    """A labelled point on a straight bus line: its label sits beside the line, not on it, at no less than 12 px."""
+    import pyproj
+    from shapely.geometry import shape, mapping, Point, LineString
+    from shapely.ops import transform
+    out, site_dir = massed
+    sp = out / "structure-plan/structure-plan.geojson"
+    held = sp.read_text(encoding="utf-8")
+    fc = json.loads(held)
+    road = shape(next(f["geometry"] for f in fc["features"] if f["properties"].get("name") == "Main road"))
+    c = road.centroid
+    epsg = (32600 if c.y >= 0 else 32700) + int((c.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    (ax, ay), _ = transform(to_m, road).coords
+    on = Point(ax + 60, ay)   # on the line, away from its gateway and the square
+    name = "Line point"
+    fc["features"].append({"type": "Feature", "geometry": mapping(transform(to_ll, on.buffer(1))),
+                           "properties": {"kind": "centre", "name": name, "level": "local", "holds": "mobility point"}})
+    sp.write_text(json.dumps(fc), encoding="utf-8")
+    try:
+        mobility(out, site_dir, CONFIG)
+    finally:
+        sp.write_text(held, encoding="utf-8")
+    svg = (out / "mobility/mobility_1-3000.svg").read_text(encoding="utf-8")
+    k = 3000 / 1000
+    lab = label_boxes(svg, [name])[name]
+    hub = [(float(x), float(y)) for x, y, r in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="#?\w+" stroke', svg)
+           if abs(float(r) - 2.2 * k) < 0.01]
+    assert hub, "no symbol for the point"
+    x, y = min(hub, key=lambda h: Point(h).distance(lab))   # its own symbol, not the legend's
+    line = LineString([(0, y), (1e6, y)]).buffer(0.5 * k / 2)   # the bus line as drawn: thick, 0.5 mm
+    assert not lab.intersects(line), (lab.bounds, y)
+    fs = float(re.search(r'font-size="([\d.]+)"[^>]*>%s<' % name, svg).group(1))
+    assert fs / k >= 3.2 - 1e-6, fs / k
+
+
+def test_mobility_labels_apart(massed):
+    """Two labelled points 5 m apart: their label boxes overlap neither each other nor the symbols."""
+    import pyproj
+    from shapely.geometry import shape, mapping, box, Point
+    from shapely.ops import transform
+    out, site_dir = massed
+    sp = out / "structure-plan/structure-plan.geojson"
+    held = sp.read_text(encoding="utf-8")
+    fc = json.loads(held)
+    sq = shape(next(f["geometry"] for f in fc["features"] if f["properties"].get("name") == "Square"))
+    c = sq.centroid
+    epsg = (32600 if c.y >= 0 else 32700) + int((c.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    p = transform(to_m, c)
+    names = ["West point", "East point"]
+    for name, dx in zip(names, (0, 5)):
+        fc["features"].append({"type": "Feature", "geometry": mapping(transform(to_ll, Point(p.x + dx, p.y + 20).buffer(1))),
+                               "properties": {"kind": "centre", "name": name, "level": "local", "holds": "mobility point"}})
+    sp.write_text(json.dumps(fc), encoding="utf-8")
+    try:
+        mobility(out, site_dir, CONFIG)
+    finally:
+        sp.write_text(held, encoding="utf-8")
+    svg = (out / "mobility/mobility_1-3000.svg").read_text(encoding="utf-8")
+    boxes = label_boxes(svg, names)
+    assert set(boxes) == set(names), boxes
+    assert not boxes[names[0]].intersects(boxes[names[1]]), boxes
+    k = 3000 / 1000
+    rings = [Point(float(x), float(y)).buffer(float(r)) for x, y, r in
+             re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="#?\w+" stroke', svg) if abs(float(r) - 2.2 * k) < 0.01]
+    assert len(rings) >= 2, len(rings)
+    for b in boxes.values():
+        assert not any(b.intersects(r) for r in rings), b
