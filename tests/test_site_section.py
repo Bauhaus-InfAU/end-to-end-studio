@@ -120,3 +120,44 @@ def test_terrain_fallback_flat(tmp_path):
     assert r.returncode == 0
     assert {row["source"] for row in profile(out)} == {"flat (no terrain found)"}
     assert "flat" in (out / "site-section/assumptions.md").read_text(encoding="utf-8")
+
+
+def gable(x0, y0, w=10, d=8, eaves=6, ridge=10):
+    """The two roof faces of a house w wide in x and d deep in y, its ridge along y; z above its ground."""
+    xm = x0 + w / 2
+    return [[(x0, y0, eaves), (xm, y0, ridge), (xm, y0 + d, ridge), (x0, y0 + d, eaves)],
+            [(xm, y0, ridge), (x0 + w, y0, eaves), (x0 + w, y0 + d, eaves), (xm, y0 + d, ridge)]]
+
+
+def test_roof_cut_across_ridge():
+    sys.path.insert(0, str(SECTION.parent))
+    import numpy as np, roofs
+    faces = [np.array(f, float) for f in gable(0, 0)]
+    e, V = np.array([1.0, 0.0]), np.array([0.0, 1.0])
+    prof = roofs.cut(faces, np.array([-5.0, 4.0]), e, V, 5, 15)   # t = x + 5
+    assert prof == [(5, 6), (10, 10), (15, 6)], prof
+    assert roofs.pitched(prof)
+    assert not roofs.pitched(roofs.cut(faces, np.array([5.0, -5.0]), V, -e, 5, 13))   # along the ridge: flat
+
+
+def test_section_pitched_roof_and_flat_top(tmp_path):
+    """On a made-up flat site: a gable house with a model is cut pitched, a house without one has a flat top."""
+    site_dir, out = tmp_path / "site", tmp_path / "proposals" / "2026-01-01_t"
+    site_dir.mkdir(parents=True)
+    to_ll = pyproj.Transformer.from_crs(32632, 4326, always_xy=True).transform
+    X0, Y0 = 500000.0, 5500000.0
+    ll = lambda pts: [list(to_ll(X0 + p[0], Y0 + p[1])) + list(p[2:]) for p in pts]
+    ring = lambda pts: ll(list(pts) + [pts[0]])
+    fc = lambda feats: json.dumps({"type": "FeatureCollection", "features": feats})
+    poly = lambda pts, **p: {"type": "Feature", "properties": p, "geometry": {"type": "Polygon", "coordinates": [ring(pts)]}}
+    (site_dir / "site.geojson").write_text(fc([poly([(-20, -20), (60, -20), (60, 30), (-20, 30)])]))
+    (site_dir / "buildings.geojson").write_text(fc([
+        poly([(0, 0), (10, 0), (10, 8), (0, 8)], id="house", height=10, floors=2),
+        poly([(30, 0), (40, 0), (40, 8), (30, 8)], id="shed", height=7, floors=2)]))
+    walls = [poly([(0, 0, 0), (10, 0, 0), (10, 0, 6), (0, 0, 6)], id="house", surface="wall")]
+    (site_dir / "buildings-3d.geojson").write_text(
+        fc(walls + [poly(f, id="house", surface="roof") for f in gable(0, 0)]))
+    a, b = to_ll(X0 - 100, Y0 + 4), to_ll(X0 + 140, Y0 + 4)
+    section(site_dir, out, "--line", f"{a[0]},{a[1]}", f"{b[0]},{b[1]}", env={"SECTION_NO_NETWORK": "1"})
+    roofs_ = cut(out)["roofs"]
+    assert roofs_["cut"] == {"from_model": 1, "pitched": 1, "flat_no_model": 1}, roofs_
