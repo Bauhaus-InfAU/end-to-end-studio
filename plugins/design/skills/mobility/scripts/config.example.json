@@ -1,0 +1,14 @@
+{
+ "hub": {"value": null, "source": "<brief file> p. N: the structure plan's centre with the main stop"},
+ "main_stop": {"value": null, "source": "<brief file> p. N: the structure plan's gateway or centre that is the rail or main public-transport stop"},
+ "main_stop_mode": {"value": "rail", "source": "<brief file> p. N: rail, bus or tram at the main stop"},
+ "walk_limits_m": {"value": [400, 800], "source": "<brief file> p. N, or assumption: 5 and 10 minutes at 80 m/min"},
+ "car_access": {"value": [], "source": "<brief file> p. N: the gateways where cars may enter (may stay empty)"},
+ "no_car_link": {"value": [["<gateway>", "<gateway>"]], "source": "<brief file> p. N: pairs of gateways no car route may join"},
+ "bike_destinations": {"value": [{"route": "<route name>", "to": "<a named place beyond the site>"}], "source": "<brief file> p. N, or assumption: why"},
+ "stops": {"value": [{"at": "<gateway or centre name>", "mode": "bus"}], "source": "<brief file> p. N, or assumption: why"},
+ "garages": {"value": [{"at": "<centre or gateway name>", "what": "district garage"}], "source": "<brief file> p. N, or assumption: why"},
+ "modes": {"value": {"<route name>": ["car", "bus"]}, "source": "<brief file> p. N: only where the structure plan's words are unclear"},
+ "scale": {"value": null, "source": "<brief file> p. N: the site plan scale"},
+ "labels": {"value": {"title": "Mobility plan"}, "source": "assumption: the legend in the brief's language; English when left out"}
+}

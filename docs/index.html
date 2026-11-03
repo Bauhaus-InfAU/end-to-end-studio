@@ -109,6 +109,13 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
 .contract div:last-child{border-right:0}
 .contract h2{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:0 0 6px}
 .contract p{margin:0 0 10px;color:var(--ink-2);max-width:42ch}
+.runs{border-top:1.5px solid var(--ink-2);margin-top:26px;padding-top:16px}
+.runs h2{font-family:var(--serif);font-weight:600;font-size:21px;color:var(--navy);margin:0 0 6px}
+.runs h3{font:600 15px var(--sans);margin:16px 0 4px}
+.runs h3 span{font-weight:400;color:var(--ink-3);margin-left:10px}
+.runs p{margin:0 0 12px;color:var(--ink-2);max-width:80ch}
+.pnl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;max-width:1100px}
+.pnl img{display:block;width:100%;height:auto;background:#fff;border:1px solid var(--rule)}
 .foot{display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:space-between;border-top:1px solid var(--rule);margin:30px 0 40px;padding-top:12px;font-size:13px;color:var(--ink-3)}
 .foot a{margin-right:18px}
 
@@ -126,6 +133,7 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
   .groups{margin-left:0}
   .contract{grid-template-columns:1fr}
   .contract div{border-right:0;margin-right:0;border-bottom:1px solid var(--rule)}
+  .pnl{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){
   .link,.node,.loop,.tick,.strip{transition:none}
@@ -174,6 +182,46 @@ select{font:14px var(--sans);color:var(--ink);background:var(--paper);border:1px
     <div><h2>Leaves</h2><p>A <code>summary.md</code> of three lines: what you found or made, the one number that matters, and the one thing you're unsure of.</p></div>
   </section>
 
+  <section class="runs">
+    <h2>Runs</h2>
+    <p>The panels each run of the studio made, newest first. Click a panel to open it full size.</p>
+    <h3>Run 5, Mon 02.11.<span>2026-11-02_run-5 · full studio, with brief-reader, drawing-graphics and streets</span></h3>
+    <p><i>Field Lines: living between lines of open field.</i> The district is built in north-south rows between at least four lines of open field that cross the whole site, so the field keeps carrying cold air, rain, food and paths. 11 of the brief's 13 required items are on the panels; detail area 1 and the housing mix are missing.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-02_run-5/panel-1.png"><img src="runs/2026-11-02_run-5/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of run 5: the field as resource, concept diagrams, figure-ground and climate rules"></a>
+      <a href="runs/2026-11-02_run-5/panel-2.png"><img src="runs/2026-11-02_run-5/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of run 5: the site plan, isometric and key figures"></a>
+      <a href="runs/2026-11-02_run-5/panel-3.png"><img src="runs/2026-11-02_run-5/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of run 5: detail area 2, two base views and residents per phase"></a>
+    </div>
+    <h3>Run 4, Mon 02.11.<span>2026-11-02_run-4 · measured against run 3, without streets</span></h3>
+    <p><i>Field Lines: a district built into the furrows.</i> Strips that follow the downhill cold air, with the strips between them kept as unbuilt, farmed field. 7 of 13 required items are on the panels; panels 2 and 3 are largely empty because the site plan and hub plan don't fit at true scale.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-02_run-4/panel-1.png"><img src="runs/2026-11-02_run-4/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of run 4: the idea, four concept diagrams, isometric and key figures"></a>
+      <a href="runs/2026-11-02_run-4/panel-2.png"><img src="runs/2026-11-02_run-4/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of run 4: sealing and phase figures and the climate sheet"></a>
+      <a href="runs/2026-11-02_run-4/panel-3.png"><img src="runs/2026-11-02_run-4/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of run 4: two base views and the section excerpt"></a>
+    </div>
+    <h3>Run 3, Mon 02.11.<span>2026-11-02_run-3 · 13 skills: climate, narrative, programme, structure-plan, massing, open-space, mobility, site-section, concept-diagrams, perspective, isometric, panel-layout, jury</span></h3>
+    <p><i>Lamellen: a district the night air passes through.</i> Built fields alternate with north-south green strips along the night air, and work uses on the loud edges shield the homes. 2,800 homes for 5,000 residents, 8 of the brief's 11 required content items on the panels; figure-ground and detail area 2 are missing. The jury skill gave no award: no bus station, garage or hub building is drawn in detail area 1.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-02_run-3/panel-1.png"><img src="runs/2026-11-02_run-3/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of run 3: the night air and the noise, concept pictograms, climate maps and the site section"></a>
+      <a href="runs/2026-11-02_run-3/panel-2.png"><img src="runs/2026-11-02_run-3/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of run 3: the open-space plan, key figures and phasing"></a>
+      <a href="runs/2026-11-02_run-3/panel-3.png"><img src="runs/2026-11-02_run-3/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of run 3: the mobility hub, two base perspectives and the isometric"></a>
+    </div>
+    <h3>Run 2, Sun 01.11.<span>2026-11-01_run-2 · narrative, programme, massing, site-section, concept-diagrams, panel-layout, jury</span></h3>
+    <p><i>Long Field: one long green, the district gathered beside it.</i> Compact clusters of five- and six-floor courtyard blocks leave the open land as one connected green belt along the settlement edge. The jury skill eliminated it in round 1: the plan is the brief's own framework plan and 7 of 9 required contents are missing.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-01_run-2/panel-1.png"><img src="runs/2026-11-01_run-2/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of run 2"></a>
+      <a href="runs/2026-11-01_run-2/panel-2.png"><img src="runs/2026-11-01_run-2/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of run 2"></a>
+      <a href="runs/2026-11-01_run-2/panel-3.png"><img src="runs/2026-11-01_run-2/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of run 2"></a>
+    </div>
+    <h3>Pre-run, Sun 01.11.<span>2026-11-01_run-1 · 4 of 20 skills: narrative, massing, site-section, panel-layout</span></h3>
+    <p><i>Field Lines: the lines that cut the site, made green.</i> 3,204 homes, 18.8 ha of public green, 3 of the 9 drawings the brief asks for. The empty space on the panels is where the skills still to come belong.</p>
+    <div class="pnl">
+      <a href="runs/2026-11-01_run-1/panel-1.png"><img src="runs/2026-11-01_run-1/panel-1.png" width="2245" height="3179" loading="lazy" alt="Panel 1 of the pre-run: title, idea, and the site section as it is"></a>
+      <a href="runs/2026-11-01_run-1/panel-2.png"><img src="runs/2026-11-01_run-1/panel-2.png" width="2245" height="3179" loading="lazy" alt="Panel 2 of the pre-run: the massing plan, the design section and key figures"></a>
+      <a href="runs/2026-11-01_run-1/panel-3.png"><img src="runs/2026-11-01_run-1/panel-3.png" width="2245" height="3179" loading="lazy" alt="Panel 3 of the pre-run: section excerpts on the design and the phases"></a>
+    </div>
+  </section>
+
   <footer class="foot">
     <div><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio">Repository</a><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio/blob/main/STUDIO.md">STUDIO.md</a><a href="https://github.com/Bauhaus-InfAU/end-to-end-studio#readme">How to hand in</a></div>
     <div id="live">Showing the plan from STUDIO.md.</div>
@@ -197,18 +245,18 @@ const TOPIC_G = Object.fromEntries(Object.entries(GROUPS).map(([g, v]) => [v.t, 
 // The plan, from STUDIO.md. Live Reads: lines from the repository replace these when they load.
 const PLAN = [
   {id:'pdf-to-md', g:8, mk:'PDFs as text', example:true, reads:[], does:'PDFs to Markdown with page markers, tables, and the pictures and vector plans in them.'},
-  {id:'brief-reader', g:1, mk:'A checklist', reads:[], does:'A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for.'},
+  {id:'brief-reader', g:1, mk:'A checklist', reads:[], does:'A checklist from the brief: numbers, required drawings and scales, panel format, what the jury looks for. Made once per brief, every item with its page.'},
   {id:'site-kit', g:2, mk:'The site data', example:true, reads:[], does:"The site's boundary and data: buildings, plots, streets, water, rail."},
-  {id:'climate', g:2, mk:'Air, sun, wind, noise', reads:['site-kit'], does:'Fresh-air corridors, sun, wind, noise.'},
+  {id:'climate', g:2, mk:'Air, sun, wind, noise', reads:['site-kit'], does:'Fresh-air corridors, sun, wind, noise. Made once per project, and again when the site, the brief or the skill change.'},
   {id:'analysis', g:3, mk:'The site today', mkEnd:'Design against today', reads:['site-kit','brief-reader'], readsEnd:['massing','TOPIC:analysis'], does:'The site as it is: uses, edges, green and biotopes, walking reach, sealed share, what to keep. At the end the same on the design, and the comparison of every analysis skill.'},
   {id:'narrative', g:4, mk:'Idea and storyline', mkEnd:'The text', reads:['brief-reader','analysis','climate'], readsEnd:'ALL', does:'The idea, its title and the storyline across the panels. At the end, the text with the key figures.'},
   {id:'structure-plan', g:4, mk:'The urban figure', reads:['narrative','climate'], does:'The urban figure: green corridors, neighbourhoods, centres, main routes.'},
   {id:'programme', g:4, mk:'The programme', reads:['brief-reader'], does:"The brief's programme as a table: homes and household mix, residents, uses and their areas."},
-  {id:'massing', g:5, mk:'The design', reads:['structure-plan','programme'], does:'Buildings, streets and open spaces on the structure plan, in massing/massing.geojson. Every skill that needs the buildings reads them from there.'},
+  {id:'massing', g:5, mk:'The design', reads:['narrative','structure-plan','programme'], does:'Buildings, streets and open spaces on the structure plan, in massing/massing.geojson. Every skill that needs the buildings reads them from there.'},
   {id:'phasing', g:5, mk:'Phases', reads:['structure-plan','massing'], does:'The construction phases and what comes first.'},
   {id:'mobility', g:5, mk:'Arriving and moving', reads:['structure-plan'], does:'How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking.'},
   {id:'open-space', g:5, mk:'Blue-green network', reads:['structure-plan'], does:'Parks, squares, gardens, and the blue-green network with rain retention.'},
-  {id:'drawing-graphics', g:6, mk:'Drawing standard', standard:true, reads:[], does:"The studio's drawing standard, made from the reference images in competition/references/. The other drawing skills read it, so all panels look like one studio. Change the references and every drawing changes with them."},
+  {id:'drawing-graphics', g:6, mk:'Drawing standard', standard:true, reads:['brief-reader','narrative'], does:"The drawing standard: a best-practice base, fitted to the entry's narrative, then to the reference images in competition/references/ if there are any. The other drawing skills read it, so all panels look like one studio."},
   {id:'figure-ground', g:6, mk:'Figure-ground plan', draws:true, reads:['site-kit','massing'], does:'The figure-ground plan of the district in its city.'},
   {id:'plans', g:6, mk:"Plans at the brief's scales", draws:true, reads:['massing','open-space','mobility','programme'], does:'Every plan the brief asks for, at its scales: the overall plan and the detail areas. What a plan shows changes with its scale.'},
   {id:'site-section', g:6, mk:'Long section', draws:true, reads:['massing'], does:'A long section through the site, and elevations if the brief asks for them.'},

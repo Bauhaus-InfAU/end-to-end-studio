@@ -1,0 +1,97 @@
+{
+ "height_limit_m": {
+  "value": 21.0,
+  "source": "Regensburg_EN_1.md p. 28"
+ },
+ "landmark_floors": {
+  "value": 8,
+  "source": "assumption: over 21 m conceivable at the centre, p. 33"
+ },
+ "m2_per_home": {
+  "value": 90.0,
+  "source": "assumption: the brief gives no housing floor area"
+ },
+ "homes_target": {
+  "value": 2800,
+  "source": "Regensburg_EN_1.md p. 30"
+ },
+ "commerce_target": {
+  "value": 230000.0,
+  "source": "Regensburg_EN_1.md p. 30"
+ },
+ "school_gfa": {
+  "value": 3000.0,
+  "source": "p. 30"
+ },
+ "school_yard": {
+  "value": 2000.0,
+  "source": "p. 30"
+ },
+ "school_sports": {
+  "value": 3000.0,
+  "source": "p. 30"
+ },
+ "pool_gfa": {
+  "value": 3000.0,
+  "source": "p. 30"
+ },
+ "pool_plot": {
+  "value": 4000.0,
+  "source": "p. 30"
+ },
+ "daycare_gfa": {
+  "value": 1000.0,
+  "source": "p. 30"
+ },
+ "daycares": {
+  "value": 3,
+  "source": "p. 30"
+ },
+ "daycare_play": {
+  "value": 950.0,
+  "source": "p. 30"
+ },
+ "green_target": {
+  "value": 60000.0,
+  "source": "p. 30"
+ },
+ "density": {
+  "value": {
+   "Railside slope": "urban",
+   "Chamer Straße field": "high",
+   "Fields west of Chamer Straße": "medium",
+   "Haslbach seam": "commercial",
+   "East field under the corridor": "commercial",
+   "Schwarzholz edge": "medium",
+   "Field above Brandlberg": "low"
+  },
+  "source": "assumption: own reading of p. 28"
+ },
+ "phase1": {
+  "value": [
+   "Railside slope",
+   "Chamer Straße field"
+  ],
+  "source": "p. 33"
+ },
+ "site_plan_scale": {
+  "value": 3000,
+  "source": "p. 34"
+ },
+ "epsg": {
+  "value": 25832,
+  "source": "run-3's projection"
+ },
+ "setback_h_factor": {
+  "value": 0.4,
+  "source": "p. 28"
+ },
+ "setback_min_m": {
+  "value": 3.0,
+  "source": "p. 28"
+ },
+ "food_market": {
+  "value": "food market on the ground floor, about 1,200 m2 sales area",
+  "source": "brief p. 33"
+ }
+}

@@ -31,6 +31,12 @@ OWN = "panel-layout"
 DRAWING_EXT = {".svg", ".png", ".jpg", ".jpeg"}
 MM_PER = {"mm": 1.0, "cm": 10.0, "in": 25.4, "pt": 25.4 / 72, "pc": 25.4 / 6}
 PX_MM = 25.4 / 96  # CSS pixel
+MIN_PT = 9  # 12 px: no text on a panel is smaller, whatever the layout or the standard asks
+COLUMN_EM = 32  # a text wider than this is set in columns, about 65 characters a line
+
+
+def pt_(v):
+    return max(float(v), MIN_PT)
 SCALE_RE = re.compile(r"1\s*:\s*(\d{1,3}(?:[,.  ]\d{3})+(?!\d)(?!\s*(?:k?m|ha)\b)|\d+)")
 
 
@@ -108,7 +114,7 @@ def scan(folder):
     folder = Path(folder).resolve()
     inv = {"proposal": str(folder), "skills": {}, "drawings": [], "tables": [], "texts": [],
            "checklist": None, "standard": None, "missing": []}
-    for sub in sorted(p for p in folder.iterdir() if p.is_dir() and p.name != OWN):
+    for sub in sorted(p for p in folder.iterdir() if p.is_dir() and p.name != OWN and not p.name.startswith(".")):
         summary_path = sub / "summary.md"
         summary = summary_path.read_text(encoding="utf-8", errors="replace") if summary_path.exists() else ""
         inv["skills"][sub.name] = {"summary": summary.strip() or None}
@@ -246,9 +252,10 @@ def place(panel, fmt, reserved, style, folder, inv_by_file, notes):
             if x > m and x + it["w"] > m + content_w + 0.01:
                 x, y, row_h = m, y + row_h + g, 0
             box = {"x": x, "y": y, "w": it["w"], "h": it["h"]}
-        if box["x"] < 0 or box["y"] < 0 or box["x"] + box["w"] > W + 0.01 or box["y"] + box["h"] > H - m + 0.01:
-            unplaced.append((it, f"needs {box['w']:.0f} x {box['h']:.0f} mm at ({box['x']:.0f}, {box['y']:.0f}); "
-                                 f"runs past the panel's edge or bottom margin"))
+        if box["x"] < m - 0.01 or box["y"] < m - 0.01 or box["x"] + box["w"] > W - m + 0.01 or box["y"] + box["h"] > H - m + 0.01:
+            unplaced.append((it, f"{box['w']:.0f} x {box['h']:.0f} mm at ({box['x']:.0f}, {box['y']:.0f}) runs into the {m:g} mm margin; "
+                                 + (f"it must be at most {content_w:.0f} mm wide: ask its skill to cut or split it, never shrink it"
+                                    if box["w"] > content_w + 0.01 else "move it inside the margins")))
             continue
         clash = [r.get("what", "reserved area") for r in reserved if overlaps(box, r)]
         clash += [p["id"] for p, b in placed if overlaps(box, b)]
@@ -291,11 +298,16 @@ def item_html(it, box, style, folder):
             length = nice_length(it["_img_w"] * 0.25 * sc / 1000)
             bar_mm = length * 1000 / sc
             lw = style["line_mm"]
-            fs = style["body_pt"] * 25.4 / 72 * 0.7  # label size follows the body text
-            inner += (f'<svg class="bar" width="{bar_mm + 30:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 30:.2f} 7">'
-                      f'<rect x="0.2" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="{style["text"]}"/>'
-                      f'<rect x="{bar_mm / 2 + 0.2:.2f}" y="1" width="{bar_mm / 2:.2f}" height="1.5" fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
-                      f'<text x="0.2" y="6" font-size="{fs:.2f}">0</text><text x="{bar_mm + 1.5:.2f}" y="2.6" font-size="{fs:.2f}">{length:g} m</text></svg>')
+            fs = pt_(style["body_pt"] * 0.7) * 25.4 / 72  # label size follows the body text, never below 12 px
+            # a line that steps up and down, a tick and a number at every step, fewer steps if the numbers would touch
+            n = next(n for n in ((4, 2, 1) if f"{length:g}"[0] == "2" else (5, 2, 1))
+                     if bar_mm / n >= (len(f"{length:g}") + 1) * 0.6 * fs + 1 or n == 1)
+            s, x0 = bar_mm / n, 2
+            inner += (f'<svg class="bar" width="{bar_mm + 12:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 12:.2f} 7">'
+                      f'<path d="{"".join(f"M{x0 + i * s:.2f},{1 + 1.5 * (i % 2)}h{s:.2f}" for i in range(n))}{"".join(f"M{x0 + i * s:.2f},1v1.5" for i in range(n + 1))}" '
+                      f'fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
+                      + "".join(f'<text x="{x0 + i * s:.2f}" y="6.4" font-size="{fs:.2f}" text-anchor="middle">{length * i / n:g}{" m" if i == n else ""}</text>' for i in range(n + 1))
+                      + '</svg>')
         if it.get("caption"):
             sc = scale_number(it.get("scale"))
             cap = it["caption"] + (f" · 1:{sc:,}" if sc and it.get("_scale_held") else "")
@@ -309,7 +321,7 @@ def item_html(it, box, style, folder):
     else:
         head = f"<h2>{html.escape(it['heading'])}</h2>" if it.get("heading") else ""
         pt = it.get("pt")
-        st = f' style="font-size:{pt}pt;line-height:1.1;font-weight:{it.get("weight", 400)}"' if pt else ""
+        st = f' style="font-size:{pt_(pt)}pt;line-height:1.1;font-weight:{it.get("weight", 400)}"' if pt else ""
         inner = f"{head}<div{st}>{paragraphs(it.get('text', ''))}</div>"
     return f'<div class="box {kind}" id="{html.escape(it["id"])}" style="{s}">{inner}</div>'
 
@@ -333,6 +345,7 @@ window.addEventListener('load', () => {
 
 def panel_html(n, total, placed, fmt, reserved, marks, style, ctx, folder):
     W, H = fmt["width_mm"], fmt["height_mm"]
+    style = {**style, "heading_pt": pt_(style["heading_pt"]), "body_pt": pt_(style["body_pt"])}
     c = {**ctx, "n": n, "total": total}
     parts = [item_html(it, b, style, folder) for it, b in placed]
     for r in reserved:
@@ -341,7 +354,7 @@ def panel_html(n, total, placed, fmt, reserved, marks, style, ctx, folder):
     for mk in marks:
         align = mk.get("align", "left")
         pos = f"top:{mk['y']}mm;" + (f"right:{mk['x']}mm;" if align == "right" else f"left:{mk['x']}mm;")
-        parts.append(f'<div class="mark" style="{pos}font-size:{mk.get("pt", 14)}pt;font-weight:{mk.get("weight", 400)};'
+        parts.append(f'<div class="mark" style="{pos}font-size:{pt_(mk.get("pt", 14))}pt;font-weight:{mk.get("weight", 400)};'
                      f'text-align:{align}">{html.escape(fill(mk["text"], c))}</div>')
     nonce = secrets.token_hex(16)  # only the page's own check may run; nothing loads from the network
     csp = f"default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src file: data:; script-src 'nonce-{nonce}'"
@@ -362,7 +375,9 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 .box table {{ border-collapse: collapse; width: 100%; }}
 .box td {{ border-top: {style['line_mm']}mm solid {style['text']}; padding: 1.2mm 2mm 1.2mm 0; vertical-align: top; }}
 .box td.v {{ font-weight: 700; color: {style['accent']}; white-space: nowrap; }}
-.box td.src {{ opacity: .6; font-size: .8em; }}
+.box td.src {{ opacity: .6; font-size: max(.8em, 12px); }}
+.box.text > div {{ column-width: {COLUMN_EM}em; column-gap: 6mm; }}
+.box.text > div p {{ break-inside: avoid-column; }}
 </style></head><body>
 {chr(10).join(parts)}
 {CHECK_JS.replace("{nonce}", nonce)}</body></html>"""
@@ -500,9 +515,11 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         lines.append("")
     req = L.get("required", [])
     missing = [q for q in req if not q.get("id") or q["id"] not in ids]
+    refused = {it["id"] for r in results for it, _ in r["unplaced"] if "_error" not in it}  # a missing file is missing, not too big
     lines.append("## What the brief asks for")
     for q in req:
-        state = "**MISSING**" if q in missing else f"on the panels, `{q['id']}`"
+        state = (f"on the panels, `{q['id']}`" if q not in missing else
+                 f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else "**MISSING: no input**")
         lines.append(f"- {q['what']} ({q.get('source', '')}): {state}"
                      + (f". {q['note']}" if q.get("note") else ""))
     if not req:
@@ -513,9 +530,12 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
     lines.append("")
     lines.append("## Inputs missing")
     lines += [f"- {m}" for m in inv["missing"] + L.get("missing", [])] or ["- none"]
+    notes = notes + L.get("notes", [])
     if notes:
         lines += ["", "## Notes"] + [f"- {n}" for n in notes]
-    lines += ["", f"Problems: {problems}. Required items missing: {len(missing)} of {len(req)}."]
+    not_fit = sum(q.get("id") in refused for q in missing)
+    lines += ["", f"Problems: {problems}. Required items missing: {len(missing)} of {len(req)} "
+                  f"({len(missing) - not_fit} without input, {not_fit} did not fit)."]
     text = "\n".join(lines) + "\n"
     (out / "report.md").write_text(text, encoding="utf-8")
     return text

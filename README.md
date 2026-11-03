@@ -11,15 +11,17 @@ plugins/              the tools: nine topics, one folder per skill
   <topic>/TOPIC.md      what the skills of a topic read and write
   <topic>/skills/<skill>/SKILL.md
 competition/          this semester's job: Europan 18, Regensburg
-  brief/                the brief as PDF, and its Markdown from pdf-to-md
+  brief/                the brief as PDF, its Markdown from pdf-to-md, checklist.md from brief-reader
   site/                 the site and its data, from site-kit
+  climate/              air, sun, wind and noise, made once by climate, never committed
   references/           the images the drawings take their look from
   proposals/            the runs, never committed
     test/               where you test your skill
     2026-11-02_run-1/   one run of the studio
 STUDIO.md             the contract, and who writes which skill
 CLAUDE.md             the rules for the agent, and where things are
-docs/                 the flow page
+docs/                 the flow page, and the designs, plans and results of changes to the studio
+tests/                checks for the studio's own scripts: python -m pytest tests
 ```
 
 `plugins/` knows nothing about Europan. Everything that belongs to this one competition is in `competition/`.
@@ -47,7 +49,13 @@ Install one topic, or all nine to run the studio. A skill is called by topic and
 
 Put it in `plugins/<topic>/skills/<your-skill>/SKILL.md`, in the topic `STUDIO.md` gives it. Read that topic's `TOPIC.md` first, and the two examples: `pdf-to-md` in `utilities` and `site-kit` in `site`. Near the top, one line says which skills yours reads: `Reads: site-kit, massing`. The lead uses it to decide when your skill runs.
 
-Write it so it works anywhere: on another brief, another site, in another project, with other reference images and at other scales. Your skill decides what your part shows. The look comes from `drawing-graphics`, the scales from the brief, the site from the project's site folder.
+Write it so it works anywhere: on another brief, another site, in another project, with other reference images and at other scales. Your skill decides what your part shows. The look comes from `drawing-graphics`, the scales from the brief's checklist, the site from the project's site folder.
+
+Three things keep a run cheap and the same from one run to the next:
+
+- Your skill runs on Sonnet. If it has to judge more than it draws, add `Model: opus` below its `Reads:` line; that costs twice as much.
+- Read the brief's `checklist.md` first, and open the brief only at the pages it names.
+- Code your skill needs in every run goes in its own `scripts/` folder, and the brief's numbers in a `config.json` that the skill fills from the checklist, each with its page. `massing` shows how. A script never holds a site, a street or a brief's number.
 
 ## Hand it in
 
@@ -62,3 +70,16 @@ Before you change your skill, get what others merged: on your fork on GitHub pre
 ## Run the studio
 
 Ask for "a competition entry, label it run-1". `competition-proposal` runs every skill into `competition/proposals/<date>_run-1/` and writes its `README.md`: what's done, what failed, what nobody has written yet. "Redo the massing of run-1 with courtyards" makes a variant; "compare run-1 and courtyards" puts two versions side by side.
+
+How a run works: the lead starts each skill as its own light helper, `studio:studio-helper`, which carries only that skill and the tools to read, write and run code. A skill starts as soon as what its `Reads:` line names exists. The brief's checklist and the climate belong to the project: they are made once, copied into every version, and made again only when the site, the brief or their skill change. A skill runs a second time only when its own `Reads (end):` line says so; the lead never adds a round. What changed and why is in `docs/superpowers/specs/`, the measured costs in `2026-11-02-lean-run-results.md`.
+
+### On a Pro plan
+
+A full run used to cost about $30 at API prices, about three of a Pro plan's 5-hour windows. Started like this, it should fit in one. Open a terminal in the repo and start Claude Code with only the repo's settings and plugins, and none of your own MCP servers:
+
+```
+PowerShell:     $env:ENABLE_CLAUDEAI_MCP_SERVERS="false"; claude --model sonnet --setting-sources project,local --strict-mcp-config --permission-mode auto
+macOS, Linux:   ENABLE_CLAUDEAI_MCP_SERVERS=false claude --model sonnet --setting-sources project,local --strict-mcp-config --permission-mode auto
+```
+
+Your own settings, plugins and permissions are left out for this session only. The lead runs on Sonnet, and every skill runs on Sonnet unless its `Model:` line says otherwise. At the end the lead writes `cost.csv` into the version folder: what each skill cost, in tokens and in dollars. Its total is also in the version's `README.md`. Look there first when you want a run to cost less.

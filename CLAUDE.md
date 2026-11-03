@@ -4,10 +4,12 @@ This repo has two halves. `plugins/` holds the tools: skills for architecture co
 
 ## Where things are
 
-- The brief: `competition/brief/`, `Regensburg_EN_1.pdf`. Its Markdown goes next to it, made by `pdf-to-md`.
+- The brief: `competition/brief/`, `Regensburg_EN_1.pdf`. Its Markdown goes next to it, made by `pdf-to-md`, and `checklist.md`, made by `brief-reader`. Read the checklist first, and the brief only at the pages it names.
 - The site: `competition/site/`, made by `site-kit`: `site.geojson` and its layers.
+- The climate: `competition/climate/`, made once by `climate` and copied into each run. It isn't committed.
 - The reference images the drawings take their look from: `competition/references/`.
-- The proposals: `competition/proposals/`, one folder per run. They stay on this computer. Test a skill in `competition/proposals/test/`.
+- The proposals: `competition/proposals/`, one folder per run. They stay on this computer. Test a skill in `competition/proposals/test/`. A map of the site, the climate and every run's geometry: `competition/proposals/preview/index.html`, remade after each run by the lead's `preview.py`.
+- The studio's own checks: `tests/`, run with `python -m pytest tests`.
 
 I study architecture or design and don't write code. Explain each step in a sentence or two of plain words. After a change, say which files you changed and what I should look at.
 
@@ -21,6 +23,9 @@ Europan 18 has been judged, and its results are published. Never search for, ope
 - When I ask you to change a skill, change the fewest lines that fix what I didn't like, and tell me which. Keep it short. If a line no longer changes the result, suggest deleting it.
 - To compare, run the same request once without the skill ("don't use any skill") and once with it, and save both results side by side.
 - After changing a skill, remind me to type `/reload-plugins`, so the new version is the one that runs.
+- Code a skill needs in every run goes in its `scripts/` folder, with the brief's numbers in a `config.json`, never in the skill's text.
+- A skill runs on Sonnet unless its `Model: opus` line says otherwise. Add that line only to a skill that judges.
+- To run the whole studio, start Claude Code as the README's "On a Pro plan" says.
 - A pull request changes only the author's own skill folder.
 
 ## Keys

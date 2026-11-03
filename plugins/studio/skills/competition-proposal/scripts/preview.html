@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project preview</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css"
+  integrity="sha512-qN/uDg9bS3IAldWq4lswyC+9ZSoShtfyNDp+FaJhdtXJqdgubHA+s4nB8BajW0m90Y0+RBGbqu2anzbxiQYdHA==" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"
+  integrity="sha512-dXgoFR02YHJ9Fa29P3D/1umNaZ0EXS2N0w29Lm3b/1BK8UDLMdLWDFwuujIyJJdU27/PLuk3dmS1V9NO8ABX1A==" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@9.0.38/dist.min.js"
+  integrity="sha512-R306Iwv466NdydETeKnjn2TaosUQ3t++lw5u/E7kHefLMFSSJtFVHXbU3xpfpf0QX86kuAf6yuY+S9kcp7J+zw==" crossorigin="anonymous"></script>
+<style>
+  :root { --ink: #1f1a17; --muted: #6b645e; --line: #e4e0da; --paper: #ffffff; --side: #f8f4ec; --accent: #c8372d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #app { display: flex; height: 100%; }
+  aside { width: 300px; flex: none; overflow-y: auto; background: var(--side); border-right: 1px solid var(--line); padding: 16px; }
+  #map { flex: 1; position: relative; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 6px; }
+  h3 { font-size: 13px; margin: 12px 0 4px; }
+  label { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; }
+  .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+  .n { color: var(--muted); margin-left: auto; font-size: 12px; }
+  select { width: 100%; padding: 6px; font: inherit; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); }
+  .title { margin: 6px 0; color: var(--muted); }
+  .links a { color: var(--accent); margin-right: 8px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button { font: inherit; padding: 5px 12px; border: 1px solid var(--ink); border-radius: 4px; background: var(--paper); color: var(--ink); cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .maplibregl-popup-content { font-size: 12px; max-height: 260px; overflow-y: auto; }
+  .maplibregl-popup-content table { border-collapse: collapse; }
+  .maplibregl-popup-content td { padding: 1px 6px 1px 0; vertical-align: top; }
+  .maplibregl-popup-content td:first-child { color: var(--muted); }
+  @media (max-width: 640px) { #app { flex-direction: column; } aside { width: 100%; height: 45%; border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <h1>Project preview</h1>
+    <div class="hint">Click a shape to see its data. Right-drag (or Ctrl-drag) to turn and tilt.</div>
+    <div class="row">
+      <button id="view3d" aria-pressed="true">3D</button>
+      <label><input type="checkbox" id="base" checked> Base map</label>
+    </div>
+    <h2>Shared by every run</h2>
+    <div id="shared"></div>
+    <h2>Run</h2>
+    <select id="run"></select>
+    <div class="title" id="runTitle"></div>
+    <div class="links" id="runLinks"></div>
+    <div id="runLayers"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+<script>
+const RUNS = /*RUNS*/[];
+const report = m => { const d = document.createElement("div"); d.className = "hint"; d.style.color = "#c8372d"; d.textContent = "Error: " + m; document.querySelector("aside").appendChild(d); };
+window.addEventListener("error", e => report(e.message));
+window.addEventListener("unhandledrejection", e => report(e.reason && e.reason.message || e.reason));
+const PALETTE = ["#c8372d", "#4ea784", "#6f8de8", "#f4c34e", "#dc94e6", "#ee6d45", "#1f3a2e", "#8a6d3b"];
+const RAMP = ["#fff1c1", "#fdc77a", "#f28b4f", "#d4503a", "#8f1d2c", "#4a0d1f"];
+const DEFAULT_ON = new Set(["site/site", "site/buildings", "massing/massing"]);
+const KIND = { building: "#c8372d", "open-space": "#4ea784", green: "#4ea784", corridor: "#4ea784", park: "#4ea784",
+  "ground-cover": "#9fd3b8", "green-link": "#4ea784", retention: "#6f8de8", water: "#6f8de8", street: "#8a8580",
+  route: "#6f8de8", path: "#b5afa8", centreline: "#8a8580", "street-end": "#ee6d45", neighbourhood: "#f4c34e",
+  centre: "#dc94e6", hub: "#dc94e6", stop: "#dc94e6", gateway: "#ee6d45", access: "#ee6d45", tree: "#4ea784" };
+const EXISTING = "#cfcac3";
+
+const PREVIEW = { data: {}, waiting: {}, add(key, d) { this.data[key] = d; (this.waiting[key] || []).forEach(f => f(d)); } };
+function loadData(key) {
+  if (PREVIEW.data[key]) return Promise.resolve(PREVIEW.data[key]);
+  return new Promise(res => {
+    (PREVIEW.waiting[key] = PREVIEW.waiting[key] || []).push(res);
+    const s = document.createElement("script"); s.src = "data/" + encodeURIComponent(key) + ".js"; document.head.appendChild(s);
+  });
+}
+
+const map = new maplibregl.Map({
+  container: "map", pitch: 55, bearing: -20, maxPitch: 80, center: [0, 0], zoom: 2, attributionControl: false,
+  style: { version: 8, sources: { base: { type: "raster", tileSize: 256, maxzoom: 16,
+    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"],
+    attribution: "Base map &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors" } },
+    layers: [{ id: "bg", type: "background", paint: { "background-color": "#f4f2ef" } }, { id: "base", type: "raster", source: "base" },
+      { id: "flat-top", type: "background", paint: { "background-opacity": 0 } }] }  // flat layers go below this, buildings above
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-left");
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+map.addControl(new maplibregl.AttributionControl({ compact: true }));
+document.getElementById("base").onchange = e => map.setLayoutProperty("base", "visibility", e.target.checked ? "visible" : "none");
+const btn = document.getElementById("view3d");
+btn.onclick = () => { const on = btn.getAttribute("aria-pressed") !== "true"; btn.setAttribute("aria-pressed", on);
+  map.easeTo({ pitch: on ? 55 : 0, bearing: on ? -20 : 0, duration: 600 }); };
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = v => typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" && !isNaN(+v) ? +v : null);
+
+// Colour and height of each feature, worked out once, so the map only reads _c and _h.
+function prepare(group, name, fc, colour) {
+  const f0 = (fc.features[0] || {}).properties || {};
+  const g = Object.keys(f0).find(k => /_min$/.test(k) && typeof f0[k] === "number");
+  const values = g ? [...new Set(fc.features.map(f => (f.properties || {})[g]).filter(v => typeof v === "number"))].sort((a, b) => a - b) : [];
+  const kinds = [...new Set(fc.features.map(f => (f.properties || {}).kind).filter(Boolean))];
+  const kindC = {}; kinds.forEach((k, i) => kindC[k] = KIND[k] || PALETTE[i % PALETTE.length]);
+  const parts = { extrude: [], fill: [], line: [], point: [], mesh: [] };
+  fc.features.forEach(f => {
+    if (!f.geometry) return;
+    const pr = f.properties || {};
+    if (group !== "site" && pr.kind === "building" && pr.existing === true) return;  // the site already shows the existing city
+    const p = Object.assign({}, f.properties || {});
+    p._src = group + " / " + name;
+    let c = kinds.length > 1 && kindC[p.kind] ? kindC[p.kind] : colour;
+    if (g && typeof p[g] === "number") c = RAMP[Math.min(RAMP.length - 1, Math.round(values.indexOf(p[g]) * (RAMP.length - 1) / Math.max(1, values.length - 1)))];
+    const isBuilding = p.kind === "building" || name === "buildings";
+    if (isBuilding) c = p.existing === true || name === "buildings" ? EXISTING : KIND.building;
+    p._c = c;
+    const t = f.geometry.type;
+    const feat = { type: "Feature", geometry: f.geometry, properties: p };
+    if (/Polygon/.test(t) && is3d(f.geometry)) {
+      const polys = t === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+      polys.forEach(rings => parts.mesh.push({ rings, roof: p.surface === "roof", p }));
+    } else if (/Polygon/.test(t) && isBuilding) {
+      const fl = num(p.floors);
+      p._h = num(p.height) ?? num(p.height_m) ?? (fl ? fl * 3.2 : 6);
+      parts.extrude.push(feat);
+    } else if (/Polygon/.test(t)) parts.fill.push(feat);
+    else if (/LineString/.test(t)) parts.line.push(feat);
+    else if (/Point/.test(t)) parts.point.push(feat);
+  });
+  return parts;
+}
+
+const is3d = g => { let c = g.coordinates; while (Array.isArray(c[0])) c = c[0]; return c.length > 2; };
+const DECK = {};  // "pane|group/name" -> deck.gl layer of 3D surfaces
+const overlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
+map.addControl(overlay);
+const redraw = () => overlay.setProps({ layers: Object.values(DECK) });
+function meshLayer(key, feats, newBuilding) {
+  return new deck.SolidPolygonLayer({ id: key, data: feats, _full3d: true, extruded: false, pickable: true,
+    getPolygon: d => d.rings, getFillColor: d => d.roof ? (newBuilding ? [178, 52, 42] : [176, 166, 156]) : (newBuilding ? [200, 55, 45] : [214, 209, 202]),
+    material: { ambient: 0.55, diffuse: 0.6, shininess: 4, specularColor: [40, 40, 40] },
+    onClick: info => { if (!info.object) return; const p = info.object.p, rows = Object.entries(p).filter(([k, v]) => !k.startsWith("_") && v !== null && v !== "")
+      .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+      new maplibregl.Popup({ maxWidth: "320px" }).setLngLat(info.coordinate).setHTML(`<b>${esc(p._src)}</b><table>${rows}</table>`).addTo(map); } });
+}
+const LAYERS = {};  // "pane|group/name" -> list of map layer ids
+function addToMap(pane, group, name, fc, colour) {
+  const key = pane + "|" + group + "/" + name;
+  if (LAYERS[key]) return LAYERS[key];
+  const parts = prepare(group, name, fc, colour), ids = [];
+  const outline = name === "site" && group === "site", check = (fc.features[0] || {}).properties?.kind === "check";
+  for (const [part, feats] of Object.entries(parts)) {
+    if (!feats.length) continue;
+    const id = key + "|" + part;
+    if (part === "mesh") { DECK[id] = meshLayer(id, feats, group !== "site"); redraw(); ids.push(id); continue; }
+    map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: feats } });
+    if (part === "extrude") map.addLayer({ id, source: id, type: "fill-extrusion",
+      paint: { "fill-extrusion-color": ["get", "_c"], "fill-extrusion-height": ["get", "_h"], "fill-extrusion-opacity": 0.92 } });
+    if (part === "fill") {
+      if (outline || check) map.addLayer({ id, source: id, type: "line",
+        paint: { "line-color": outline ? "#1f1a17" : "#6f8de8", "line-width": 3, "line-dasharray": [3, 2] } }, "flat-top");
+      else {
+        map.addLayer({ id, source: id, type: "fill", paint: { "fill-color": ["get", "_c"], "fill-opacity": 0.35 } }, "flat-top");
+        map.addLayer({ id: id + "|edge", source: id, type: "line", paint: { "line-color": ["get", "_c"], "line-width": 0.8 } }, "flat-top");
+        ids.push(id + "|edge");
+      }
+    }
+    if (part === "line") map.addLayer({ id, source: id, type: "line", paint: { "line-color": ["get", "_c"], "line-width": 2 } }, "flat-top");
+    if (part === "point") map.addLayer({ id, source: id, type: "circle",
+      paint: { "circle-color": ["get", "_c"], "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 1, 18, 3], "circle-opacity": 0.8 } }, "flat-top");
+    ids.unshift(id);
+    map.on("click", id, e => {
+      const p = e.features[0].properties, rows = Object.entries(p).filter(([k, v]) => !k.startsWith("_") && v !== null && v !== "" && v !== "null")
+        .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+      new maplibregl.Popup({ maxWidth: "320px" }).setLngLat(e.lngLat).setHTML(`<b>${esc(p._src)}</b><table>${rows}</table>`).addTo(map);
+    });
+    map.on("mouseenter", id, () => map.getCanvas().style.cursor = "pointer");
+    map.on("mouseleave", id, () => map.getCanvas().style.cursor = "");
+  }
+  return LAYERS[key] = ids;
+}
+function show(key, on) { (LAYERS[key] || []).forEach(id => DECK[id] ? (DECK[id] = DECK[id].clone({ visible: on }), redraw()) : map.setLayoutProperty(id, "visibility", on ? "visible" : "none")); }
+function drop(pane) {
+  Object.keys(LAYERS).filter(k => k.startsWith(pane)).forEach(k => {
+    LAYERS[k].forEach(id => { if (DECK[id]) { delete DECK[id]; redraw(); } else if (map.getLayer(id)) map.removeLayer(id); });
+    LAYERS[k].filter(id => !id.endsWith("|edge") && !id.endsWith("|mesh")).forEach(id => map.getSource(id) && map.removeSource(id));
+    delete LAYERS[k];
+  });
+}
+
+function list(el, pane, payload, remembered) {
+  el.innerHTML = "";
+  let i = 0;
+  Object.entries(payload).forEach(([group, files]) => {
+    const h = document.createElement("h3"); h.textContent = group; el.appendChild(h);
+    Object.entries(files).forEach(([name, fc]) => {
+      if (name === "buildings" && files["buildings-3d"]) return;  // the 3D buildings replace the flat boxes
+      const id = group + "/" + name;
+      const colour = name.startsWith("buildings") && group === "site" ? EXISTING : name === "site" && group === "site" ? "#1f1a17" : PALETTE[i++ % PALETTE.length];
+      const lab = document.createElement("label");
+      const box = document.createElement("input"); box.type = "checkbox";
+      box.checked = remembered ? remembered.has(id) : id === "site/buildings" && files["buildings-3d"] ? false : DEFAULT_ON.has(id) || id === "site/buildings-3d";
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colour;
+      const n = document.createElement("span"); n.className = "n"; n.textContent = fc.features.length;
+      lab.append(box, sw, document.createTextNode(name), n); el.appendChild(lab);
+      const key = pane + "|" + id;
+      box.onchange = () => { if (box.checked) { addToMap(pane, group, name, fc, colour); show(key, true); } else show(key, false); };
+      box.dataset.key = key;
+      if (box.checked) box.onchange();
+    });
+  });
+  if (!Object.keys(payload).length) el.innerHTML = '<div class="hint">No geometry here yet.</div>';
+}
+function checkedIds(el) { return new Set([...el.querySelectorAll("input:checked")].map(b => b.dataset.key.split("|")[1])); }
+
+const sel = document.getElementById("run"), runEl = document.getElementById("runLayers");
+RUNS.forEach(r => { const o = document.createElement("option"); o.value = r.key; o.textContent = r.key; sel.appendChild(o); });
+let first = true;
+sel.onchange = async () => {
+  const remembered = first ? null : checkedIds(runEl);
+  drop("run:");
+  const r = RUNS.find(x => x.key === sel.value);
+  document.getElementById("runTitle").textContent = r ? r.title : "";
+  document.getElementById("runLinks").innerHTML = r ? r.panels.map((p, i) => `<a href="${esc(p)}" target="_blank">panel ${i + 1}</a>`).join("") : "";
+  runEl.innerHTML = '<div class="hint">Loading...</div>';
+  if (r) list(runEl, "run:" + r.key, await loadData(r.key), remembered);
+  first = false;
+};
+
+function bounds(fc) {
+  let b = [180, 90, -180, -90];
+  const walk = c => typeof c[0] === "number" ? (b = [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[0]), Math.max(b[3], c[1])]) : c.forEach(walk);
+  fc.features.forEach(f => f.geometry && walk(f.geometry.coordinates));
+  return b[0] <= b[2] ? [[b[0], b[1]], [b[2], b[3]]] : null;
+}
+map.once("style.load", () => loadData("shared").then(d => {
+  list(document.getElementById("shared"), "shared", d, null);
+  const b = d.site && d.site.site && bounds(d.site.site);
+  if (b) map.fitBounds(b, { padding: 60, pitch: 55, bearing: -20, duration: 0 });
+  if (RUNS.length) sel.onchange(); else runEl.innerHTML = '<div class="hint">No runs yet.</div>';
+}));
+</script>
+</body>
+</html>

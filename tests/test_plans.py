@@ -1,0 +1,111 @@
+"""The plans skill draws the site plan, a detail area and the figure-ground from the design layers, fitted to the panel."""
+import json, os, re, subprocess, sys
+import pytest
+import pyproj
+from shapely.geometry import shape, mapping, box
+from shapely.ops import transform
+from conftest import REPO
+from synthetic import make_proposal
+
+PLANS = REPO / "plugins/drawings/skills/plans/scripts/plans.py"
+MASSING = REPO / "plugins/design/skills/massing/scripts/massing.py"
+CONFIG = {"site_plan_scale": 3000, "figure_ground_scale": 15000, "storeys_on_site_plan": True,
+          "panel_width_mm": 594, "panel_height_mm": 841, "margin_mm": 15,
+          "detail_areas": [{"name": "detail-area-1", "scale": 1000, "at": "Square"}]}
+FILES = ["site-plan_1-3000", "detail-area-1_1-1000", "figure-ground_1-15000"]
+
+
+def run(script, *args, check=True):
+    r = subprocess.run([sys.executable, str(script), *map(str, args)], capture_output=True, text=True, encoding="utf-8",
+                       env={**os.environ, "PYTHONUTF8": "1"})   # the scripts write their text as UTF-8 on Windows too
+    if check and r.returncode:
+        raise AssertionError(r.stderr[-2000:])
+    return r
+
+
+def write_config(out, cfg):
+    path = out / "plans/config.json"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps({k: {"value": v, "source": "test"} for k, v in cfg.items()}), encoding="utf-8")
+    return path
+
+
+def draw(out, site_dir, cfg=CONFIG, check=True):
+    return run(PLANS, "--proposal", out, "--site", site_dir, "--config", write_config(out, cfg),
+               "--style", out / "drawing-graphics/style.json", check=check)
+
+
+@pytest.fixture(scope="module")
+def drawn(tmp_path_factory):
+    """The synthetic proposal with its massing and plans drawn: (proposal, site folder). No streets/ or open-space/."""
+    root = tmp_path_factory.mktemp("plans") / "with space"
+    out = make_proposal(root)
+    site_dir = root / "site"
+    run(MASSING, "--proposal", out, "--site", site_dir, "--config", out / "massing/config.json")
+    draw(out, site_dir)
+    return out, site_dir
+
+
+def mm(svg, attr):
+    return float(re.search(r'<svg[^>]*\b%s="([\d.]+)mm"' % attr, svg).group(1))
+
+
+def test_plans_draws_the_three_kinds(drawn):
+    out, _ = drawn
+    for f in FILES:
+        for ext in (".svg", ".png"):
+            assert (out / "plans" / (f + ext)).exists(), f + ext
+    made = json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))
+    assert len(made) == 3
+    assert all(e["fits"] for e in made), made
+    assert "streets" not in made[0]["layers_used"] and any("streets" in m for m in made[0]["layers_missing"])
+
+
+def test_plans_fit_the_panel(drawn):
+    out, _ = drawn
+    made = {e["file"]: e for e in json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))}
+    for f in FILES:
+        svg = (out / "plans" / (f + ".svg")).read_text(encoding="utf-8")
+        assert mm(svg, "width") <= 594 - 2 * 15 + 0.5, f
+        assert mm(svg, "height") <= 841 - 2 * 15 + 0.5, f                 # the map with its legend strip
+        assert made[f + ".svg"]["map_height_mm"] <= 841 - 2 * 15 - 60 + 0.5, f   # the map leaves room for a caption
+
+
+def test_plans_text_floor(drawn):
+    out, _ = drawn
+    for f, scale in zip(FILES, (3000, 1000, 15000)):
+        svg = (out / "plans" / (f + ".svg")).read_text(encoding="utf-8")
+        sizes = [float(v) for v in re.findall(r'font-size="([\d.]+)"', svg)]
+        assert sizes, f
+        assert min(sizes) / scale * 1000 >= 3.2 - 1e-6, (f, min(sizes))
+
+
+def test_plans_reads_streets_when_present(drawn, tmp_path):
+    out, site_dir = drawn
+    g = shape(json.loads((site_dir / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"])
+    c = g.centroid
+    epsg = (32600 if c.y >= 0 else 32700) + int((c.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    p = transform(to_m, g).representative_point()
+    streets = out / "streets/streets.geojson"
+    streets.parent.mkdir(exist_ok=True)
+    streets.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "street", "use": "street", "existing": False, "source": "test"},
+         "geometry": mapping(transform(to_ll, box(p.x - 100, p.y - 5, p.x + 100, p.y + 5)))}]}), encoding="utf-8")
+    try:
+        draw(out, site_dir)
+        made = json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))
+        assert "streets" in made[0]["layers_used"]
+    finally:
+        streets.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_missing_required_stops(drawn):
+    out, site_dir = drawn
+    cfg = {k: v for k, v in CONFIG.items() if k != "site_plan_scale"}
+    r = draw(out, site_dir, cfg, check=False)
+    assert r.returncode != 0
+    assert "site_plan_scale" in r.stderr
+    write_config(out, CONFIG)

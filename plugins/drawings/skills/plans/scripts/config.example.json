@@ -1,0 +1,20 @@
+{
+ "site_plan_scale": {"value": null, "source": "<brief file> p. N, or assumption: why"},
+ "storeys_on_site_plan": {"value": null, "source": "<brief file> p. N: does the site plan show the number of storeys"},
+ "figure_ground_scale": {"value": null, "source": "<brief file> p. N, or leave null if the brief asks for none"},
+ "panel_width_mm": {"value": null, "source": "<brief file> p. N"},
+ "panel_height_mm": {"value": null, "source": "<brief file> p. N"},
+ "margin_mm": {"value": 15, "source": "assumption: the drawing standard says nothing, 15 mm"},
+ "detail_areas": {
+  "value": [
+   {"name": "detail-area-1", "scale": null, "at": "<a centre name from structure-plan.geojson, or phase1, or [lon, lat]>",
+    "shows": "<what the brief asks the detail area to show>", "page": "<brief file> p. N"}
+  ],
+  "source": "<brief file> p. N"
+ },
+ "labels": {
+  "value": {"new": "New buildings", "existing": "Kept buildings", "context": "Existing buildings", "site-plan": "Site plan",
+            "figure-ground": "Figure-ground"},
+  "source": "assumption: the legend in the brief's language; English when left out"
+ }
+}

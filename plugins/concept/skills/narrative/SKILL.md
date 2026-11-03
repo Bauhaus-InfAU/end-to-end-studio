@@ -6,6 +6,7 @@ description: Builds the conceptual framework of a competition entry, one memorab
 
 Reads: brief-reader, analysis, climate
 Reads (end): everything
+Model: opus
 
 This skill runs twice: first it builds the conceptual framework the project grows from, then it writes the text that explains the finished project. Work in the proposal folder you are given and write only into `narrative/`. Read the brief's checklist (`brief-reader/checklist.md`), `analysis/` and `climate/`; if one is missing, use the brief's Markdown and the site folder, and say so in `summary.md`. Never invent a fact: every claim names its file and, where there is one, the brief's page. Everything about the competition and the place comes from the brief.
 
@@ -18,6 +19,6 @@ This skill runs twice: first it builds the conceptual framework the project grow
 - **Storyline:** one section per panel, in the number and format the checklist gives: its message in one line, and the drawings that carry it, named by the existing skills that make them.
 - **Jury:** each criterion from the checklist and where the storyline answers it, or "open" or "partly open".
 
-**Second run: the text.** Read every `summary.md` and table in the proposal folder. Write `text.md` for the jury, explaining the finished project in sequence: the idea, the concept, how it was built up (structure, programme, buildings, open space, movement, phases) and how it was approached (what the site showed, what was decided and why). Fit it into the brief's headings, length and language where the brief sets them, and put any other text it asks for, such as a short one for publication, in a file of its own. Give each key figure its source file in a footnote, and leave out figures that don't exist. If the design has moved away from the framework, rewrite the story in `narrative.md` to match it, keep the title if it still fits, and say what changed.
+**Second run: the text.** Read every `summary.md` and table in the proposal folder. Write `text.md` for the jury, explaining the finished project in sequence: the idea, the concept, how it was built up (structure, programme, buildings, open space, movement, phases) and how it was approached (what the site showed, what was decided and why). Fit it into the brief's headings, length and language where the brief sets them, and put any other text it asks for, such as a short one for publication, in a file of its own. Give each key figure its source file in a footnote, and leave out figures that don't exist. Leave `narrative.md` as it is: the drawings were made from it. If the design has moved away from the framework, tell it in `text.md` and name the gap in `summary.md`.
 
 **After each run**, write `summary.md` in three lines: the title and the idea in one sentence; the number that matters most to the idea, with its source; what you are least sure of.

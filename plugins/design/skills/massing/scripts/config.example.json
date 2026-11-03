@@ -1,0 +1,100 @@
+{
+ "site_plan_scale": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "height_limit_m": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "landmark_floors": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "m2_per_home": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "homes_target": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "commerce_target": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "school_gfa": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "school_yard": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "school_sports": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "pool_gfa": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "pool_plot": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "daycare_gfa": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "daycares": {
+  "value": null,
+  "source": "optional, only if the brief asks for it: <brief file> p. N"
+ },
+ "green_target": {
+  "value": null,
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "density": {
+  "value": {
+   "<neighbourhood name in structure-plan.geojson>": "low | medium | high | urban | commercial"
+  },
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "phase1": {
+  "value": [
+   "<neighbourhood name>"
+  ],
+  "source": "<brief file> p. N, or assumption: why"
+ },
+ "homes_target_is_minimum": {
+  "value": null,
+  "source": "optional: true when the brief's homes figure is a minimum, with its page"
+ },
+ "figure": {
+  "value": {
+   "*": {"typology": "rows | open courtyard | courtyard | points | halls", "orientation": "long side | route | <bearing in degrees from north>", "row_gap": 24, "heights": "flat | to centre | from green | alternate", "floors_min": 2, "floors_max": 6},
+   "<neighbourhood name>": {"typology": "...", "orientation": 0, "block": {"L": 90, "D": 70, "d": 13, "gap": 6}}
+  },
+  "source": "<narrative.md principle N, or brief p. N>; optional: without it the figure follows the density"
+ },
+ "setback_h_factor": {
+  "value": null,
+  "source": "optional: the brief's distance to the street as a share of the height"
+ },
+ "setback_min_m": {
+  "value": null,
+  "source": "optional: the brief's least distance to the street"
+ },
+ "community_buildings": {
+  "value": [
+   {"use": "bus station", "gfa": null, "floors": 2, "ground_m2": null, "at": "bus station"},
+   {"use": "market hall", "gfa": null, "floors": 1, "at": "market"}
+  ],
+  "source": "optional: every community building the brief asks for, with its page; `at` is a word in a centre's `holds`"
+ },
+ "food_market": {
+  "value": null,
+  "source": "optional: a shop the brief asks for near the centre, as a note"
+ }
+}
