@@ -8,8 +8,10 @@ ramp (list of colours, light to dark).
 """
 import argparse
 import csv
+import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import textwrap
@@ -22,7 +24,8 @@ from shapely.geometry import box
 from common import Site, read
 
 FALLBACK = dict(paper="#ffffff", ink="#000000", accent="#d7263d", context="#c9c9c9", water="#e4e4e4",
-                font="Helvetica, Arial, sans-serif", thin=0.1, mid=0.25, thick=0.6, text=2.4, title=5.0)
+                font="Helvetica, Arial, sans-serif", thin=0.1, mid=0.25, thick=0.6, text=3.2, title=5.0)
+MIN_TEXT = 3.2  # mm; no text is smaller than 12 px printed (9 pt, 3.17 mm), source lines and scale bars included
 SCALES = [500, 1000, 2000, 2500, 5000, 7500, 10000, 15000, 20000, 25000, 50000]
 
 
@@ -87,6 +90,7 @@ class Map:
         self.ox, self.oy = self.PAD, self.PAD + self.HEAD
         self.title, self.subtitle = title, subtitle
         self.body, self.defs, self.legend = [], [], []
+        self.compact = None  # the legend in short, for the sheet: {"bar": [...], "low", "high", "unit", "rows": [[fill, opacity, label]]}
         self.extent = extent
 
     def P(self, x, y):
@@ -146,7 +150,7 @@ class Map:
 
     def text(self, x, y, s, size=None, weight="normal", anchor="start", fill=None):
         st = self.st
-        return (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{escape(st["font"])}" font-size="{size or st["text"]}" '
+        return (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{escape(st["font"])}" font-size="{max(size or st["text"], MIN_TEXT)}" '
                 f'font-weight="{weight}" text-anchor="{anchor}" fill="{fill or st["ink"]}">{escape(str(s))}</text>')
 
     def save(self, path, sources):
@@ -165,7 +169,7 @@ class Map:
         o.append(self.text(x, y, "Legend", st["text"] * 1.2, "bold"))
         y += 6
         for kind, color, label, opt in self.legend:
-            lines = textwrap.wrap(label, 46) or [""]
+            lines = textwrap.wrap(label, int((self.SIDE - 9) / (max(st["text"], MIN_TEXT) * 0.5))) or [""]  # fits the legend column at the text size
             if kind == "fill":
                 o.append(f'<rect x="{x}" y="{y - 3}" width="7" height="4" fill="{color}" fill-opacity="{opt.get("opacity", 1)}" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
             elif kind == "line":
@@ -206,6 +210,7 @@ class Map:
         o.append("</svg>")
         path.write_text("\n".join(o), encoding="utf-8")
         png(path, self.W, self.H)
+        frame(path, self.W, self.H, (self.ox, self.oy, self.mw, self.mh), self.title, compact=self.compact, defs="".join(self.defs))
         return path.name
 
 
@@ -237,6 +242,22 @@ def standard(out, given):
                 st["font"] = m.group(1).strip() + ", Helvetica, Arial, sans-serif"
         return st, f"the drawing standard (drawing-graphics/standard.md: {', '.join(st) or 'no colours found, fallback used'})"
     return {}, "fallback look (no drawing standard): black on white, one accent"
+
+
+def short_rule(label):
+    """A rule's first sentence, for the sheet: "DON'T: No homes, schools ... 65 dB(A) or more by day"."""
+    word, _, text = label.partition(": ")
+    first = re.split(r"(?<=[a-z0-9)])\. ", text, maxsplit=1)[0].rstrip(".")
+    return f"{word}: {first}" if text else label
+
+
+def frame(path, W, H, box, title, bare=None, compact=None, defs=""):
+    """Note in frames.json where the map sits in its drawing, so the sheet can show the map alone with its title."""
+    f = path.parent / "frames.json"
+    d = read(f) if f.exists() else {}
+    d[path.name] = dict(W=round(W, 2), H=round(H, 2), frame=[round(v, 2) for v in box], title=title, compact=compact, defs=defs,
+                        **({"bare": bare} if bare else {}))
+    f.write_text(json.dumps(d, indent=1), encoding="utf-8")
 
 
 def meta(out, name):
@@ -284,6 +305,7 @@ def main():
             m.key("fill", st["accent"], lab, opacity=0.35)
         if any(p.get("kind") == "flow" for _, p in F):
             m.key("arrow", st["ink"], "Air flow, direction of movement")
+        m.compact = dict(rows=[[st["accent"], 0.35, "Air path"], ["arrow", 1, "Air flow, the way it moves"]])
         made.append(m.save(out / "fresh-air.svg", meta(out, "fresh-air").get("sources", [])))
 
     sun = meta(out, "sun")
@@ -297,13 +319,22 @@ def main():
         cols = ramp(len(F), st)
         if rev:
             cols = cols[::-1]
+        # outside the grid nothing was computed: a neutral hatch, so it isn't read as the lowest class
+        mg = sun.get("grid_margin_m")
+        done = S.poly.buffer(mg) if mg is not None else shapely.union_all([g for g, _ in F]).buffer(15)
+        nc = m.hatch("notcomputed", st["context"], 1.6, 45, st["mid"])
+        nc_label = f"Not computed (outside the site and its {mg:g} m margin)" if mg is not None else "Not computed (outside the computed area)"
+        m.add(m.extent.difference(done), fill=nc, stroke="none")
         for (g, p), c in zip(F, cols):
             m.add(g, fill=c, stroke="none")
         m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["ink"], fill_opacity=0.55)
         m.site()
         for (g, p), c in zip(F, cols):
             m.key("fill", c, p["label"])
+        m.key("fill", nc, nc_label)
         m.key("fill", st["ink"], "Existing buildings", opacity=0.55)
+        lo_k, hi_k, unit = ("hours_min", "hours_max", "h of sun a year") if name == "sun-hours" else ("kwh_min", "kwh_max", "kWh/m² a year")
+        m.compact = dict(bar=cols, low=f"{F[0][1][lo_k]:g}", high=f"{F[-1][1][hi_k]:g}", unit=unit, rows=[["url(#notcomputed)", 1, nc_label]])
         made.append(m.save(out / f"{name}.svg", sun.get("sources", [])))
 
     if (out / "shadows.geojson").exists():
@@ -320,6 +351,7 @@ def main():
             for (g, p), c in zip(G, cols):
                 m.key("fill", c, f'{p["local_time"]}, sun {p["sun_altitude_deg"]:.0f}° high from {p["sun_azimuth_deg"]:.0f}°', opacity=0.6)
             m.key("fill", st["ink"], "Existing buildings")
+            m.compact = dict(bar=cols, low=G[0][1]["local_time"], high=G[-1][1]["local_time"], unit="", opacity=0.6)
             made.append(m.save(out / f"shadows_{day.lower().replace(' ', '-')}.svg", sun.get("sources", [])))
 
     if (out / "noise.geojson").exists():
@@ -333,8 +365,9 @@ def main():
             nj = meta(out, "noise")
             if nj.get("traffic_ranges"):
                 sub += ". At the high end of the traffic range"
-            if nj.get("speeds_assumed"):
-                sub += ". SPEEDS ASSUMED"
+            if nj.get("speeds_assumed"):  # entries read "<road> <speed> km/h"
+                roads = [x.rsplit(" ", 2)[0] for x in nj["speeds_assumed"]]
+                sub += f". SPEED{'S' if len(roads) > 1 else ''} ASSUMED: {', '.join(roads)}"
             m = new(f"{'Road and rail' if r.get('included') else 'Road'} noise, {period}", sub)
             m.context(buildings=False)
             cols = ramp(len(G), st)
@@ -348,11 +381,12 @@ def main():
             for (g, p), c in zip(G, cols):
                 m.key("fill", c, p["label"], opacity=0.85)
             m.key("line", st["ink"], "Roads counted as noise sources", w=st["thick"])
-            rail = meta(out, "noise").get("rail", {"label": "Railway not included: no train data"})
+            rail = meta(out, "noise").get("rail", {"label": "Railway not assessed: no train numbers"})
             if rail.get("included"):
                 m.key("line", st["ink"], f'Railway counted as noise source. {rail["label"]}', w=st["thick"], dash="2 1")
             else:
                 m.key("line", st["accent"], rail["label"].upper(), w=st["thick"], dash="0.6 0.9")
+            m.compact = dict(bar=cols, low=f'{G[0][1]["db_min"]:g}', high=f'{G[-1][1]["db_min"]:g}+', unit="dB(A)", opacity=0.85)
             made.append(m.save(out / f"noise_{period}.svg", meta(out, "noise").get("sources", [])))
 
     if (out / "heat.geojson").exists():
@@ -375,6 +409,8 @@ def main():
         if any(p["kind"] == "unknown" for _, p in F):
             m.key("fill", "url(#unknown)", "Too little land-use data to say", opacity=0.5)
         m.key("fill", st["paper"], "Existing buildings (roofs count as very hot)")
+        m.compact = dict(bar=cols[:len(idx)], low="cool", high="very hot", unit="(relative)",
+                         rows=[["url(#unknown)", 0.5, "No land-use data"]] if any(p["kind"] == "unknown" for _, p in F) else [])
         made.append(m.save(out / "heat.svg", meta(out, "heat").get("sources", [])))
 
     if (out / "rules.geojson").exists():
@@ -418,6 +454,8 @@ def main():
                 m.key("fill", looks[p["rule"]][0], f"{word}: {p['rule']}", opacity=looks[p["rule"]][1])
         for n in R.get("notes", []):
             m.key("line", st["paper"], n)
+        m.compact = dict(rows=[[("arrow" if kind == "arrow" else color), opt.get("opacity", 1), short_rule(label)]
+                               for kind, color, label, opt in m.legend if kind in ("fill", "arrow")])
         made.append(m.save(out / "rules.svg", R.get("sources", [])))
 
     if (out / "wind.csv").exists():
@@ -428,33 +466,123 @@ def main():
 
 
 def sheet(out, st, names, W=420, H=297):
-    """Every map small on one A3 landscape sheet, with summary.md (else the key numbers) as text. Run draw.py --sheet again after summary.md."""
+    """Every map on one A3 landscape sheet: the map alone, its title and a compact legend, no text below the floor.
+    The rules map takes two cells with all its rows; the wind roses sit two by two. Run draw.py --sheet again after summary.md."""
     pad, head = 10, 16
     cols, rows = 4, 3
     cw, ch = (W - 2 * pad) / cols, (H - head - 2 * pad) / rows
-    t = lambda x, y, s, size=st["text"], w="normal": (f'<text x="{x:.1f}" y="{y:.1f}" font-family="{escape(st["font"])}" font-size="{size}" '
-                                                     f'font-weight="{w}" fill="{st["ink"]}">{escape(s)}</text>')
+    tx = max(st["text"], MIN_TEXT)
+    lh = tx * 1.3  # one line of text
+    t = lambda x, y, s, size=tx, w="normal", a="start": (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{escape(st["font"])}" font-size="{max(size, MIN_TEXT)}" '
+                                                       f'font-weight="{w}" text-anchor="{a}" fill="{st["ink"]}">{escape(str(s))}</text>')
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}mm" height="{H}mm" viewBox="0 0 {W} {H}">',
          f'<rect width="100%" height="100%" fill="{st["paper"]}"/>', t(pad, pad + st["title"], "Climate of the site", st["title"] * 1.3, "bold")]
-    pngs = [n.replace(".svg", ".png") for n in names if (out / n.replace(".svg", ".png")).exists()][:cols * rows - 2]
-    for i, p in enumerate(pngs):
-        x, y = pad + (i % cols) * cw, pad + head + (i // cols) * ch
-        o.append(f'<image x="{x + 1:.1f}" y="{y + 1:.1f}" width="{cw - 2:.1f}" height="{ch - 2:.1f}" href="{p}" preserveAspectRatio="xMidYMid meet"/>')
-    # text in the last two cells
-    i = len(pngs)
-    x, y = pad + (i % cols) * cw + 3, pad + head + (i // cols) * ch + 6
-    width = int((cols - i % cols) * cw / (st["text"] * 0.5)) if i % cols else int(2 * cw / (st["text"] * 0.5))
+    defs = [f'<marker id="sheet-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerUnits="userSpaceOnUse" markerWidth="2.4" markerHeight="2.4" orient="auto">'
+            f'<path d="M0 0L6 3L0 6z" fill="{st["ink"]}"/></marker>']
+    frames = meta(out, "frames")
+
+    def own(k, text):  # a map's patterns, renamed so two maps' patterns never clash
+        return re.sub(r'(id="|url\(#)([\w-]+)', lambda g: f"{g.group(1)}m{k}-{g.group(2)}", text)
+
+    def swatch(x, y, fill, op):  # a 6 x 3.2 mm swatch with its top at y
+        if fill == "arrow":
+            return (f'<line x1="{x:.2f}" y1="{y + 1.6:.2f}" x2="{x + 6:.2f}" y2="{y + 1.6:.2f}" stroke="{st["ink"]}" '
+                    f'stroke-width="{st["mid"]}" marker-end="url(#sheet-arrow)"/>')
+        return (f'<rect x="{x:.2f}" y="{y:.2f}" width="6" height="3.2" fill="{fill}" fill-opacity="{op}" '
+                f'stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+
+    def legend(x, y, w, c, k):
+        """A compact legend with its top at (x, y), w wide; returns its elements and its height."""
+        e, y0 = [], y
+        if c.get("bar"):
+            bw = min(36, w * 0.45)
+            n = len(c["bar"])
+            e += [f'<rect x="{x + i * bw / n:.2f}" y="{y:.2f}" width="{bw / n + 0.05:.2f}" height="3.2" fill="{col}" fill-opacity="{c.get("opacity", 1)}"/>'
+                  for i, col in enumerate(c["bar"])]
+            e.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{bw:.2f}" height="3.2" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+            e.append(t(x + bw + 2, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip()))
+            y += lh + 0.8
+        for fill, op, label in c.get("rows", []):
+            fill = own(k, fill) if fill.startswith("url(") else fill
+            lines = textwrap.wrap(label, int((w - 8) / (tx * 0.5))) or [""]
+            e.append(swatch(x, y, fill, op))
+            for j, ln in enumerate(lines):
+                e.append(t(x + 8, y + 2.8 + j * lh, ln))
+            y += len(lines) * lh + 0.8
+        return e, y - y0
+
+    # the cells: the rules map takes two, every other map one; what is left is for the summary
+    plan, used = [], 0
+    for n in names:
+        if not (out / n.replace(".svg", ".png")).exists():
+            continue
+        span = 2 if n == "rules.svg" else 1
+        if used % cols + span > cols:
+            used += cols - used % cols
+        plan.append((n, used, span))
+        used += span
+    for k, (n, cell, span) in enumerate(plan):
+        x, y = pad + (cell % cols) * cw, pad + head + (cell // cols) * ch
+        f = frames.get(n)
+        if not f:  # a drawing made before frames.json: placed whole, with its small text
+            print(f"WARNING climate_sheet: no frame for {n}; it is placed whole, so its legend and sources are below 12 px. Run draw.py again.")
+            o.append(f'<image x="{x + 1:.1f}" y="{y + 1:.1f}" width="{cw * span - 2:.1f}" height="{ch - 2:.1f}" '
+                     f'href="{n.replace(".svg", ".png")}" preserveAspectRatio="xMidYMid meet"/>')
+            continue
+        if f.get("defs"):
+            defs.append(own(k, f["defs"]))
+        o.append(t(x + 1, y + tx, f["title"], tx, "bold"))
+        top, bottom = y + tx + 1.5, y + ch - 2
+        c = f.get("compact") or {}
+        fx, fy, fw, fh = f["frame"]
+        img = f'<image x="0" y="0" width="{f["W"]}" height="{f["H"]}" href="{n.replace(".svg", ".png")}"/>'
+        if isinstance(f.get("bare"), list):  # the wind roses, two by two, the speed colours in the fourth place
+            q = min((cw - 4) / 2, (bottom - top) / 2)
+            d = q - lh - 2
+            for i, r in enumerate(f["bare"][:3]):
+                qx, qy = x + 1 + (i % 2) * q, top + (i // 2) * q
+                o.append(f'<svg x="{qx + (q - d) / 2:.2f}" y="{qy:.2f}" width="{d:.2f}" height="{d:.2f}" '
+                         f'viewBox="{r["cx"] - r["r"]} {r["cy"] - r["r"]} {2 * r["r"]} {2 * r["r"]}" overflow="hidden">{r["frag"]}</svg>')
+                o.append(t(qx + q / 2, qy + d + tx + 0.5, r["season"], a="middle"))
+            le, _ = legend(x + 1 + q + 4, top + q + 4, q - 4, c, k)
+            o += le
+            continue
+        wbox = cw * span - 2
+        if span > 1:  # the rules: the map on the left, every row of its legend beside it
+            s_ = min(cw - 2, bottom - top) / max(fw, fh)
+            o.append(f'<svg x="{x + 1:.2f}" y="{top:.2f}" width="{fw * s_:.2f}" height="{fh * s_:.2f}" viewBox="{fx} {fy} {fw} {fh}" overflow="hidden">{img}</svg>')
+            lx = x + 1 + fw * s_ + 4
+            le, hgt = legend(lx, top + 1, x + wbox - lx, c, k)
+            if top + 1 + hgt > bottom:
+                print(f"WARNING climate_sheet: the legend of {n} is taller than its cell ({hgt:.0f} of {bottom - top:.0f} mm)")
+            o += le
+            continue
+        _, hgt = legend(x + 1, 0, wbox, c, k)  # measure the legend first, then fit the map above it
+        s_ = min(wbox / fw, (bottom - top - hgt - 1.5) / fh)
+        mx = x + 1 + (wbox - fw * s_) / 2
+        o.append(f'<svg x="{mx:.2f}" y="{top:.2f}" width="{fw * s_:.2f}" height="{fh * s_:.2f}" viewBox="{fx} {fy} {fw} {fh}" overflow="hidden">{img}</svg>')
+        le, _ = legend(mx, top + fh * s_ + 1.5, max(fw * s_, 60), c, k)
+        o += le
+    o.insert(2, f'<defs>{"".join(defs)}</defs>')
+
+    # the summary in what is left
+    x, y = pad + (used % cols) * cw + 3, pad + head + (used // cols) * ch + tx
+    width = int(((cols - used % cols) * cw - 6) / (tx * 0.5))
     text = (out / "summary.md").read_text(encoding="utf-8").split("\n") if (out / "summary.md").exists() else []
     c = meta(out, "climate")
     if not text and c.get("key_numbers"):
         text = [f"{k.replace('_', ' ')}: {v}" for k, v in c["key_numbers"].items() if not isinstance(v, dict)]
-    o.append(t(x, y, "Summary", st["text"] * 1.3, "bold"))
-    for para in [s for s in text if s.strip()] + [""] + c.get("notes", []):
-        for ln in textwrap.wrap(para, width) or [""]:
-            y += st["text"] * 1.35
-            o.append(t(x, y, ln))
-        y += 1
-    o.append(t(pad, H - 4, "Each map with its own legend, scale and sources at full size in this folder. A3, maps not to scale.", st["text"] * 0.85))
+    o.append(t(x, y, "Summary", tx * 1.3, "bold"))
+    shown = [ln for para in text if para.strip() for ln in textwrap.wrap(para, width)]
+    room = int((H - 4 - lh - y) // (tx * 1.35))  # lines that fit above the note at the bottom
+    if len(shown) > room:  # the sheet is fixed at A3: cut, end with an ellipsis, and say so
+        print(f"WARNING climate_sheet: the summary has {len(shown)} lines, {room} fit on the sheet; the rest is cut. Shorten summary.md.")
+        shown = shown[:room]
+        shown[-1] = shown[-1].rstrip(" .,;:") + " …"
+    for ln in shown:
+        y += tx * 1.35
+        o.append(t(x, y, ln))
+    o.append(t(pad, H - 4, "Full legends, scales and sources are in each map's own file in this folder. North is up; maps not to scale."))
     o.append("</svg>")
     path = out / "climate_sheet.svg"
     path.write_text("\n".join(o), encoding="utf-8")
@@ -471,17 +599,21 @@ def wind_rose(out, st, wm):
     W, H = 10 + len(seasons) * (2 * R + gap) + 10, 2 * R + 70
     vmax = max(float(r["total %"]) for r in rows)
     ring = nice(vmax / 2)
-    t = lambda x, y, s, size=st["text"], w="normal", a="middle": (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{escape(st["font"])}" font-size="{size}" '
+    t = lambda x, y, s, size=st["text"], w="normal", a="middle": (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{escape(st["font"])}" font-size="{max(size, MIN_TEXT)}" '
                                                                    f'font-weight="{w}" text-anchor="{a}" fill="{st["ink"]}">{escape(s)}</text>')
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}mm" height="{H}mm" viewBox="0 0 {W} {H}"><rect width="100%" height="100%" fill="{st["paper"]}"/>',
          t(10, 12, "Wind", st["title"], "bold", "start"), t(10, 18, "Share of hours the wind blows from each direction, by speed", a="start")]
+    bars = []
     for i, s in enumerate(seasons):
+        labels = []
+        n0 = len(o)
         cx, cy = 10 + R + i * (2 * R + gap), 26 + R
         for k in range(1, int(vmax // ring) + 2):
             r = R * k * ring / vmax * 0.95
             if r <= R:
                 o.append(f'<circle cx="{cx}" cy="{cy}" r="{r:.2f}" fill="none" stroke="{st["context"]}" stroke-width="{st["thin"]}"/>')
-                o.append(t(cx + 1, cy - r - 0.6, f"{k * ring:g}%", st["text"] * 0.8, a="start"))
+                labels.append(t(cx + 1, cy - r - 0.6, f"{k * ring:g}%", st["text"] * 0.8, a="start")
+                              .replace("<text ", f'<text stroke="{st["paper"]}" stroke-width="0.8" paint-order="stroke" ', 1))  # drawn after the bars, with a halo
         sec = [r for r in rows if r["season"] == s]
         for j, r in enumerate(sec):
             a0, a1 = math.radians(j * 22.5 - 9), math.radians(j * 22.5 + 9)
@@ -495,6 +627,8 @@ def wind_rose(out, st, wm):
                 pts = [(cx + rr * math.sin(aa), cy - rr * math.cos(aa)) for rr, aa in ((r0, a0), (r1, a0), (r1, a1), (r0, a1))]
                 o.append(f'<path d="M{pts[0][0]:.2f} {pts[0][1]:.2f}L{pts[1][0]:.2f} {pts[1][1]:.2f}A{r1:.2f} {r1:.2f} 0 0 1 {pts[2][0]:.2f} {pts[2][1]:.2f}'
                          f'L{pts[3][0]:.2f} {pts[3][1]:.2f}A{r0:.2f} {r0:.2f} 0 0 0 {pts[0][0]:.2f} {pts[0][1]:.2f}Z" fill="{col}" stroke="{st["paper"]}" stroke-width="0.1"/>')
+        bars.append(dict(season=s, cx=cx, cy=cy, r=R, frag="".join(e for e in o[n0:] if not e.startswith("<text"))))
+        o += labels
         for lab, ang in (("N", 0), ("E", 90), ("S", 180), ("W", 270)):
             o.append(t(cx + (R + 3) * math.sin(math.radians(ang)), cy - (R + 3) * math.cos(math.radians(ang)) + 1, lab, w="bold"))
         o.append(t(cx, cy + R + 9, s, st["text"] * 1.1, "bold"))
@@ -506,6 +640,8 @@ def wind_rose(out, st, wm):
     p = out / "wind.svg"
     p.write_text("\n".join(o), encoding="utf-8")
     png(p, W, H)
+    frame(p, W, H, (8, 24, len(seasons) * (2 * R + gap) - gap + 4, 2 * R + 4), "Wind", bare=bars,
+          compact=dict(rows=[[col, 1, c] for c, col in zip(classes, cols)]))
     return p.name
 
 
