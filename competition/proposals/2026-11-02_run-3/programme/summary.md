@@ -1,0 +1,3 @@
+Tabled the brief's programme in programme/: housing, commerce, food market, 3 daycares, primary school with yard and sports, indoor pool, community uses, public green, play and mobility, each with its page (programme.csv, programme.md); no households.csv because the brief gives no household mix.
+2,800 homes for 5,000 residents (Framework Plan minimum; up to 3,400 homes and 6,100 residents), at least 1,100 homes in the first phase (brief p.30, p.33).
+Unsure whether the 230,000 m² floor area on p.30 is really commerce: it matches what 2,800 homes would need, and the brief gives no housing floor area at all.

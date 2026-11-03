@@ -15,7 +15,7 @@ competition/          this semester's job: Europan 18, Regensburg
   site/                 the site and its data, from site-kit
   climate/              air, sun, wind and noise, made once by climate, never committed
   references/           the images the drawings take their look from
-  proposals/            the runs, never committed
+  proposals/            the runs; only their logs, costs, notes, summaries, jury reports and panel PNGs are committed
     test/               where you test your skill
     2026-11-02_run-1/   one run of the studio
 STUDIO.md             the contract, and who writes which skill

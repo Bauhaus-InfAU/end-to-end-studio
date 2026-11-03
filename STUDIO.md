@@ -42,7 +42,7 @@ Every version of a proposal is a folder `<YYYY-MM-DD>_<label>/` in the project's
 
 Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJSON in WGS84.
 
-`competition-proposal` makes a new version, a variant of an earlier one ("redo the massing of run-1"), or compares two. `proposals/` is never committed. To test your skill, tell it to work in `competition/proposals/test/`; the brief and the site are in `competition/` already. If it reads a skill that doesn't exist yet, ask your agent for a rough stand-in in that skill's folder, in the shape its `TOPIC.md` gives.
+`competition-proposal` makes a new version, a variant of an earlier one ("redo the massing of run-1"), or compares two. Of each run in `proposals/` only the log, cost, notes, summaries, jury report and panel PNGs are committed, for others to study; `test/` is never committed. To test your skill, tell it to work in `competition/proposals/test/`; the brief and the site are in `competition/` already. If it reads a skill that doesn't exist yet, ask your agent for a rough stand-in in that skill's folder, in the shape its `TOPIC.md` gives.
 
 ## The order
 

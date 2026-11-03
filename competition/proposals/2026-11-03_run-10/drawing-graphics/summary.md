@@ -1,0 +1,3 @@
+1. The look: the base standard (white paper, near-black ink, light-grey context, muted nature tones, ISO line weights, 12 px floor), made warm by a new pale-straw fill for the kept farmland; no reference images exist, so that step was skipped.
+2. Accent #c8442b marks the new buildings and the "field line" (the built edge, thick 0.5 mm, on every plan), from the narrative's "One continuous built edge, drawn once in phase 1 and never moved"; farmland is the new `field` colour #e9e0b0, and the master plan with the field line carries the most weight.
+3. Unsure: the straw `field` against the pale greens and the grey ramp in dense drawings (not yet tried on a plan), and the whole look is untested against references because the folder has none.

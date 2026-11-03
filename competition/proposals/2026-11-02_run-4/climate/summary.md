@@ -1,0 +1,3 @@
+Climate analysis of the site: traced fresh-air map from the brief (p. 31, Fig. 20), sun, shadows, wind, road noise, heat, a DON'T / CAREFUL / DO rules map and climate.json, with climate_sheet (A3) and climate.md, drawn at 1:3,000.
+Key number: 57 % of the site is at 55 dB(A) or more by day, and 8.8 % (the Pilsenallee strip) at 65 or more, too loud for homes, schools and play without a shielding edge.
+Least sure of: noise (the brief gives only 10,000-20,000 vehicles for both roads; the 15,000 and the speeds are assumed, no railway trains are included) and the fresh-air map (no legend, 140-160 m fit error).

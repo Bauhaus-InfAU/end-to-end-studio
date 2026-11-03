@@ -1,5 +1,17 @@
-# runs and tests stay on your computer
-/competition/proposals/
+# runs and tests stay on your computer, except what others need to study a run:
+# its log, cost, notes, each skill's summary, the jury's report and the panels
+/competition/proposals/**
+!/competition/proposals/**/
+!/competition/proposals/*/log.md
+!/competition/proposals/*/cost.csv
+!/competition/proposals/*/usage.csv
+!/competition/proposals/*/README.md
+!/competition/proposals/*/version.md
+!/competition/proposals/*/*/summary.md
+!/competition/proposals/*/jury/report.md
+!/competition/proposals/*/panel-layout/panel-*.png
+/competition/proposals/test/
+/competition/proposals/preview/
 /proposals/
 .env
 node_modules/

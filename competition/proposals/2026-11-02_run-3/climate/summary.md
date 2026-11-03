@@ -1,0 +1,3 @@
+Made the climate layers and rules for Regensburg Nord: fresh air traced from the brief's climate map (Fig. 20), sun, wind, road noise, heat, the DON'T/CAREFUL/DO zones in climate.json, 10 maps and an A3 sheet.
+7.7 % of the site is too loud for homes by day (65 dB(A) or more) and another 49 % takes homes only behind a shielding edge (DIN 18005 values, brief gives none).
+Least sure of the noise: both roads set at 20,000 vehicles/day (top of the brief's 10-20,000 range), speeds assumed (B 16 100, Pilsen-Allee 70 km/h), railway left out for lack of train numbers; the climate map has no legend in the brief, so its colours are read by eye.

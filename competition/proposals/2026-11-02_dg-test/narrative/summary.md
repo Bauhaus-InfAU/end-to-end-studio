@@ -1,0 +1,3 @@
+"Field Lines: a district built into the furrows": build the district in strips that follow the downhill cold air and keep the strips between them as unbuilt, farmed field.
+Key number: the site is 9.5 % sealed today (climate/climate.md); the entry's own target caps fully sealed at 25 % and all sealing at 35 % of the project site, with at least 5 kept field strips of 30 m or more.
+Least sure of: whether 2,800+ homes fit on the building strips within these targets (no analysis/ folder in this run, no housing floor area in the brief), and the flow direction (fresh-air map has no legend, 136-163 m fit error).

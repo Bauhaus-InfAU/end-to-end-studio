@@ -1,0 +1,3 @@
+site-plan_1-3000.svg/.png at 1:3,000 (564 x 588 mm, storeys shown); detail-area-1_1-1000.svg/.png at 1:1,000 (Wutzlhofen stop square, mobility hub; 316 x 348 mm); detail-area-2_1-1000.svg/.png at 1:1,000 (Chamer crossing; 467 x 504 mm); figure-ground_1-15000.svg/.png at 1:15,000 (198 x 219 mm); drawings.json.
+All 4 of the brief's plans (figure-ground, site plan, detail areas 1 and 2) are drawn and fit an A1 portrait panel (594 x 841 mm); the site plan was cropped to the panel's width, so the south-west edge of the surrounding city is cut.
+Unsure: detail area 2 is Chamer crossing, chosen by me as the second centre (the brief allows another area); no layer was missing; on the site plan the "Detail area 2" label overlaps a text of the other window.
