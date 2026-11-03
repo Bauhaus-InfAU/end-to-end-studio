@@ -4,12 +4,17 @@
                        --config config.json --out OUT_DIR [--structure corridors.geojson ...]
                        [--keep-free strips.geojson] [--style style.json]
 
-SITE_DIR holds the site's layers (buildings, plots, streets, water). Every number comes from config.json,
-which the skill writes from the brief and the programme; see ../SKILL.md for its keys. Needs shapely and pyproj;
-the PNG needs Chrome or Edge (or Chromium) for a headless screenshot.
+SITE_DIR holds the site's layers (buildings, plots, streets, water) and, if there is one, its terrain: a GeoTIFF
+(terrain*.tif, or the one kit.json names), else terrain.csv (lon, lat, ele). With terrain, the pools and hollows fill
+the low ground and the rain runs downhill to them; without, they sit by shape and distance. Every number comes from config.json,
+which the skill writes from the brief and the programme; see ../SKILL.md for its keys. Needs shapely and pyproj,
+and Pillow to read a GeoTIFF; the PNG needs Chrome or Edge (or Chromium) for a headless screenshot.
 """
-import argparse, csv, json, math, os, shutil, subprocess, sys
+import argparse, csv, heapq, json, math, os, shutil, subprocess, sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from terrain import find_terrain  # noqa: E402  (this skill's own copy)
 
 import numpy as np
 import shapely
@@ -59,6 +64,10 @@ DEFAULTS = {
     "path_inset_m": (12, "a park's loop path runs this far inside its edge, m"),
     "path_width_m": (3, "width of a path, partly sealed, m"),
     "min_loop_park_m2": (8000, "smallest park that gets a loop path, m²"),
+    "terrain_cell_m": (2, "with terrain: grid on which pools and hollows fill the low ground, m"),
+    "flow_cell_m": (5, "with terrain: grid on which the rain's way downhill is traced, m"),
+    "flow_margin_m": (100, "with terrain: the rain's way is traced this far beyond the site, m"),
+    "pool_round_m": (4, "with terrain: pools and hollows are rounded by this radius, m"),
     "scale": (3000, "scale of the check plan, 1:n"),
 }
 
@@ -120,6 +129,11 @@ def main():
     m = lambda g: transform(to_m.transform, g)
     site = m(site_ll).buffer(0)
     layers = Path(a.layers)
+    # The terrain of the site folder, if it has one: a GeoTIFF, else terrain.csv.
+    ter, ter_notes = find_terrain(layers, site.buffer(cfg["flow_margin_m"]).bounds, to_ll)
+    ground = Ground(ter, cfg["terrain_cell_m"]) if ter else None
+    if not ter:
+        used_defaults = [d for d in used_defaults if d[0] not in ("terrain_cell_m", "flow_cell_m", "flow_margin_m", "pool_round_m")]
 
     def layer(name):
         p = layers / f"{name}.geojson"
@@ -223,10 +237,23 @@ def main():
     pieces += [(g, ro["street"]) for g in mass_streets]
     pieces += [(g, ro["partly_sealed"] if sq_part else ro["street"]) for g in mass_squares]
     # Like a river valley, the corridors gather the rain of everything near them; the rest goes to the nearest park.
+    # With terrain, the rain runs downhill: to the first corridor its way enters near it, else the first park.
     catch = [0.0] * len(parks)
     cidx = [i for i, c in enumerate(corridor) if c]
+    drains = {"downhill": 0.0, "piped": 0.0, "uphill": 0.0}
+    flow = drainage(ground, site.buffer(cfg["flow_margin_m"]), parks, corridor, cfg) if ground and parks else None
+    to_park = flow.to_park if flow else None
     for g, c in pieces:
-        if parks and not g.is_empty:
+        if to_park and not g.is_empty:
+            xs, ys = ground.points(g, cfg["flow_cell_m"])
+            if not len(xs):
+                p = g.representative_point()
+                xs, ys = np.array([p.x]), np.array([p.y])
+            share = g.intersection(site).area * c / len(xs)
+            for i, how in to_park(xs, ys):
+                catch[i] += share
+                drains[how] += share
+        elif parks and not g.is_empty:
             near_c = min(cidx, key=lambda j: parks[j].distance(g), default=None)
             if near_c is not None and parks[near_c].distance(g) <= cfg["corridor_catch_m"]:
                 i = near_c
@@ -235,29 +262,35 @@ def main():
             catch[i] += g.intersection(site).area * c
     play_u = unary_union(playgrounds) if playgrounds else None
     avoid = unary_union([play_u.buffer(5) if play_u is not None else shapely.Polygon(), keep_free])
-    basins, pools, no_room = [], [], 0
-    for i, park in enumerate(parks):
-        vol = catch[i] * cfg["design_rain_mm"] / 1000
+    basins, pools, no_room, short = [], [], 0, 0
+    # With terrain, the parks uphill go first, and what a full park can't hold runs over to the next park downhill.
+    inflow = [0.0] * len(parks)
+    for i in (flow.upstream_first if flow else range(len(parks))):
+        park = parks[i]
+        vol = catch[i] * cfg["design_rain_mm"] / 1000 + inflow[i]
         if vol <= 0:
             continue
+        g, held = None, 0.0
         if corridor[i]:
-            # A chain of pools in the corridor's middle, following its shape: a shallow edge and a deep core.
-            got = pool_chain(park, vol, cfg, avoid)
+            # A chain of pools following the corridor's shape (with terrain, on its low ground): a shallow edge and a deep core.
+            got = pool_chain(park, vol, cfg, avoid, ground)
             if got:
                 g, deep, held = got
                 pools.append((g, deep))
-                basins.append((g, vol, held, catch[i]))
-            else:
+            elif not ground:
                 no_room += 1
-            continue
-        room = park.buffer(-3).difference(avoid)
-        want = vol / cfg["retention_depth_m"]
-        cap = park.area * cfg["retention_max_share"]
-        seed = room.boundary.interpolate(room.boundary.project(nearest_sealed(park, sealed))) if not room.is_empty else None
-        g = grow(seed, min(want, cap), room) if seed is not None else None
+                continue
+        if g is None:   # a park, or with terrain a corridor with too little rain for a chain: one hollow
+            g, held = hollow(park, vol, cfg, avoid, ground, sealed)
+        over = max(vol - held, 0) if flow else 0
+        nxt = flow.next_park[i] if flow else -1
+        if over > 0.05 * vol and nxt >= 0:
+            inflow[nxt] += over
+        elif over > 0.05 * vol:
+            short += 1
         if g is not None and not g.is_empty:
-            basins.append((g, vol, g.area * cfg["retention_depth_m"], catch[i]))
-        else:
+            basins.append((g, vol, held, catch[i], (over, f"park-{nxt + 1}" if nxt >= 0 else "off the site") if over > 0.05 * vol else None))
+        elif not flow:
             no_room += 1
 
     # Ground cover: wet meadow round the water, lawn near the homes, groves beside the kept woods, meadow elsewhere.
@@ -335,9 +368,10 @@ def main():
         add(g, kind="ground-cover", cover=name, area_m2=round(g.area))
     for g in playgrounds:
         add(g, kind="open-space", use="playground", existing=False, area_m2=round(g.area))
-    for g, vol, held, c in basins:
+    for g, vol, held, c, over in basins:
         add(g, kind="retention", area_m2=round(g.area), depth_m=round(held / max(g.area, 1), 2),
-            volume_m3=round(held), needed_m3=round(vol), catchment_m2=round(c))
+            volume_m3=round(held), needed_m3=round(vol), catchment_m2=round(c),
+            **({"overflow_m3": round(over[0]), "overflows_to": over[1]} if over else {}))
     for g, deep in pools:
         add(deep, kind="retention", part="deep core", depth_m=cfg["pool_deep_m"], area_m2=round(deep.area))
     for g in paths:
@@ -365,8 +399,9 @@ def main():
         ("homes buildings beyond play reach", 0, unreached, "buildings", f"{cfg['play_reach_m']} m reach"),
         ("parks without a green link", 0, alone, "parks", "links may cross streets, not buildings"),
         ("rain retention volume", need_vol, held_vol, "m3", f"{cfg['design_rain_mm']} mm on new roofs, streets, squares"),
-        ("parks that can't hold their rain", 0, no_room + sum(1 for b in basins if b[2] < b[1] * 0.95), "parks",
-         "the massing leaves them too little room"),
+        ("parks that can't hold their rain", 0, short if flow else no_room + sum(1 for b in basins if b[2] < b[1] * 0.95),
+         "parks", "the massing leaves them too little room" + ("; with terrain, a full park spills to the next one downhill,"
+                                                               " and counts here only when nothing below it takes the rest" if flow else "")),
         ("corridors", "", sum(1 for c in corridor if c), "parks",
          f"at least {cfg['corridor_min_length_m']} m long and {cfg['corridor_min_width_m']} m wide"),
     ] + [(f"ground cover: {n}", "", g.area, "m2", "parks, by distance rules") for n, g in covers.items()]
@@ -401,8 +436,18 @@ def main():
         f.write("\nDefaults of the script, not from the brief:\n\n")
         for k, v, note in used_defaults:
             f.write(f"- `{k}` = {v}: {note}\n")
-        f.write(f"\nGeneral:\n\n- `streets`: {streets_src}.\n- Without a terrain model, rain is held in the nearest park, not where it flows; "
-                "levels must be checked.\n- Distances are straight lines, not walking routes.\n"
+        tot = sum(drains.values()) or 1
+        terrain_md = (f"- Terrain: {ter.source}, the ground as it is today (grading may change it). Each corridor's pools fill "
+                      f"the low ground of each stretch between its dry crossings, each other park's hollow its lowest ground. "
+                      f"The rain of new roofs, streets and squares runs downhill on a {cfg['flow_cell_m']} m grid to the first "
+                      f"corridor its way enters within {cfg['corridor_catch_m']} m, else the first park: "
+                      f"{pct(drains['downhill'], tot)} % gets there on the ground, {pct(drains['piped'], tot)} % runs off "
+                      f"without meeting a park and is piped to the nearest lower one, {pct(drains['uphill'], tot)} % has no "
+                      f"park below it (pump or soak away).\n" if ter else
+                      "- No terrain model in the site folder (no terrain*.tif, no terrain.csv): rain is held in the nearest "
+                      "park, not where it flows; levels must be checked.\n")
+        terrain_md += "".join(f"- {n}\n" for n in ter_notes)
+        f.write(f"\nGeneral:\n\n- `streets`: {streets_src}.\n{terrain_md}- Distances are straight lines, not walking routes.\n"
                 "- The massing's courtyards are private gardens and are not counted as public green.\n")
 
     src_md = Path(a.layers) / "SOURCES.md"
@@ -419,7 +464,9 @@ def main():
                       "paths_m": round(sum(g.length for g in paths)),
                       "boardwalks_m": round(sum(g.length for g in boardwalks)),
                       "fully_sealed_pct": pct(full, site_a), "partly_sealed_pct": pct(part, site_a),
-                      "verge_m2": round(verge.area)}, indent=1))
+                      "verge_m2": round(verge.area), "terrain": ter.source if ter else None,
+                      "rain_drains_pct": {k: pct(v, sum(drains.values())) for k, v in drains.items()} if ter else None},
+                     indent=1, ensure_ascii=False))
 
 
 def load_json(p):
@@ -465,8 +512,185 @@ def is_corridor(park, cfg):
     return long >= cfg["corridor_min_length_m"] and park.area / long >= cfg["corridor_min_width_m"]
 
 
-def pool_chain(park, vol, cfg, avoid):
-    """Pools shrunk from the park's outline until they hold vol, cut by dry crossings; returns (pools, deep, held)."""
+class Ground:
+    """The terrain on grids whose cells sit on whole multiples of their size, so that neighbouring cells meet exactly."""
+
+    def __init__(self, ter, cell):
+        self.ter, self.cell = ter, cell
+
+    def points(self, g, cell=None):
+        """The centres of the cells inside g: xs, ys."""
+        c = cell or self.cell
+        if g.is_empty:
+            return np.zeros(0), np.zeros(0)
+        x0, y0, x1, y1 = g.bounds
+        X, Y = np.meshgrid(np.arange(math.floor(x0 / c), math.ceil(x1 / c)) * c + c / 2,
+                           np.arange(math.floor(y0 / c), math.ceil(y1 / c)) * c + c / 2)
+        X, Y = X.ravel(), Y.ravel()
+        inside = shapely.contains_xy(g, X, Y)
+        return X[inside], Y[inside]
+
+    def cells(self, g):
+        """The cells inside g and their heights: xs, ys, z."""
+        xs, ys = self.points(g)
+        return xs, ys, self.ter.sample(xs, ys)
+
+    def poly(self, xs, ys):
+        """The cells around these centres, as one shape."""
+        c = self.cell
+        i, j = np.floor(xs / c), np.floor(ys / c)
+        return shapely.coverage_union_all(shapely.box(i * c, j * c, (i + 1) * c, (j + 1) * c)).simplify(0)
+
+
+def drainage(ground, area, parks, corridor, cfg):
+    """Where the rain of each point runs: from cell to cell down the terrain to the first park its way enters.
+    A priority flood from the grid's edge gives each cell the lowest neighbour it spills into, hollows included.
+    Returns to_park(xs, ys) -> [(park index, 'downhill' | 'piped' | 'uphill')]."""
+    c = cfg["flow_cell_m"]
+    x0, y0, x1, y1 = area.bounds
+    nx, ny = int(math.ceil((x1 - x0) / c)), int(math.ceil((y1 - y0) / c))
+    X, Y = np.meshgrid(x0 + (np.arange(nx) + 0.5) * c, y0 + (np.arange(ny) + 0.5) * c)
+    X, Y = X.ravel(), Y.ravel()
+    Z = ground.ter.sample(X, Y)
+    park_of = np.full(nx * ny, -1)
+    for i, p in enumerate(parks):
+        park_of[shapely.contains_xy(p, X, Y)] = i
+    low = []
+    for i, p in enumerate(parks):
+        inside = park_of == i
+        q = p.representative_point()
+        low.append(float(Z[inside].min()) if inside.any() else float(ground.ter.sample([q.x], [q.y])[0]))
+    zl, n = Z.tolist(), nx * ny
+    seen, down, order = bytearray(n), [-1] * n, []
+    heap = [(zl[k], k) for k in range(n) if k < nx or k >= n - nx or k % nx in (0, nx - 1)]
+    for _, k in heap:
+        seen[k] = 1
+    heapq.heapify(heap)
+    while heap:
+        z, k = heapq.heappop(heap)
+        order.append(k)
+        r, q = divmod(k, nx)
+        for dr in (-1, 0, 1):
+            for dq in (-1, 0, 1):
+                rr, qq = r + dr, q + dq
+                if 0 <= rr < ny and 0 <= qq < nx:
+                    nb = rr * nx + qq
+                    if not seen[nb]:
+                        seen[nb], down[nb] = 1, k
+                        heapq.heappush(heap, (max(zl[nb], z), nb))
+    # Down the drainage tree, from the edge up: the first park on each cell's way, and the first corridor and where.
+    pk = park_of.tolist()
+    first, corr, at = [-1] * n, [-1] * n, [-1] * n
+    for k in order:
+        d, p = down[k], pk[k]
+        first[k] = p if p >= 0 else (first[d] if d >= 0 else -1)
+        if p >= 0 and corridor[p]:
+            corr[k], at[k] = p, k
+        elif d >= 0:
+            corr[k], at[k] = corr[d], at[d]
+
+    def to_park(xs, ys):
+        out = []
+        ks = np.clip(((ys - y0) / c).astype(int), 0, ny - 1) * nx + np.clip(((xs - x0) / c).astype(int), 0, nx - 1)
+        for k, x, y in zip(ks.tolist(), xs.tolist(), ys.tolist()):
+            if corr[k] >= 0 and math.hypot(X[at[k]] - x, Y[at[k]] - y) <= cfg["corridor_catch_m"]:
+                out.append((corr[k], "downhill"))
+            elif first[k] >= 0:
+                out.append((first[k], "downhill"))
+            else:   # its way leaves the land without meeting a park: a pipe to the nearest park below it
+                pt = Point(x, y)
+                near = sorted(range(len(parks)), key=lambda j: parks[j].distance(pt))
+                below = [j for j in near if low[j] < zl[k]]
+                out.append((below[0], "piped") if below else (near[0], "uphill"))
+        return out
+    # Each park spills where its first cell in the flood order (its lowest rim) drains to: the next park downhill.
+    spill = [-1] * len(parks)
+    for k in order:
+        if pk[k] >= 0 and spill[pk[k]] < 0:
+            spill[pk[k]] = k
+    next_park = [first[down[k]] if k >= 0 and down[k] >= 0 else -1 for k in spill]
+    pos = {k: n_ for n_, k in enumerate(order)}
+    upstream_first = sorted(range(len(parks)), key=lambda i: -pos.get(spill[i], -1))
+    return argparse.Namespace(to_park=to_park, next_park=next_park, upstream_first=upstream_first)
+
+
+def fill_low(ground, room, fits, cfg, max_area, min_piece=0.0, cut=None, axis=None, one=False):
+    """The room's low ground filled as water rises, from the lowest cell up, while fits(shape) holds.
+    With axis (centre, unit vector, start, spacing) each stretch between crossings fills from its own lowest cell;
+    with one, only the piece at the lowest cell is kept, cut to max_area m² round it if the next level overshoots.
+    Returns (shape or None, lowest point)."""
+    xs, ys, z = ground.cells(room)
+    if not len(z):
+        return None, None
+    if axis:
+        (cx, cy), (ux, uy), start, every = axis
+        seg = np.floor(((xs - cx) * ux + (ys - cy) * uy - start) / every).astype(int)
+        seg -= seg.min()
+        bottom = np.full(seg.max() + 1, np.inf)
+        np.minimum.at(bottom, seg, z)
+        rel = z - bottom[seg]
+    else:
+        rel = z - z.min()
+    low_pt = Point(xs[np.argmin(z)], ys[np.argmin(z)])
+    r = cfg["pool_round_m"]
+
+    def make(t):
+        sel = rel <= t
+        if not sel.any():
+            return shapely.Polygon()
+        g = ground.poly(xs[sel], ys[sel]).buffer(r).buffer(-2 * r).buffer(r).intersection(room)
+        if cut is not None:
+            g = g.difference(cut)
+        parts = [q for q in getattr(g, "geoms", [g]) if q.geom_type == "Polygon" and q.area >= max(min_piece, 1)]
+        if one and parts:
+            parts = [min(parts, key=lambda q: q.distance(low_pt))]
+        return unary_union(parts) if parts else shapely.Polygon()
+
+    # the search starts below the level whose cells cover 1.5 times the largest area, and rises if that still fits
+    rs, lo = np.sort(rel), 0.0
+    k = max(int(1.5 * max_area / ground.cell ** 2), 1)
+    while True:
+        hi = float(rs[min(k, len(rs) - 1)]) + 1e-6
+        if k >= len(rs) - 1 or not fits(make(hi)):
+            break
+        lo, k = hi, k * 2
+    if fits(make(hi)):
+        lo = hi
+    else:
+        for _ in range(20):
+            mid = (lo + hi) / 2
+            if fits(make(mid)):
+                lo = mid
+            else:
+                hi = mid
+    g = make(lo)
+    if one and g.area < 0.95 * max_area:
+        cut_g = grow(low_pt, max_area, make(hi))
+        if cut_g is not None and cut_g.area > g.area:
+            g = cut_g
+    return (None if g.is_empty else g), low_pt
+
+
+def hollow(park, vol, cfg, avoid, ground, sealed):
+    """One hollow holding vol: with terrain at the park's lowest ground, filled as water rises; without, round, on
+    the side its rain comes from. Returns (shape or None, held m³)."""
+    room = park.buffer(-3).difference(avoid)
+    if room.is_empty:
+        return None, 0.0
+    size = min(vol / cfg["retention_depth_m"], park.area * cfg["retention_max_share"])
+    g = None
+    if ground:
+        g, seed = fill_low(ground, room, lambda h: h.area <= size, cfg, size, one=True)
+    else:
+        seed = room.boundary.interpolate(room.boundary.project(nearest_sealed(park, sealed)))
+    if g is None and seed is not None:
+        g = grow(seed, size, room)
+    return (g, g.area * cfg["retention_depth_m"]) if g is not None and not g.is_empty else (None, 0.0)
+
+
+def pool_chain(park, vol, cfg, avoid, ground=None):
+    """Pools that hold vol, cut by dry crossings: with terrain they fill the low ground of each stretch, without
+    they are shrunk from the park's outline; returns (pools, deep, held)."""
     room = park.buffer(-8).difference(avoid)
     if room.is_empty:
         return None
@@ -480,6 +704,15 @@ def pool_chain(park, vol, cfg, avoid):
                                     (c.x + t * ux + uy * half, c.y + t * uy - ux * half)])
                         for t in np.arange(-half, half, cfg["pool_crossing_every_m"])]).buffer(cfg["pool_crossing_width_m"] / 2)
     cap = park.area * cfg["corridor_retention_max_share"]
+
+    def held_of(g):
+        deep = g.buffer(-cfg["pool_shallow_band_m"])
+        return deep, (g.area - deep.area) * cfg["pool_shallow_m"] + deep.area * cfg["pool_deep_m"]
+
+    if ground:
+        g, _ = fill_low(ground, room, lambda q: q.area <= cap and held_of(q)[1] <= vol, cfg, cap, 150, cuts,
+                        ((c.x, c.y), (ux, uy), -half, cfg["pool_crossing_every_m"]))
+        return (g, *held_of(g)) if g is not None else None
 
     def make(d):
         g = room.buffer(-d - 15).buffer(15).difference(cuts)  # rounded, as water settles
