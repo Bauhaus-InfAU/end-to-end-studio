@@ -1,0 +1,45 @@
+{
+  "_how": "Fill every value from the brief's checklist with its page as source, or keep the default and say 'assumption: why'. A value left null, or a source still in <brackets>, is skipped; a required one stops the script with its name.",
+
+  "map_scale": {"value": null, "source": "<the brief's site plan scale, with its page>"},
+  "residents": {"value": null, "source": "<the brief's residents, with its page; only for green per resident on the design>"},
+
+  "keep": {"value": [
+      {"what": "existing buildings", "layer": "buildings", "where": {}, "reason": "<what the brief says about them>"},
+      {"what": "water", "layer": "water", "where": {}, "reason": "<...>"},
+      {"what": "woods and scrub", "layer": "plots", "where": {"landuse": ["forest", "natural:wood", "natural:scrub", "natural:wetland", "leisure:nature_reserve"]}, "reason": "<...>"},
+      {"what": "<something the brief keeps that no layer shows>", "layer": null, "reason": "<...>"}
+    ], "source": "<one page per item goes in its reason, e.g. 'trees protected (p. 28)'>"},
+
+  "uses_from_site": {"value": ["buildings", "street-land", "water", "plots"],
+    "source": "assumption: the site layers that cover the ground, top first; land none covers is 'untagged'"},
+  "street_widths_m": {"value": {"motorway": 25, "trunk": 20, "primary": 15, "secondary": 12, "tertiary": 10, "residential": 8, "living_street": 6, "unclassified": 6, "service": 4, "track": 3, "footway": 2, "path": 2, "cycleway": 2.5, "pedestrian": 6, "steps": 2},
+    "source": "assumption: typical widths, used only where the site has no street-land layer"},
+
+  "sealing": {"value": {
+      "fully": ["building", "street", "railway", "industrial", "commercial", "retail", "design: street"],
+      "partly": ["square", "path", "farmyard", "construction", "brownfield", "residential", "leisure:pitch", "leisure:track", "leisure:sports_centre", "leisure:swimming_pool", "landfill", "quarry", "design: square", "design: plot", "design: path"],
+      "default": "unsealed"
+    }, "source": "assumption: buildings and streets fully sealed, paved or gravelled grounds partly; ground under other uses unsealed"},
+  "design_plot_m": {"value": 15, "source": "assumption: the land within 15 m of a new building that no open space covers is its plot"},
+
+  "green": {"value": {
+      "wooded": ["forest", "natural:wood", "natural:scrub", "natural:wetland"],
+      "open green": ["grass", "meadow", "natural:grassland", "natural:heath", "leisure:park", "leisure:garden", "leisure:nature_reserve", "allotments", "orchard", "village_green", "cemetery", "design: park", "design: garden"],
+      "farmland": ["farmland", "vineyard", "greenhouse_horticulture"]
+    }, "source": "assumption: OSM land uses grouped by what grows on them"},
+
+  "walk_radii_m": {"value": [400, 800], "source": "assumption: about 5 and 10 minutes on foot"},
+  "walk_side_m": {"value": 50, "source": "assumption: land within 50 m of a reached path counts as reached"},
+  "not_walkable": {"value": ["motorway", "motorway_link", "trunk", "trunk_link"], "source": "assumption: no footway along roads of these types"},
+  "destinations": {"value": {
+      "stations": {"layer": "rail", "where": {"railway": ["station", "halt", "stop", "tram_stop"]}},
+      "bus stops": {"layer": "streets", "where": {"highway": ["bus_stop"]}},
+      "green": {"layer": "plots", "where": {"landuse": ["leisure:park", "forest", "natural:wood", "meadow", "leisure:nature_reserve", "village_green"]}, "design": {"kind": ["open-space"], "use": ["park"]}},
+      "shops": {"layer": "buildings", "where": {"use": ["retail", "commercial"]}, "design": {"kind": ["building"], "use": ["mixed", "commerce", "mixed + daycare"]}},
+      "schools": {"layer": "buildings", "where": {"use": ["education"]}, "design": {"kind": ["building"], "use": ["school", "community building"]}}
+    }, "source": "assumption: everyday destinations; 'design' says how the design's own features count"},
+
+  "better": {"value": {"sealed": "lower", "unsealed": "higher", "green": "higher", "reach": "higher", "crossings": "higher", "built": "lower"},
+    "source": "assumption: the first word of a measure says which way is better; missing means no verdict"}
+}
