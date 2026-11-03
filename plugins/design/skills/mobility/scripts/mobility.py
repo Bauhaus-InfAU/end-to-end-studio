@@ -14,7 +14,8 @@ structure plan, `places` ({name, kind: gateway or centre, at: [lon, lat], holds}
 via: [place names or [lon, lat]]}) stand in for it, and the gateways where streets cross the site's edge and the
 stops nearby are found and listed in mobility/places.json; without a massing, the walking share is of the site's area.
 The massing, the streets skill's surface and the drawing standard are read when they exist. Writes mobility.geojson,
-stats.json, walk.json, places.json, assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/.
+stats.json, walk.json, places.json, assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/;
+the plan is drawn only in the drawing standard's look, so without its style.json the data is written and no plan drawn.
 """
 import numpy as np
 import argparse, json, math, os, re, subprocess, sys
@@ -149,9 +150,6 @@ LABELS = {'title': 'Mobility plan', 'bus': 'Bus', 'car': 'Car access street', 'c
           'walk': 'By the street and path network, of the new housing floor area {shares} of the main stop{unreached}.',
           'walk_site': 'By the street and path network, of the site\'s area {shares} of the main stop{unreached}.',
           'within': '{p} % lies within {m} m', 'unreached': '; {p} % is not reached'}
-FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#d9302b', 'existing': '#d0d0d0',
-                  'context': '#e4e4e4', 'street': '#f4f4f4', 'path': '#b0b0b0', 'font': 'Arial, Helvetica, sans-serif',
-                  'thin': 0.13, 'mid': 0.25, 'thick': 0.5, 'text': 3.2, 'title': 5.6}
 ORDER = ['bus', 'car', 'bike', 'foot']
 
 A = argparse.ArgumentParser(description='The mobility plan of a design.')
@@ -184,12 +182,11 @@ if not (SITE and os.path.exists(os.path.join(SITE, 'site.geojson'))):
         fetch_osm(_want, SITE, float(D['osm_pad_m']))   # fetched once, again when the outline changes
 
 style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
-S = dict(FALLBACK_STYLE)
-if os.path.exists(style_path):
-    S.update(json.load(open(style_path, encoding='utf8')))
-FONT = escape(str(S['font']), {'"': "'"})
-TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
-TITLE = max(TXT, float(S.get('title') or 0))
+S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
+if S:
+    FONT = escape(str(S['font']), {'"': "'"})
+    TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
+    TITLE = max(TXT, float(S.get('title') or 0))
 
 site_ll = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry'])
 EPSG = CFG.get('epsg') or utm_epsg(site_ll.centroid.x, site_ll.centroid.y)
@@ -541,6 +538,33 @@ stats['routes_by_mode'] = {m: sum(1 for p, g in feats if p['kind'] == 'route' an
 stats['names_not_found'] = sorted(set(map(str, not_found)))
 if not_found:   # a name left unfilled or misspelt in config.json: skipped, so say so
     print('names in config.json not found in the structure plan, skipped: ' + ', '.join(stats['names_not_found']), file=sys.stderr)
+
+
+# ---------------- write ----------------
+def write():
+    fc = {'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {k_: v for k_, v in p.items() if v is not None},
+         'geometry': mapping(shapely.set_precision(transform(TO_LL, g), 1e-7))} for p, g in feats if g is not None and not g.is_empty]}
+    open(os.path.join(OUT, 'mobility.geojson'), 'w', encoding='utf8').write(json.dumps(fc, ensure_ascii=False))
+    json.dump(walk, open(os.path.join(OUT, 'walk.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
+    json.dump(stats, open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
+    md = ['# Assumptions', '', 'The skill\'s own values used in this run; config.json may override each.', '']
+    for key in sorted(USED):
+        md.append(f'- `{key}` = {json.dumps(D[key], ensure_ascii=False)}: {DEFAULTS[key][1]}' + (' (from config.json)' if key in CFG else ' (default)'))
+    if missing:
+        md += ['', 'Missing layers: ' + '; '.join(missing) + '.']
+    if not_found:
+        md += ['', 'Names in config.json not found in the structure plan: ' + ', '.join(sorted(set(map(str, not_found)))) + '.']
+    open(os.path.join(OUT, 'assumptions.md'), 'w', encoding='utf8').write('\n'.join(md) + '\n')
+    print(json.dumps(stats, indent=1, ensure_ascii=False))
+
+
+if not S:   # no drawing standard: the plan's data only, no drawing in a look of the skill's own
+    stats['drawing'] = None
+    missing.append('drawing standard (no plan drawn: run the drawing standard first, then this again)')
+    write()
+    print('no drawing standard at %s: wrote the data, drew no plan' % style_path, file=sys.stderr)
+    sys.exit(0)
 
 
 # ---------------- the plan ----------------
@@ -897,20 +921,4 @@ except Exception as e:
     print('no PNG:', e, file=sys.stderr)
 stats['drawing'] = dict(file=fname + '.svg', png=os.path.exists(png), width_mm=round(W, 1), height_mm=round((Hm + Hs) / k, 1),
                         scale=scale, base=walk.get('base', 'site street lines buffered at assumed widths'))
-
-# ---------------- write ----------------
-fc = {'type': 'FeatureCollection', 'features': [
-    {'type': 'Feature', 'properties': {k_: v for k_, v in p.items() if v is not None},
-     'geometry': mapping(shapely.set_precision(transform(TO_LL, g), 1e-7))} for p, g in feats if g is not None and not g.is_empty]}
-open(os.path.join(OUT, 'mobility.geojson'), 'w', encoding='utf8').write(json.dumps(fc, ensure_ascii=False))
-json.dump(walk, open(os.path.join(OUT, 'walk.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
-json.dump(stats, open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
-md = ['# Assumptions', '', 'The skill\'s own values used in this run; config.json may override each.', '']
-for key in sorted(USED):
-    md.append(f'- `{key}` = {json.dumps(D[key], ensure_ascii=False)}: {DEFAULTS[key][1]}' + (' (from config.json)' if key in CFG else ' (default)'))
-if missing:
-    md += ['', 'Missing layers: ' + '; '.join(missing) + '.']
-if not_found:
-    md += ['', 'Names in config.json not found in the structure plan: ' + ', '.join(sorted(set(map(str, not_found)))) + '.']
-open(os.path.join(OUT, 'assumptions.md'), 'w', encoding='utf8').write('\n'.join(md) + '\n')
-print(json.dumps(stats, indent=1, ensure_ascii=False))
+write()
