@@ -175,27 +175,32 @@ class Map:
             for i, ln in enumerate(lines):
                 o.append(self.text(x + 9, y + i * st["text"] * 1.25, ln))
             y += max(len(lines), 1) * st["text"] * 1.25 + 2.5
-        # north arrow and scale bar, below the legend
-        y = max(y + 6, self.oy + self.mh - 34)
-        # north: a circle in outline, a line from its centre to the circle, pointing north
-        o.append(f'<circle cx="{x + 6}" cy="{y + 6}" r="6" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
-                 f'<line x1="{x + 6}" y1="{y + 6}" x2="{x + 6}" y2="{y}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
+        # north arrow and scale bar in one row under the map's bottom-right corner
         L = nice((self.SIDE - 12) / self.k)
-        y += 22
-        # scale bar: a line that steps up and down, a tick and a number at every step
         n = next(n for n in ((4, 2, 1) if f"{L:g}"[0] == "2" else (5, 2, 1))
                  if L * self.k / n >= (len(f"{L:g}") + 1) * 0.6 * st["text"] + 1 or n == 1)
         s = L * self.k / n
-        o.append(f'<path d="{"".join(f"M{x + i * s:.2f},{y + 1.6 * (i % 2)}h{s:.2f}" for i in range(n))}'
-                 f'{"".join(f"M{x + i * s:.2f},{y}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+        ry = self.oy + self.mh + 5
+        sx = self.ox + self.mw - L * self.k - len(f"{L:g} m") * 0.3 * st["text"]  # the last number ends at the map's edge
+        # north: a circle in outline, a line from its centre to the circle, pointing north
+        nx = sx - 9
+        o.append(f'<circle cx="{nx}" cy="{ry + 3}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
+                 f'<line x1="{nx}" y1="{ry + 3}" x2="{nx}" y2="{ry}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
+        # scale bar: a line that steps up and down, a tick and a number at every step
+        by = ry + 1
+        o.append(f'<path d="{"".join(f"M{sx + i * s:.2f},{by + 1.6 * (i % 2)}h{s:.2f}" for i in range(n))}'
+                 f'{"".join(f"M{sx + i * s:.2f},{by}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
         for i in range(n + 1):
-            o.append(self.text(x + i * s, y + 5, f"{L * i / n:g}" + (" m" if i == n else ""), anchor="middle"))
-        o.append(self.text(x, y + 9.5, f"1:{self.scale:,} at {self.W:.0f} x {self.H:.0f} mm".replace(",", " ")))
-        # sources
-        fy = self.oy + max(self.mh, 150) + 6
-        o.append(self.text(self.ox, fy, "Sources", weight="bold"))
+            o.append(self.text(sx + i * s, by + 5, f"{L * i / n:g}" + (" m" if i == n else ""), anchor="middle"))
+        # sources, below that row; the sheet grows to hold them and the legend, so nothing is cut
         src = sources + [f"Base map: the project's site folder (see its SOURCES.md). Projection {self.S.crs.name}."]
-        for ln in textwrap.wrap("  ·  ".join(src), int(self.mw / (st["text"] * 0.5)))[:6]:
+        lines = textwrap.wrap("  ·  ".join(src), int(self.mw / (st["text"] * 0.5)))
+        fy = by + 9.5 + st["text"] * 1.6
+        self.H = max(self.H, y + self.PAD, fy + (len(lines) + 1) * st["text"] * 1.3 + self.PAD)
+        o[0] = f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.W:.1f}mm" height="{self.H:.1f}mm" viewBox="0 0 {self.W:.1f} {self.H:.1f}">'
+        o.append(self.text(self.ox + self.mw, by + 9.5, f"1:{self.scale:,} at {self.W:.0f} x {self.H:.0f} mm".replace(",", " "), anchor="end"))
+        o.append(self.text(self.ox, fy, "Sources", weight="bold"))
+        for ln in lines:
             fy += st["text"] * 1.3
             o.append(self.text(self.ox, fy, ln, st["text"] * 0.9))
         o.append("</svg>")
