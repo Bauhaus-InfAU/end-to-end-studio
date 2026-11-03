@@ -73,6 +73,11 @@ def test_section_site_as_is(tmp_path):
     for svg in d.glob("*.svg"):
         ok, why = text_sizes_ok(svg)
         assert ok, why
+    # the ground behind the cut is drawn, so buildings behind stand on it; the far landscape only on the whole cut
+    whole, part = (d / "site-section_1-3000.svg").read_text(encoding="utf-8"), (d / "site-section_excerpt_1-1000.svg").read_text(encoding="utf-8")
+    assert whole.count('class="ground-behind"') == len(c["ground_behind_m"]) > 0
+    assert part.count('class="ground-behind"') == len(c["ground_behind_m"])
+    assert whole.count('class="landscape"') >= len(c["landscape_m"]) and 'class="landscape"' not in part
 
 
 @needs_tif
@@ -120,6 +125,7 @@ def test_terrain_fallback_flat(tmp_path):
     assert r.returncode == 0
     assert {row["source"] for row in profile(out)} == {"flat (no terrain found)"}
     assert "flat" in (out / "site-section/assumptions.md").read_text(encoding="utf-8")
+    assert cut(out)["landscape_m"] == []   # flat ground: no landscape lines behind
 
 
 def gable(x0, y0, w=10, d=8, eaves=6, ridge=10):

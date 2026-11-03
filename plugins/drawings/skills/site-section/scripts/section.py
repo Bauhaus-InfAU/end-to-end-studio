@@ -28,6 +28,8 @@ DEFAULTS = {
     'step_m': 10,               # metres between ground samples along the line
     'beyond_m': 200,            # the line runs this far past the site at each end, so the neighbours show
     'behind_m': 80,             # buildings up to this far behind the cut stand in elevation
+    'ground_behind_m': [20, 40, 60, 80],   # the ground behind the cut, drawn along lines this far back, so buildings behind stand on it
+    'landscape_m': [300, 600, 1000],       # on the whole cut, the landscape further back: ground lines this far behind, palest farthest
     'tree_h': {'forest': 16, 'wood': 16, 'park': 10, 'scrub': 4},   # assumed tree heights by land use, m
     'person_h': 1.75,           # height of a person for scale, m
     'floor_h': 3.0,             # storey height, only for existing buildings without a height
@@ -328,6 +330,27 @@ def ground(t):
     return np.interp(t, TS, ZS)
 
 
+def behind_profile(u, fill=True):
+    """The ground along a line u m behind the cut, at the cut's samples. Without fill: None where the terrain has no
+    value along half the line or more, NaN where it has none, never the nearest value (that would draw a false, flat land)."""
+    xs, ys = PX + V[0] * u, PY + V[1] * u
+    if fill:
+        return TERRAIN.sample(xs, ys)
+    z = np.asarray(TERRAIN._sampler(xs, ys), float)
+    return None if TERRAIN.flat or np.isfinite(z).mean() < 0.5 else z
+
+
+BANDS, LANDSCAPE = [], []   # far to near
+if not TERRAIN.flat:
+    BANDS = [(u, behind_profile(u)) for u in sorted(C['ground_behind_m'], reverse=True) if 0 < u <= C['behind_m']]
+    for u in sorted(C['landscape_m'], reverse=True):
+        z = behind_profile(u, fill=False)
+        if z is None:
+            NOTES.append(f'The terrain has no ground {u:g} m behind the cut along half of it or more: that landscape line is left out.')
+        else:
+            LANDSCAPE.append((u, z))
+
+
 for c in cut:   # down to the lowest ground under it, so it never floats; the earth hides the rest
     c['bottom'] = min(c['base'], float(ground(np.linspace(c['t0'], c['t1'], 5)).min()))
 
@@ -598,6 +621,7 @@ def draw(w0, w1, scale, detail, name):
     m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
     zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
     ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max(C['tree_h'].values())]
+    ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
     zmin = float(zwin.min())
     step = nice_step(FS * 1.4, k)
     zbase = math.floor((zmin - max(4.0, 0.1 * (float(zwin.max()) - zmin))) / step) * step
@@ -648,14 +672,40 @@ def draw(w0, w1, scale, detail, name):
         o.append(f'<clipPath id="{cid}"><path d="{d_out}"/></clipPath>'
                  f'<path d="{d}" stroke="{stroke}" stroke-width="{THIN}" clip-path="url(#{cid})"/>')
 
-    # buildings behind, far to near, lighter the farther, each on its own ground
-    for c in sel_beh:
+    def behind_ground(z, cls, f):   # a ground behind the cut, from its line down to the drawing's base, f of the way to paper
+        r, runs = [], []
+        for t, zv in zip(TS[m], np.maximum(z[m], zbase)):   # NaN stays NaN: no ground known there
+            if np.isfinite(zv):
+                r.append((t, zv))
+            elif r:
+                runs.append(r); r = []
+        runs.append(r)
+        for r in (r for r in runs if len(r) > 1):
+            top = 'L'.join(f'{X(t):.2f},{Y(zv):.2f}' for t, zv in r)
+            o.append(f'<path class="{cls}" d="M{top}L{X(r[-1][0]):.2f},{Y(zbase):.2f}L{X(r[0][0]):.2f},{Y(zbase):.2f}Z" '
+                     f'fill="{mix(S["context"], S["paper"], f)}" stroke="none"/>')
+            o.append(f'<path d="M{top}" fill="none" stroke="{mix(S.get("building", "#9a9a9a"), S["paper"], f)}" stroke-width="{THIN}"/>')
+
+    def behind_building(c):   # lighter the farther, on its own ground
         b = c['b']
         fill = mix(S['accent'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
         stroke = mix(S['accent'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')
         d_out = outline(c['roof'], c['low'])
         o.append(f'<path d="{d_out}" fill="{fill}" stroke="{stroke}" stroke-width="{THIN}"/>')
         floors(c, d_out, stroke)
+
+    # far to near: the landscape (whole cut only), then the ground behind the cut in bands with the buildings standing
+    # on it, so a band hides the feet of the buildings behind it and none floats above the cut
+    if not detail:
+        for i, (u, z) in enumerate(LANDSCAPE):
+            behind_ground(z, 'landscape', 0.85 - 0.25 * i / max(1, len(LANDSCAPE) - 1))
+    beh = list(sel_beh)
+    for i, (u, z) in enumerate(BANDS):
+        while beh and beh[0]['u'] >= u:
+            behind_building(beh.pop(0))
+        behind_ground(z, 'ground-behind', 0.55 - 0.35 * i / max(1, len(BANDS) - 1))
+    for c in beh:
+        behind_building(c)
     # what of the cut buildings stands behind the cut, nearest of all
     for c in sel_cut:
         if c.get('back'):
@@ -803,6 +853,7 @@ info = {
     'z_A': round(float(ZS[0]), 1), 'z_A_prime': round(float(ZS[-1]), 1),
     'z_min': round(float(ZS.min()), 1), 'z_max': round(float(ZS.max()), 1),
     'terrain': TERRAIN.source, 'terrain_gaps_filled': TERRAIN.gaps,
+    'ground_behind_m': [u for u, _ in BANDS], 'landscape_m': [u for u, _ in LANDSCAPE],
     'excerpt_t_m': [round(E0, 1), round(E1, 1)], 'excerpt_why': why,
     'labels': [[round(t, 1), s] for t, s, _ in labels],
     'drawings': [whole, part],
@@ -834,7 +885,10 @@ lines += [f'- Ground falls up to {fall:.1f} m and rises up to {rise:.1f} m along
            if ROOFS['models'] else '- Roofs: no 3D building models, every roof a flat top at its height.'),
           '- Tree heights assumed: ' + ', '.join(f'{c} {h} m' for c, h in C['tree_h'].items()) + '; person '
           + f'{C["person_h"]} m.',
-          f'- Excerpt {E0:.0f}–{E1:.0f} m from A, {why}.']
+          f'- Excerpt {E0:.0f}–{E1:.0f} m from A, {why}.',
+          (f'- Ground behind the cut drawn at {", ".join(f"{u:g}" for u, _ in BANDS[::-1])} m; landscape lines on the whole cut at '
+           + (", ".join(f"{u:g}" for u, _ in LANDSCAPE[::-1]) + ' m behind.' if LANDSCAPE else 'none (no terrain that far).')
+           if BANDS else '- No ground behind the cut and no landscape lines: the ground is flat.')]
 if MISSING:
     lines.append('- Missing, not drawn: ' + ', '.join(MISSING) + '.')
 lines += [f'- {n}' for n in TERRAIN.notes + NOTES]
