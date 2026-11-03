@@ -177,21 +177,25 @@ class Map:
             y += max(len(lines), 1) * st["text"] * 1.25 + 2.5
         # north arrow and scale bar, below the legend
         y = max(y + 6, self.oy + self.mh - 34)
-        o.append(f'<path d="M{x + 5} {y}L{x + 9} {y + 12}L{x + 5} {y + 9}L{x + 1} {y + 12}Z" fill="{st["ink"]}"/>')
-        o.append(self.text(x + 5, y - 1.5, "N", st["text"] * 1.3, "bold", "middle"))
+        # north: a circle in outline, a line from its centre to the circle, pointing north
+        o.append(f'<circle cx="{x + 6}" cy="{y + 6}" r="6" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
+                 f'<line x1="{x + 6}" y1="{y + 6}" x2="{x + 6}" y2="{y}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
         L = nice((self.SIDE - 12) / self.k)
         y += 22
-        for i in range(4):
-            o.append(f'<rect x="{x + i * L * self.k / 4:.2f}" y="{y}" width="{L * self.k / 4:.2f}" height="1.6" '
-                     f'fill="{st["ink"] if i % 2 == 0 else st["paper"]}" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
-        o.append(self.text(x, y + 5, "0"))
-        o.append(self.text(x + L * self.k, y + 5, f"{L:g} m", anchor="middle"))
+        # scale bar: a line that steps up and down, a tick and a number at every step
+        n = next(n for n in ((4, 2, 1) if f"{L:g}"[0] == "2" else (5, 2, 1))
+                 if L * self.k / n >= (len(f"{L:g}") + 1) * 0.6 * st["text"] + 1 or n == 1)
+        s = L * self.k / n
+        o.append(f'<path d="{"".join(f"M{x + i * s:.2f},{y + 1.6 * (i % 2)}h{s:.2f}" for i in range(n))}'
+                 f'{"".join(f"M{x + i * s:.2f},{y}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+        for i in range(n + 1):
+            o.append(self.text(x + i * s, y + 5, f"{L * i / n:g}" + (" m" if i == n else ""), anchor="middle"))
         o.append(self.text(x, y + 9.5, f"1:{self.scale:,} at {self.W:.0f} x {self.H:.0f} mm".replace(",", " ")))
         # sources
         fy = self.oy + max(self.mh, 150) + 6
         o.append(self.text(self.ox, fy, "Sources", weight="bold"))
         src = sources + [f"Base map: the project's site folder (see its SOURCES.md). Projection {self.S.crs.name}."]
-        for ln in textwrap.wrap("  ·  ".join(src), int((self.W - 2 * self.PAD) / (st["text"] * 0.5)))[:4]:
+        for ln in textwrap.wrap("  ·  ".join(src), int(self.mw / (st["text"] * 0.5)))[:6]:
             fy += st["text"] * 1.3
             o.append(self.text(self.ox, fy, ln, st["text"] * 0.9))
         o.append("</svg>")
@@ -367,7 +371,7 @@ def main():
         R = meta(out, "rules")
         m = new("Climate rules for the design", "Where the climate of the place asks the design to do or avoid something")
         m.context()
-        # one look per rule, the same on the map and in the legend: don't = solid or dense accent, careful = light accent dots, do = grey
+        # one look per rule, the same on the map and in the legend: don't = solid or dense accent, careful = light accent tint, do = grey
         F = S.layer("rules", out)
         order = {"do": 0, "careful": 1, "dont": 2}
         looks, n = {}, {"dont": 0, "careful": 0, "do": 0}
@@ -380,7 +384,7 @@ def main():
             if k == "dont":
                 looks[p["rule"]] = (st["accent"], 0.85) if i == 0 else (m.hatch(f"dont{i}", st["paper"], 1.4, 45, st["mid"], bg=st["accent"]), 0.85)
             elif k == "careful":
-                looks[p["rule"]] = (m.dots(f"careful{i}", st["accent"], 2.0 if i == 0 else 3.0, 0.32 if i == 0 else 0.5), 1)
+                looks[p["rule"]] = (st["accent"], 0.3) if i == 0 else (m.hatch(f"careful{i}", st["accent"], 2.4, 45, st["thin"]), 1)
             else:
                 looks[p["rule"]] = (st["context"], 0.35) if i == 0 else (m.hatch(f"do{i}", st["context"], 2.2, -45, st["mid"]), 1)
         for g, p in sorted(F, key=lambda f: order.get(f[1]["kind"], 0)):
