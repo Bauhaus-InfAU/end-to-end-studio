@@ -28,6 +28,14 @@ def number_of_views(scene, given):
     return 2, "default"
 
 
+def set_aside_stale_render(out, stem, old_base):
+    """Moves <stem>.png to <stem>_stale.png when its base view was just redrawn differently. Returns a warning or None."""
+    rendered, base = out / f"{stem}.png", out / f"{stem}_base.svg"
+    if old_base is not None and rendered.exists() and base.exists() and base.read_bytes() != old_base:
+        rendered.replace(out / f"{stem}_stale.png")
+        return f"{stem}.png was rendered from an earlier base view: moved to {stem}_stale.png. Render this view again."
+
+
 def write_assumptions(scene, path, views, count_source):
     a = scene.assumed
     lines = ["# Assumptions and warnings", ""]
@@ -107,7 +115,11 @@ def main():
     for i, p in enumerate(picks, 1):
         v = dict(p, name=f"view-{i}", eye_height=args.eye_height, hfov=p.get("hfov", args.hfov))
         stem = f"{prefix}view-{i}"
+        old_base = (out / f"{stem}_base.svg").read_bytes() if (out / f"{stem}_base.svg").exists() else None
         made = draw_view.draw_view(scene, v, out, stem, style)
+        stale = set_aside_stale_render(out, stem, old_base)
+        if stale:
+            scene.warn(stale)
         if not made["png"]:
             scene.warn(f"{stem}_base.png wasn't made: no Chrome or Edge, or it hung. The SVG is there.")
         if made["trees_too_near"]:

@@ -5,9 +5,9 @@
       drawing's print size, and writes panel-layout/inventory.json.
 
   python panels.py render <proposal folder>/panel-layout/layout.json [--png-dpi 96]
-      Places the items of layout.json on the panels, keeps scaled drawings at their print
-      size, renders panel-N.html/.pdf/.png with a headless Chrome or Edge, checks the
-      result and writes panel-layout/report.md.
+      Places the items of layout.json on the panels, each drawing with a scale in its frame
+      at a true scale, cropped by the frame's edge; renders panel-N.html/.pdf/.png with a
+      headless Chrome or Edge, checks the result and writes panel-layout/report.md.
 
 Needs Python 3.11+ and Chrome, Edge or Chromium. Set BROWSER to its path if it isn't found.
 """
@@ -32,7 +32,25 @@ DRAWING_EXT = {".svg", ".png", ".jpg", ".jpeg"}
 MM_PER = {"mm": 1.0, "cm": 10.0, "in": 25.4, "pt": 25.4 / 72, "pc": 25.4 / 6}
 PX_MM = 25.4 / 96  # CSS pixel
 MIN_PT = 9  # 12 px: no text on a panel is smaller, whatever the layout or the standard asks
+MIN_TEXT_MM = MIN_PT * 25.4 / 72
 COLUMN_EM = 32  # a text wider than this is set in columns, about 65 characters a line
+DEFAULTS = {
+    "usual_scales": [200, 500, 1000, 2000, 2500, 3000, 5000, 10000, 15000, 20000, 25000],  # what "scale": "auto" picks from
+    "max_enlarge": 1.5,  # "auto" never prints a drawing larger than this times its own size: its lines grow with it
+    "max_crop": 0.5,     # a drawing whose frame hides more than this share of its area is flagged
+    "unscaled": ["perspective"],  # a drawing whose path holds one of these never gets a scale bar
+    # a source that is a file of the proposal folder is printed as "<skill>, <its name> <what it is>";
+    # a file name here is printed as its words alone, an extension not here as the skill's name alone
+    "source_words": {"summary.md": "summary", ".csv": "table", ".json": "figures", ".geojson": "layer",
+                     ".md": "text", ".txt": "text", ".svg": "drawing", ".png": "image", ".jpg": "image"},
+}
+FILE_SCALE_RE = re.compile(r"(?:^|[_\-.])1[-_](\d{2,6})(?=$|[_\-.])")  # "plan_1-2000"
+FONT_RE = re.compile(r"font-size\s*[:=]\s*[\"']?\s*([\d.]+)\s*(px|pt|mm|cm|in|pc)?", re.I)
+# a drawing's own scale bar: an element named scale-bar, or a text "0" with a text such as "200 m" or "1 km"
+BAR_NAME_RE = re.compile(r"(?:id|class)\s*=\s*[\"'][^\"']*scale[-_ ]?bar", re.I)
+BAR_ZERO_RE = re.compile(r">\s*0\s*<")
+BAR_END_RE = re.compile(r">\s*\d[\d.,]*\s*k?m\s*<")
+PATH_RE = re.compile(r"(?<![\w/.:-])((?:[\w-][\w.-]*/)*[\w-][\w.-]*\.[a-z][a-z0-9]{1,6})(?![\w/])")  # "open-space/sealing.csv"
 
 
 def pt_(v):
@@ -65,7 +83,59 @@ def svg_size(path):
         out["aspect"] = out["h_mm"] / out["w_mm"]
     elif "w_px" in out and "h_px" in out and "aspect" not in out:
         out["aspect"] = out["h_px"] / out["w_px"]
+    if "w_mm" in out:
+        out["text_mm"] = svg_text_mm(path, out["w_mm"], vb)
+    src = Path(path).read_text(encoding="utf-8", errors="replace")
+    out["scale_bar"] = bool(BAR_NAME_RE.search(src) or (BAR_ZERO_RE.search(src) and BAR_END_RE.search(src)))
     return out
+
+
+def unscaled(file, defaults=DEFAULTS):
+    return any(w in str(file).lower() for w in defaults["unscaled"])
+
+
+def source_words(text, folder, defaults=DEFAULTS):
+    """Every path of a file of the proposal folder in text, such as "open-space/sealing.csv" or a bare
+    "sealing.csv" found once in it, turned into words: "open-space, sealing table". Other text stays."""
+    folder = Path(folder)
+    words = defaults["source_words"]
+
+    def one(m):
+        p = Path(m.group(1))
+        if len(p.parts) > 1:
+            if not (folder / p.parts[0]).is_dir() or p.parts[0] == OWN:
+                return m.group(0)
+            skill = p.parts[0]
+        else:
+            found = [f for f in folder.glob(f"*/**/{p.name}") if f.is_file() and f.relative_to(folder).parts[0] != OWN]
+            if len(found) != 1:
+                return m.group(0)
+            skill = found[0].relative_to(folder).parts[0]
+        what = words.get(p.name.lower())
+        if what is None and p.suffix.lower() in words:
+            stem, kind = re.sub(r"[_-]+", " ", p.stem).strip(), words[p.suffix.lower()]
+            what = stem if stem.lower().endswith(kind) else f"{stem} {kind}"
+        return f"{skill}, {what}" if what else skill
+    return PATH_RE.sub(one, text) if "." in text else text
+
+
+def printed_caption(caption, sc):
+    """The caption with the printed scale: added when it holds none, put in place of any other it holds."""
+    printed = f"1:{sc:,}"
+    return SCALE_RE.sub(printed, caption) if SCALE_RE.search(caption) else f"{caption} · {printed}"
+
+
+def svg_text_mm(path, w_mm, vb):
+    """Printed height in mm of the smallest font size an SVG declares; None if it has no text.
+    Sizes set by a scaling transform around the text are not seen."""
+    src = Path(path).read_text(encoding="utf-8", errors="replace")
+    if "<text" not in src:
+        return None
+    vb_w = float(re.split(r"[\s,]+", vb.strip())[2]) if vb else w_mm / PX_MM
+    unit_mm = w_mm / vb_w  # one user unit, printed
+    sizes = [float(v) * (1 if not u or u.lower() == "px" else MM_PER[u.lower()] / PX_MM)
+             for v, u in FONT_RE.findall(src) if float(v) > 0] or [16]  # 16 px when none is set
+    return round(min(sizes) * unit_mm, 3)
 
 
 def raster_size(path):
@@ -97,7 +167,11 @@ def raster_size(path):
 
 
 def scale_hint(stem, summary):
-    """The scale a skill's summary.md gives for this drawing: on the line naming it, else the only one given."""
+    """The scale a skill gives for this drawing: in its file name, else on the summary.md line naming it,
+    else the only one the summary gives."""
+    in_name = FILE_SCALE_RE.findall(stem)
+    if in_name:
+        return f"1:{in_name[-1]}"
     lines = summary.splitlines()
     key = stem.lower().replace("_", "-")
     for line in lines:
@@ -113,7 +187,7 @@ def scale_hint(stem, summary):
 def scan(folder):
     folder = Path(folder).resolve()
     inv = {"proposal": str(folder), "skills": {}, "drawings": [], "tables": [], "texts": [],
-           "checklist": None, "standard": None, "missing": []}
+           "checklist": None, "standard": None, "missing": [], "no_scale_bar": []}  # at a scale, no scale bar of its own
     for sub in sorted(p for p in folder.iterdir() if p.is_dir() and p.name != OWN and not p.name.startswith(".")):
         summary_path = sub / "summary.md"
         summary = summary_path.read_text(encoding="utf-8", errors="replace") if summary_path.exists() else ""
@@ -132,6 +206,8 @@ def scan(folder):
                 d.update(svg_size(f) if ext == ".svg" else raster_size(f))
                 d["scale_hint"] = scale_hint(f.stem, summary)
                 inv["drawings"].append(d)
+                if d["scale_hint"] and d.get("scale_bar") is False and not unscaled(rel):
+                    inv["no_scale_bar"].append(rel)
             elif ext == ".csv":
                 with open(f, newline="", encoding="utf-8", errors="replace") as fh:
                     rows = list(csv.reader(fh))
@@ -178,8 +254,44 @@ def nice_length(max_m):
     return step
 
 
-def measure(item, folder, inv_by_file, style, notes):
-    """Fill item['w'], item['h'] (mm, the whole box with caption) and how the drawing is sized."""
+def text_ok(text_mm, factor):
+    """Rescaling by factor keeps the drawing's smallest text at 12 px or more, or doesn't shrink it."""
+    return text_mm is None or factor >= 1 - 1e-6 or text_mm * factor >= MIN_TEXT_MM - 0.01
+
+
+def choose_scale(own, size_mm, frame_mm, text_mm, defaults=DEFAULTS):
+    """For "scale": "auto": the largest usual scale at which the whole drawing fits the frame,
+    never one that brings its smallest text under 12 px; at that limit the limit scale, cropped.
+    own: the scale it is drawn at (1:own); size_mm: its print size at own. Returns the scale or None."""
+    (w, h), (fw, fh) = size_mm, frame_mm
+    ok = [s for s in sorted(set(defaults["usual_scales"]) | {own})
+          if own / s <= defaults["max_enlarge"] + 1e-6 and text_ok(text_mm, own / s)]
+    fits = [s for s in ok if w * own / s <= fw + 0.01 and h * own / s <= fh + 0.01]
+    return fits[0] if fits else (ok[-1] if ok else None)
+
+
+def crop_window(size_mm, frame_mm, crop=None):
+    """What a frame shows of a drawing printed at size_mm: the frame (shrunk to the drawing where the
+    drawing is smaller), the drawing's offset in it, and the share of the drawing's area hidden.
+    crop: {"focus": [fx, fy]}, the point of the drawing (fractions of its width and height) at the
+    frame's centre, default the centre; or {"offset_mm": [dx, dy]}, how far the drawing's top-left
+    corner sits left of and above the frame's."""
+    (w, h), (fw, fh) = size_mm, frame_mm
+    vw, vh = min(w, fw), min(h, fh)
+    crop = crop or {}
+    if "offset_mm" in crop:
+        ox, oy = crop["offset_mm"]
+    else:
+        fx, fy = crop.get("focus", [0.5, 0.5])
+        ox, oy = fx * w - vw / 2, fy * h - vh / 2
+    ox, oy = min(max(ox, 0), w - vw), min(max(oy, 0), h - vh)  # the frame never shows past the drawing's edge
+    return {"w": vw, "h": vh, "ox": ox, "oy": oy, "hidden": 1 - vw * vh / (w * h)}
+
+
+def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults=DEFAULTS, scale_bars=None):
+    """Fill item['w'], item['h'] (mm, the whole box with caption) and how the drawing is sized.
+    room: the content area's width and height, the frame of an "auto" drawing that has none.
+    scale_bars: "all" gives a scale bar to every drawing held at a scale that has none of its own."""
     cap_mm = style["body_pt"] * 25.4 / 72 * 1.6 if item.get("caption") else 0
     if item.get("type", "text") != "drawing":
         item.setdefault("w", None)
@@ -191,25 +303,60 @@ def measure(item, folder, inv_by_file, style, notes):
     if d is None:
         p = folder / f
         if not p.exists():
-            item["_error"] = f"file not found: {f}"
+            fr = item.get("frame")
+            if not fr:
+                item["_error"] = f"file not found: {f}"
+                return
+            # a planned frame whose drawing isn't made yet: printed as a grey labelled frame, never dropped
+            item.update(_empty=True, _cap=cap_mm, _img_w=fr["w"], _img_h=fr["h"], w=fr["w"], h=fr["h"] + cap_mm)
             return
         d = svg_size(p) if p.suffix.lower() == ".svg" else raster_size(p)
+    auto = str(item.get("scale", "")).strip().lower() == "auto"
     sc = scale_number(item.get("scale"))
     item["_cap"] = cap_mm
-    if sc:
+    item["_own_bar"] = d.get("scale_bar")
+    want_bar = bool(item.get("scale_bar", scale_bars == "all" and not d.get("scale_bar"))) and not unscaled(f, defaults)
+    if sc or auto:
         if "w_mm" in d and "h_mm" in d:
-            item["_img_w"], item["_img_h"] = d["w_mm"], d["h_mm"]
-            item["_scale_held"] = True
-            if item.get("w") and abs(item["w"] - d["w_mm"]) > 0.5:
-                notes.append(f"`{item['id']}`: width {item['w']} mm ignored; at {item['scale']} the drawing is {d['w_mm']:.0f} mm wide")
+            size, text_mm = (d["w_mm"], d["h_mm"]), d.get("text_mm")
         elif "dpi" in d:
-            item["_img_w"], item["_img_h"] = d["w_px"] / d["dpi"] * 25.4, d["h_px"] / d["dpi"] * 25.4
-            item["_scale_held"] = True
+            size, text_mm = (d["w_px"] / d["dpi"] * 25.4, d["h_px"] / d["dpi"] * 25.4), MIN_TEXT_MM  # a raster's text is unknown: never shrunk
         else:
+            size = None
             item["_scale_held"] = False
             notes.append(f"`{item['id']}` ({f}) has no print size (width and height in mm), so {item['scale']} can't be held; placed at the width asked for")
-    if item.get("scale_bar") and item.get("_scale_held"):
-        item["_cap"] += 8  # room for the scale bar, which is drawn only when the scale is held
+        own = scale_number(item.get("drawn_at")) or scale_number(d.get("scale_hint")) or scale_number(scale_hint(Path(f).stem, ""))
+        fr = item.get("frame") or ({"w": room[0], "h": room[1] - cap_mm - (8 if want_bar else 0)}
+                                   if auto and room[0] else None)
+        if size and auto and not (own and fr):
+            item["_unfit"] = ("\"scale\": \"auto\" needs the scale it is drawn at (in its file name, such as _1-2000, its summary, "
+                              "or `drawn_at`)" if not own else "\"scale\": \"auto\" needs a `frame`")
+            return
+        if size:
+            sc = choose_scale(own, size, (fr["w"], fr["h"]), text_mm, defaults) if auto else sc
+            if sc is None:
+                item["_unfit"] = f"no usual scale keeps its smallest text at 12 px ({text_mm:.2f} mm at 1:{own:,})"
+                return
+            factor = own / sc if own else 1.0
+            if not text_ok(text_mm, factor):
+                item["_unfit"] = (f"at 1:{sc:,} its smallest text would be {text_mm * factor / PX_MM:.1f} px, under 12 px: "
+                                  f"ask its skill to draw it at 1:{sc:,}, never shrink it")
+                return
+            if text_mm is not None and text_mm * factor < MIN_TEXT_MM - 0.01:
+                notes.append(f"`{item['id']}`: its own smallest text is {text_mm * factor / PX_MM:.1f} px printed, under 12 px: ask its skill to enlarge it")
+            dw, dh = size[0] * factor, size[1] * factor
+            win = crop_window((dw, dh), (fr["w"], fr["h"]) if fr else (dw, dh), item.get("crop"))
+            item.update(_img_w=win["w"], _img_h=win["h"], _draw_w=dw, _draw_h=dh, _ox=win["ox"], _oy=win["oy"],
+                        _hidden=win["hidden"], _factor=factor, _own=own, _print_scale=sc, _auto=auto,
+                        _framed=bool(fr), _scale_held=True,
+                        _fills=win["w"] * win["h"] / (fr["w"] * fr["h"]) if fr else 1.0)
+            if item.get("w") and not fr and abs(item["w"] - dw) > 0.5:
+                notes.append(f"`{item['id']}`: width {item['w']} mm ignored; at 1:{sc:,} the drawing is {dw:.0f} mm wide: give it a `frame` to crop it")
+    elif item.get("frame"):
+        notes.append(f"`{item['id']}`: `frame` ignored, the drawing has no scale; size it by `w` or `h`")
+    item["_bar"] = want_bar and bool(item.get("_scale_held"))  # drawn only when the scale is held
+    if item["_bar"]:
+        item["_cap"] += 8  # room for the scale bar
     if "_img_w" not in item:
         aspect = d.get("aspect") or 0.75
         if item.get("w"):
@@ -235,9 +382,9 @@ def place(panel, fmt, reserved, style, folder, inv_by_file, notes):
     placed, unplaced = [], []
     x, y, row_h = m, top, 0
     for it in panel.get("items", []):
-        measure(it, folder, inv_by_file, style, notes)
-        if "_error" in it:
-            unplaced.append((it, it["_error"]))
+        measure(it, folder, inv_by_file, style, notes, (content_w, H - m - top), scale_bars=fmt.get("scale_bars"))
+        if "_error" in it or "_unfit" in it:
+            unplaced.append((it, it.get("_error") or it["_unfit"]))
             continue
         if it["w"] is None:
             it["w"] = content_w
@@ -254,7 +401,7 @@ def place(panel, fmt, reserved, style, folder, inv_by_file, notes):
             box = {"x": x, "y": y, "w": it["w"], "h": it["h"]}
         if box["x"] < m - 0.01 or box["y"] < m - 0.01 or box["x"] + box["w"] > W - m + 0.01 or box["y"] + box["h"] > H - m + 0.01:
             unplaced.append((it, f"{box['w']:.0f} x {box['h']:.0f} mm at ({box['x']:.0f}, {box['y']:.0f}) runs into the {m:g} mm margin; "
-                                 + (f"it must be at most {content_w:.0f} mm wide: ask its skill to cut or split it, never shrink it"
+                                 + (f"it must be at most {content_w:.0f} mm wide: give it a `frame` to crop it, never shrink it"
                                     if box["w"] > content_w + 0.01 else "move it inside the margins")))
             continue
         clash = [r.get("what", "reserved area") for r in reserved if overlaps(box, r)]
@@ -290,11 +437,21 @@ def item_html(it, box, style, folder):
     s = f"left:{box['x']:.2f}mm;top:{box['y']:.2f}mm;width:{box['w']:.2f}mm;height:{box['h']:.2f}mm"
     kind = it.get("type", "text")
     inner = ""
-    if kind == "drawing":
-        src = (folder / it["file"]).resolve().as_uri()
-        inner = f'<img src="{src}" style="width:{it["_img_w"]:.2f}mm;height:{it["_img_h"]:.2f}mm">'
+    if kind == "drawing" and it.get("_empty"):
         sc = scale_number(it.get("scale"))
-        if it.get("scale_bar") and sc and it.get("_scale_held"):
+        label = " · ".join(x for x in (it["id"], f"1:{sc:,}" if sc else "", it.get("shows", "")) if x)
+        inner = (f'<div class="empty" style="width:{it["_img_w"]:.2f}mm;height:{it["_img_h"]:.2f}mm">'
+                 f'{html.escape(label)}</div>')
+        if it.get("caption"):
+            inner += f'<div class="cap">{html.escape(source_words(it["caption"], folder))}</div>'
+    elif kind == "drawing":
+        src = (folder / it["file"]).resolve().as_uri()
+        dw, dh = it.get("_draw_w", it["_img_w"]), it.get("_draw_h", it["_img_h"])
+        inner = (f'<div class="frame" style="width:{it["_img_w"]:.2f}mm;height:{it["_img_h"]:.2f}mm">'
+                 f'<img src="{src}" style="width:{dw:.2f}mm;height:{dh:.2f}mm;'
+                 f'margin-left:{-it.get("_ox", 0):.2f}mm;margin-top:{-it.get("_oy", 0):.2f}mm"></div>')
+        sc = it.get("_print_scale") or scale_number(it.get("scale"))
+        if it.get("_bar") and sc:
             length = nice_length(it["_img_w"] * 0.25 * sc / 1000)
             bar_mm = length * 1000 / sc
             lw = style["line_mm"]
@@ -302,27 +459,28 @@ def item_html(it, box, style, folder):
             # a line that steps up and down, a tick and a number at every step, fewer steps if the numbers would touch
             n = next(n for n in ((4, 2, 1) if f"{length:g}"[0] == "2" else (5, 2, 1))
                      if bar_mm / n >= (len(f"{length:g}") + 1) * 0.6 * fs + 1 or n == 1)
-            s, x0 = bar_mm / n, 2
+            step, x0 = bar_mm / n, 2   # not `s`: that holds the box's position
             inner += (f'<svg class="bar" width="{bar_mm + 12:.2f}mm" height="7mm" viewBox="0 0 {bar_mm + 12:.2f} 7">'
-                      f'<path d="{"".join(f"M{x0 + i * s:.2f},{1 + 1.5 * (i % 2)}h{s:.2f}" for i in range(n))}{"".join(f"M{x0 + i * s:.2f},1v1.5" for i in range(n + 1))}" '
+                      f'<path d="{"".join(f"M{x0 + i * step:.2f},{1 + 1.5 * (i % 2)}h{step:.2f}" for i in range(n))}{"".join(f"M{x0 + i * step:.2f},1v1.5" for i in range(n + 1))}" '
                       f'fill="none" stroke="{style["text"]}" stroke-width="{lw}"/>'
-                      + "".join(f'<text x="{x0 + i * s:.2f}" y="6.4" font-size="{fs:.2f}" text-anchor="middle">{length * i / n:g}{" m" if i == n else ""}</text>' for i in range(n + 1))
+                      + "".join(f'<text x="{x0 + i * step:.2f}" y="6.4" font-size="{fs:.2f}" text-anchor="middle">{length * i / n:g}{" m" if i == n else ""}</text>' for i in range(n + 1))
                       + '</svg>')
         if it.get("caption"):
-            sc = scale_number(it.get("scale"))
-            cap = it["caption"] + (f" · 1:{sc:,}" if sc and it.get("_scale_held") else "")
+            cap = source_words(it["caption"], folder)
+            cap = printed_caption(cap, sc) if sc and it.get("_scale_held") else cap
             inner += f'<div class="cap">{html.escape(cap)}</div>'
     elif kind == "figures":
         rows = "".join(
             f'<tr><td>{html.escape(str(r[0]))}</td><td class="v">{html.escape(str(r[1]))}</td>'
-            f'<td class="src">{html.escape(str(r[2])) if len(r) > 2 else ""}</td></tr>' for r in it.get("rows", []))
-        head = f"<h2>{html.escape(it['heading'])}</h2>" if it.get("heading") else ""
+            f'<td class="src">{html.escape(source_words(str(r[2]), folder)) if len(r) > 2 else ""}</td></tr>'
+            for r in it.get("rows", []))
+        head = f"<h2>{html.escape(source_words(it['heading'], folder))}</h2>" if it.get("heading") else ""
         inner = f"{head}<table>{rows}</table>"
     else:
-        head = f"<h2>{html.escape(it['heading'])}</h2>" if it.get("heading") else ""
+        head = f"<h2>{html.escape(source_words(it['heading'], folder))}</h2>" if it.get("heading") else ""
         pt = it.get("pt")
         st = f' style="font-size:{pt_(pt)}pt;line-height:1.1;font-weight:{it.get("weight", 400)}"' if pt else ""
-        inner = f"{head}<div{st}>{paragraphs(it.get('text', ''))}</div>"
+        inner = f"{head}<div{st}>{paragraphs(source_words(it.get('text', ''), folder))}</div>"
     return f'<div class="box {kind}" id="{html.escape(it["id"])}" style="{s}">{inner}</div>'
 
 
@@ -367,7 +525,9 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 .box, .reserved, .mark {{ position: absolute; }}
 @media print {{ .reserved {{ border: none !important; }} }}
 .box {{ overflow: hidden; }}
-.box img {{ display: block; }}
+.box .frame {{ overflow: hidden; }}
+.box .empty {{ background: #e6e6e6; color: #555; padding: 3mm; overflow: hidden; }}
+.box img {{ display: block; max-width: none; }}
 .box h2 {{ font-size: {style['heading_pt']}pt; line-height: 1.15; margin-bottom: 0.4em; font-weight: 700; }}
 .box p {{ margin-bottom: 0.6em; }}
 .box .cap {{ font-size: {style['body_pt']}pt; margin-top: 1mm; }}
@@ -426,7 +586,7 @@ def render(layout_path, png_dpi):
     out = layout_path.parent
     folder = out.parent
     L = json.loads(layout_path.read_text(encoding="utf-8"))
-    fmt = L["format"]
+    fmt = {"scale_bars": L.get("scale_bars"), **L["format"]}  # the switch works in `format` or at the top
     style = {"font": "Helvetica, Arial, sans-serif", "text": "#000", "background": "#fff", "accent": "#d0312d",
              "line_mm": 0.25, "heading_pt": 20, "body_pt": 11, **L.get("style", {})}
     reserved = L.get("reserved", [])
@@ -444,7 +604,8 @@ def render(layout_path, png_dpi):
         page = panel_html(i, total, placed, fmt, reserved, marks, style, ctx, folder)
         hp = out / f"panel-{i}.html"
         hp.write_text(page, encoding="utf-8")
-        res = {"n": i, "placed": placed, "unplaced": unplaced, "checks": [], "story": panel.get("story", "")}
+        res = {"n": i, "placed": placed, "unplaced": unplaced, "checks": [], "story": panel.get("story", ""),
+               "paths": paths_left(placed, folder)}
         if browser:
             uri = hp.as_uri()
             dom = run_browser(browser, ["--virtual-time-budget=10000", "--dump-dom", uri]).stdout
@@ -472,6 +633,19 @@ def render(layout_path, png_dpi):
     print(report)
 
 
+def paths_left(placed, folder):
+    """Headings, captions and sources that still show a file path once paths of the proposal folder are words."""
+    out = []
+    for it, _ in placed:
+        texts = [("heading", it.get("heading")), ("caption", it.get("caption"))]
+        texts += [("source", r[2]) for r in it.get("rows", []) if len(r) > 2]
+        for where, t in texts:
+            m = PATH_RE.search(source_words(str(t), folder)) if t else None
+            if m:
+                out.append(f"`{it['id']}` {where}: {m.group(1)}")
+    return out
+
+
 def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi):
     W, H = fmt["width_mm"], fmt["height_mm"]
     max_mb = fmt.get("max_mb")
@@ -480,7 +654,7 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
              f"({fmt.get('source', 'source not given')}). Style: {L.get('style', {}).get('source', 'no standard, black on white with one accent')}.", ""]
     if not browser:
         lines += ["**No Chrome, Edge or Chromium found: only the HTML was written, no PDF or PNG.** Set BROWSER to its path.", ""]
-    problems = 0
+    problems, no_bar = 0, []
     for r in results:
         lines.append(f"## Panel {r['n']}")
         if r["story"]:
@@ -501,10 +675,31 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         lines.append(f"- covered by items: {100 * area:.0f} % of the panel" + ("  **mostly empty**" if area < 0.35 else ""))
         for it, b in r["placed"]:
             held = ""
-            if it.get("type") == "drawing" and it.get("scale"):
-                sc = f"1:{scale_number(it['scale']):,}"
-                held = f", {sc} held" if it.get("_scale_held") else f", **{sc} not held**"
+            if it.get("_empty"):
+                problems += 1
+                held = "  **empty frame: its drawing is not made yet**"
+            elif it.get("type") == "drawing" and it.get("_print_scale"):
+                sc, own, k = it["_print_scale"], it.get("_own"), it["_factor"]
+                held = (f", 1:{sc:,} {'chosen' if it['_auto'] else 'held'}"
+                        + (f", rescaled from 1:{own:,} (x{k:.2f})" if abs(k - 1) > 1e-6 else ", not rescaled")
+                        + (f", frame {it['_img_w']:.0f} x {it['_img_h']:.0f} mm hides {100 * it['_hidden']:.0f} % of its area"
+                           + (" (no smaller usual scale keeps its text at 12 px or more)" if it["_auto"] else "")
+                           if it["_hidden"] > 0.005 else ", whole drawing shown"))
+                if it.get("_fills", 1) < 0.8:
+                    held += f", fills {100 * it['_fills']:.0f} % of its frame"
+                if it.get("_bar"):
+                    held += ", scale bar added"
+                elif not it.get("_own_bar") and not unscaled(it["file"]):
+                    no_bar.append(it)
+                if it["_hidden"] > DEFAULTS["max_crop"]:
+                    problems += 1
+                    held += f"  **cropped by more than {100 * DEFAULTS['max_crop']:.0f} %: check that what the brief asks to show is in the frame**"
+            elif it.get("type") == "drawing" and it.get("scale"):
+                held = f", **{it['scale']} not held**"
             lines.append(f"- placed `{it['id']}` at ({b['x']:.0f}, {b['y']:.0f}) mm, {b['w']:.0f} x {b['h']:.0f} mm{held}")
+        for p in r["paths"]:
+            problems += 1
+            lines.append(f"- **file path on the panel: {p}**: write what it is instead")
         for it, why in r["unplaced"]:
             problems += 1
             lines.append(f"- **did not fit: `{it['id']}`** ({it.get('file', it.get('type', 'text'))}): {why}")
@@ -514,16 +709,24 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
             lines.append(f"- **{c['problem']}: `{c['id']}`**{extra}")
         lines.append("")
     req = L.get("required", [])
-    missing = [q for q in req if not q.get("id") or q["id"] not in ids]
+    empty = {it["id"] for r in results for it, _ in r["placed"] if it.get("_empty")}
+    missing = [q for q in req if not q.get("id") or q["id"] not in ids or q["id"] in empty]
     refused = {it["id"] for r in results for it, _ in r["unplaced"] if "_error" not in it}  # a missing file is missing, not too big
     lines.append("## What the brief asks for")
     for q in req:
         state = (f"on the panels, `{q['id']}`" if q not in missing else
+                 f"**EMPTY FRAME: `{q['id']}` is planned, its drawing is not made yet**" if q.get("id") in empty else
                  f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else "**MISSING: no input**")
         lines.append(f"- {q['what']} ({q.get('source', '')}): {state}"
                      + (f". {q['note']}" if q.get("note") else ""))
     if not req:
         lines.append("- **No list of required items in layout.json: nothing was checked against the brief.**")
+    lines.append("")
+    lines.append("## Drawings at a scale without a scale bar")
+    lines.append("Tested on the SVG: no element named scale-bar, and no text \"0\" together with a text such as \"200 m\" "
+                 "or \"1 km\"; a PNG or JPEG is not tested. `\"scale_bars\": \"all\"` in `format` adds one to each.")
+    lines += [f"- **`{it['id']}`** ({it['file']}), 1:{it['_print_scale']:,}" for it in no_bar] or ["- none on the panels"]
+    problems += len(no_bar)
     lines.append("")
     lines.append("## Drawings in the proposal folder not on the panels")
     lines += [f"- {d['file']}" for d in unused] or ["- none"]

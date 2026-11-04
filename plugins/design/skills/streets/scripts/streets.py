@@ -37,7 +37,7 @@ DEFAULTS = {
     "stub_m": (50, "a street that ends nowhere more than this from its last crossing gets a turning head, m"),
     "turning_head_m": (18, "diameter of a turning head, m"),
     "path_link_m": (100, "a street that ends nowhere is joined by a path to the nearest path or street this close, m"),
-    "clearance_m": (2, "existing street land this close to a new building gives way to it, m"),
+    "clearance_m": (2, "existing street land this close to a new building, and street this skill adds this close to any building, gives way to it, m"),
     "new_sliver_m": (2.5, "strips of new street narrower than twice this, beside an existing street, are dropped, m"),
     "fragment_m2":(300, "a piece of existing street left inside the site smaller than this goes, m2"),
     "street_width_m": (16, "width of a new street without a width in the massing, m"),
@@ -361,6 +361,10 @@ def main():
             used.add("kerb_radius_m")
             rounded = round_corners(both, r).intersection(new.buffer(2 * r))
             new_surf = clean(unary_union([new, rounded]), cfg).difference(surf)
+            # what this skill adds to the massing's streets (links, turning heads, corners) keeps clear of every building
+            own = unary_union([g.buffer(float(p.get("width") or cfg["street_width_m"]) / 2, cap_style="flat") for g, p in streets_n])
+            new_surf = new_surf.difference(unary_union([g for g, p in m if p.get("kind") == "building"]).buffer(cfg["clearance_m"]).difference(own))
+            used.add("clearance_m")
             t = cfg["new_sliver_m"]  # where a new street runs along an existing one, only the existing one is drawn
             used.add("new_sliver_m")
             new_surf = open_square(new_surf, t).intersection(new_surf) if t else new_surf

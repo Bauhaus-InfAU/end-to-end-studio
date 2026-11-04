@@ -137,6 +137,17 @@ kept = [(p, g) for p, g in allb if site.contains(g.representative_point())]
 street_routes = [(p, g) for p, g in routes if p['level'] in ('main', 'local')]
 path_routes = [(p, g) for p, g in routes if p['level'] == 'landscape']
 main_routes = unary_union([g for p, g in routes if p['level'] == 'main'])
+
+
+def lay_off(g, half):
+    """a structure-plan street stops keep_buffer short of each kept building it would cover; a path carries it on"""
+    block = unary_union([Polygon()] + [b.buffer(half + CONFIG['keep_buffer']) for _, b in kept if b.distance(g) < half])
+    return g.difference(block), [q for q in getattr(g.intersection(block), 'geoms', [g.intersection(block)]) if q.length]
+
+
+_laid = [(p, *lay_off(g, CONFIG['street_w'] / 2)) for p, g in street_routes]
+street_routes = [(p, g) for p, g, _ in _laid if not g.is_empty]
+path_routes += [(p, q) for p, _, ps in _laid for q in ps]
 street_area = unary_union([g.buffer(CONFIG['street_w'] / 2, cap_style=2) for _, g in street_routes])
 excl = unary_union([green_u, street_area, *[g for _, g in centres], *water,
                     *[g.buffer(CONFIG['keep_buffer']) for _, g in kept]])
@@ -522,6 +533,7 @@ if school_court is not None:
     a0 = (ln - L_) / 2
     sg = Polygon([(ax + ux * a0, ay + uy * a0), (ax + ux * (a0 + L_), ay + uy * (a0 + L_)),
                   (ax + ux * (a0 + L_) + nx_ * depth, ay + uy * (a0 + L_) + ny_ * depth), (ax + ux * a0 + nx_ * depth, ay + uy * a0 + ny_ * depth)]).intersection(plot)
+    sg = max([q for q in getattr(sg, 'geoms', [sg]) if q.geom_type == 'Polygon'], key=lambda q: q.area)   # no slivers or lines from the cut
     s = dict(geom=sg, t='community', nb=ring[0]['nb'], fixed=True, use='school', type='school',
              floors=max(sfl, math.ceil(CONFIG['school_gfa'] / sg.area)), phase=ring[0].get('phase'))
     buildings.append(s)

@@ -46,7 +46,7 @@ Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJS
 
 ## The order
 
-Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist. `everything` means every skill that doesn't wait for this one; `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead never adds a round. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
+Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist; a skill that reads it starts after its first run, unless it writes `<skill> (end)`, as in `Reads: panel-layout (end)`. `everything` means every skill that doesn't wait for this one (a skill that waits only for its first run still counts); `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead never adds a round. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
 
 ## The tools
 
@@ -65,7 +65,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
 - Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
 - Look at a drawing once or twice, not after every change. Check widths, scales and counts in code.
-- No text in a drawing or on a panel is smaller than 12 px printed. A drawing at a scale fits the panel's width at that scale; crop it to what the brief asks to show.
+- No text in a drawing or on a panel is smaller than 12 px printed.
 - Keep a skill short: two or three paragraphs, a list if it helps. Add a line when you don't like a result, delete lines the model no longer needs.
 
 ## The skills

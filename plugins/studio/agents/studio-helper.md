@@ -14,7 +14,7 @@ Every step you take re-reads everything before it, so keep what you read small:
 - **Scripts.** If the skill's folder has `scripts/`, run them first and change only what this brief needs: copy a script into your own folder and change the copy, never the skill's files. Write a new script to a file and run it, rather than retyping it.
 - **Pictures.** Look at one preview of each drawing you make, at most twice. Check widths, scales and counts in code, not by eye.
 
-**Drawings for the panels.** A drawing at a scale must fit the panel's width and height between its margins (from the checklist's panel format) at that scale: crop it to the area the brief asks to show, rather than letting it grow. Text in a drawing is never smaller than 12 px (9 pt) printed at its scale.
+**Drawings for the panels.** Text in a drawing is never smaller than 12 px (9 pt) printed at its scale.
 
 **What the brief requires.** The skill says what to make; the brief may ask for more in your skill's field. Check the checklist's required content and drawings, and make every item that is yours, at the brief's scale, such as a detail plan of the place your skill designs. Name each one in `summary.md`.
 

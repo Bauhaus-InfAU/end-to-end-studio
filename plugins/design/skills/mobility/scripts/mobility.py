@@ -1,22 +1,30 @@
-"""The mobility plan of a design: routes by mode, stops, hubs and car access, the walking distance to the main stop.
+"""The mobility plan of a design: routes by mode, stops, hubs and car access, the walking distance to the main stop, else the nearest stop.
 
-    python mobility.py --proposal <proposal folder> --site <site folder> --config <proposal>/mobility/config.json
+    python mobility.py --proposal <proposal folder> [--site <site folder>] --config <proposal>/mobility/config.json
                        [--style <proposal>/drawing-graphics/style.json]
+    python mobility.py --find "<a place, street or address>"      (prints its longitude and latitude)
 
 config.json holds the brief's values, each as {"value": ..., "source": "<brief file> p. N" or "assumption: ..."}:
-hub, main_stop, walk_limits_m, car_access and scale are required; main_stop_mode, no_car_link, bike_destinations,
+walk_limits_m, car_access and scale are required; hub, main_stop, main_stop_mode, no_car_link, bike_destinations,
 stops, garages, modes and labels are optional, and any key of DEFAULTS may be overridden. Every name is a name in
-structure-plan/structure-plan.geojson. Reads the structure plan (required), the massing, the streets skill's
-surface and centrelines when they exist, and the drawing standard. Writes mobility.geojson, stats.json, walk.json,
-assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/.
+structure-plan/structure-plan.geojson, else in `places` or mobility/places.json.
+Only the brief is needed: without a site folder, `site` (the site's outline as [lon, lat] pairs) is required and the
+streets, buildings, rail and stops around it come from OpenStreetMap into <proposal>/mobility/osm/; without a
+structure plan, `places` ({name, kind: gateway or centre, at: [lon, lat], holds}) and `routes` ({name, level, mode,
+via: [place names or [lon, lat]]}) stand in for it, and the gateways where streets cross the site's edge and the
+stops nearby are found and listed in mobility/places.json; without a massing, the walking share is of the site's area.
+The massing, the streets skill's surface and the drawing standard are read when they exist. Writes mobility.geojson,
+stats.json, walk.json, places.json, assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/;
+the plan is drawn only in the drawing standard's look, so without its style.json the data is written and no plan drawn.
 """
+import numpy as np
 import argparse, json, math, os, re, subprocess, sys
 from xml.sax.saxutils import escape
 import networkx as nx
 import pyproj
 import shapely
 from shapely.geometry import shape, mapping, Point, box
-from shapely.ops import transform, unary_union, linemerge
+from shapely.ops import unary_union, linemerge
 from shapely.strtree import STRtree
 
 
@@ -64,49 +72,128 @@ DEFAULTS = {
     'text_floor_mm': (3.2, 'no text smaller than this on paper (12 px, 9 pt)'),
     'legend_mm': (30.0, 'the least height of the strip under the map, mm'),
     'png_px_per_mm': (4, 'PNG resolution, pixels per printed mm'),
+    'label_gap_mm': (1.2, 'a label sits this far from the edge of its symbol, mm on paper'),
+    'leader_mm': ([7, 11, 15], 'how far out a label on a leader line may go when no place beside its symbol is free, mm'),
     'street_widths': ({'motorway': 28, 'trunk': 22, 'trunk_link': 9, 'primary': 18, 'secondary': 15, 'tertiary': 13,
                        'tertiary_link': 8, 'residential': 10, 'unclassified': 8, 'living_street': 7, 'service': 5,
                        'pedestrian': 6, 'track': 3.5, 'cycleway': 3, 'footway': 2.5, 'path': 2, 'steps': 2},
                       'street widths by class, metres, only without the streets skill\'s surface'),
     'street_w_other': (6.0, 'metres for a street class not in the table'),
     'street_w_new': (10.0, 'metres for a massing street without a width'),
+    'osm_pad_m': (1200.0, 'without a site folder: the ground around the site fetched from OpenStreetMap, metres'),
+    'stop_reach_m': (1000.0, 'stops this close to the site are listed as places'),
+    'cell_m': (25.0, 'without a massing: the site is measured in squares of this size for the walking share'),
 }
+OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+AGENT = {'User-Agent': 'studio-mobility-skill/1.0'}
+
+
+def find(text):
+    """Print the places OpenStreetMap's Nominatim finds for a text, with longitude and latitude."""
+    import urllib.parse, urllib.request
+    url = 'https://nominatim.openstreetmap.org/search?' + urllib.parse.urlencode({'q': text, 'format': 'json', 'limit': 5})
+    for r in json.load(urllib.request.urlopen(urllib.request.Request(url, headers=AGENT), timeout=60)):
+        print('[%.6f, %.6f]  %s' % (float(r['lon']), float(r['lat']), r['display_name']))
+
+
+def fetch_osm(site_ll, folder, pad_m):
+    """The site's outline and OpenStreetMap's streets, buildings, rail and stops around it, as the site folder's layers."""
+    import time, urllib.parse, urllib.request
+    os.makedirs(folder, exist_ok=True)
+    c = site_ll.centroid
+    dy, dx = pad_m / 111320.0, pad_m / (111320.0 * math.cos(math.radians(c.y)))
+    x0, y0, x1, y1 = site_ll.bounds
+    bb = '%f,%f,%f,%f' % (y0 - dy, x0 - dx, y1 + dy, x1 + dx)
+    q = (f'[out:json][timeout:180];(way["highway"]({bb});way["building"]({bb});way["railway"~"rail|tram|light_rail|subway"]({bb});'
+         f'node["highway"="bus_stop"]({bb});node["railway"~"station|halt|tram_stop"]({bb});node["public_transport"="station"]({bb}););out geom;')
+    data, err = None, None
+    for i, url in enumerate(OVERPASS * 2):   # the servers are often busy: each twice, with a pause
+        if i:
+            time.sleep(20)
+        try:
+            req = urllib.request.Request(url, data=urllib.parse.urlencode({'data': q}).encode(), headers=AGENT)
+            data = json.load(urllib.request.urlopen(req, timeout=240))
+            break
+        except Exception as e:
+            err = e
+    if data is None:
+        sys.exit('could not fetch OpenStreetMap data: %s' % err)
+    layers = {'streets': [], 'buildings': [], 'rail': [], 'stops': []}
+    for e in data['elements']:
+        t = e.get('tags', {})
+        if e['type'] == 'node':
+            mode = 'rail' if t.get('railway') in ('station', 'halt') or t.get('train') == 'yes' else (
+                'tram' if t.get('railway') == 'tram_stop' else 'bus')
+            layers['stops'].append(({'name': t.get('name'), 'mode': mode}, Point(e['lon'], e['lat'])))
+            continue
+        cs = [(p['lon'], p['lat']) for p in e.get('geometry') or []]
+        if len(cs) < 2:
+            continue
+        if 'building' in t and len(cs) >= 4 and cs[0] == cs[-1]:
+            layers['buildings'].append(({'building': t['building']}, shapely.Polygon(cs)))
+        elif 'highway' in t:
+            layers['streets'].append(({'highway': t['highway'], 'name': t.get('name')}, shapely.LineString(cs)))
+        elif 'railway' in t:
+            layers['rail'].append(({'railway': t['railway']}, shapely.LineString(cs)))
+    layers['site'] = [({'source': 'config.json site'}, site_ll)]
+    for name, fs in layers.items():
+        json.dump({'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'properties': p, 'geometry': mapping(g)} for p, g in fs]},
+                  open(os.path.join(folder, name + '.geojson'), 'w', encoding='utf8'), ensure_ascii=False)
+    open(os.path.join(folder, 'SOURCES.md'), 'w', encoding='utf8').write(
+        '# Sources\n\nStreets, buildings, rail and stops: OpenStreetMap contributors, ODbL, via the Overpass API.\n'
+        'Site outline: config.json `site`, from the brief.\n')
 LABELS = {'title': 'Mobility plan', 'bus': 'Bus', 'car': 'Car access street', 'car-access': 'Shared street, cars for access only',
           'bike': 'Main bike route', 'bike-local': 'Local bike route', 'foot': 'Footpath', 'stop': 'Main stop',
           'bus-stop': 'Bus stop', 'hub': 'Mobility hub', 'local-hub': 'Local mobility point', 'garage': 'Garage',
           'access': 'Car access', 'ring': 'Straight-line distance from the main stop', 'site': 'Project site',
           'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Existing buildings', 'street': 'Streets',
           'walk': 'By the street and path network, of the new housing floor area {shares} of the main stop{unreached}.',
+          'walk_site': 'By the street and path network, of the site\'s area {shares} of the main stop{unreached}.',
           'within': '{p} % lies within {m} m', 'unreached': '; {p} % is not reached'}
-FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#d9302b', 'existing': '#d0d0d0',
-                  'context': '#e4e4e4', 'street': '#f4f4f4', 'path': '#b0b0b0', 'font': 'Arial, Helvetica, sans-serif',
-                  'thin': 0.13, 'mid': 0.25, 'thick': 0.5, 'text': 3.2, 'title': 5.6}
 ORDER = ['bus', 'car', 'bike', 'foot']
 
 A = argparse.ArgumentParser(description='The mobility plan of a design.')
-A.add_argument('--proposal', required=True)
-A.add_argument('--site', required=True, help='the folder with site.geojson and its layers')
-A.add_argument('--config', required=True)
+A.add_argument('--find', help='print the longitude and latitude of a place, street or address, and stop')
+A.add_argument('--proposal')
+A.add_argument('--site', help='the folder with site.geojson and its layers; without it, config.json\'s `site` and OpenStreetMap')
+A.add_argument('--config')
 A.add_argument('--style', help='the drawing standard\'s style.json')
 ARGS = A.parse_args()
+if ARGS.find:
+    find(ARGS.find)
+    sys.exit(0)
+if not (ARGS.proposal and ARGS.config):
+    A.error('--proposal and --config are required')
 RUN, SITE = ARGS.proposal, ARGS.site
 OUT = os.path.join(RUN, 'mobility')
-CFG, SOURCE = read_config(ARGS.config, ['hub', 'main_stop', 'walk_limits_m', 'car_access', 'scale'])
+CFG, SOURCE = read_config(ARGS.config, ['walk_limits_m', 'car_access', 'scale'])
 D = {k: CFG.get(k, v) for k, (v, _) in DEFAULTS.items()}
 USED = set()
 LAB = {**LABELS, **(CFG.get('labels') or {})}
 os.makedirs(OUT, exist_ok=True)
+if not (SITE and os.path.exists(os.path.join(SITE, 'site.geojson'))):
+    if not CFG.get('site'):
+        sys.exit('no site folder: put the site\'s outline in config.json `site` as [lon, lat] pairs, from the brief '
+                 '(find a corner with --find "<street or address>")')
+    SITE = os.path.join(OUT, 'osm')
+    USED.add('osm_pad_m')
+    _sp, _want = os.path.join(SITE, 'site.geojson'), shapely.Polygon(CFG['site'])
+    if not (os.path.exists(_sp) and shape(json.load(open(_sp, encoding='utf8'))['features'][0]['geometry']).equals(_want)):
+        fetch_osm(_want, SITE, float(D['osm_pad_m']))   # fetched once, again when the outline changes
 
 style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
-S = dict(FALLBACK_STYLE)
-if os.path.exists(style_path):
-    S.update(json.load(open(style_path, encoding='utf8')))
-FONT = escape(str(S['font']), {'"': "'"})
-TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
-TITLE = max(TXT, float(S.get('title') or 0))
+S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
+if S:
+    FONT = escape(str(S['font']), {'"': "'"})
+    TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
+    TITLE = max(TXT, float(S.get('title') or 0))
 
 site_ll = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry'])
 EPSG = CFG.get('epsg') or utm_epsg(site_ll.centroid.x, site_ll.centroid.y)
+def transform(f, g):   # a projection over every coordinate (shapely.ops.transform is deprecated)
+    return shapely.transform(g, lambda c: np.column_stack(f(c[:, 0], c[:, 1])))
+
+
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
 TO_LL = pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True).transform
 site = transform(TO_M, site_ll)
@@ -143,23 +230,62 @@ def merged(g):
 
 
 SP = load(os.path.join(RUN, 'structure-plan', 'structure-plan.geojson'))
-if SP is None:
-    sys.exit('missing structure-plan/structure-plan.geojson in the proposal: run the structure plan first')
 MASS = load(os.path.join(RUN, 'massing', 'massing.geojson'))
 STREETS = load(os.path.join(RUN, 'streets', 'streets.geojson'))
 CTX = load(os.path.join(SITE, 'buildings.geojson')) or []
 SITE_STREETS = load(os.path.join(SITE, 'streets.geojson')) or []
 missing = []
 if MASS is None:
-    missing.append('massing (no new buildings, no walking shares)')
+    missing.append('massing (no new buildings: the walking share is of the site\'s area)')
     MASS = []
 if STREETS is None:
     missing.append('streets (the site\'s street lines at assumed widths)')
 
 lower = lambda s: str(s or '').strip().lower()
+
+# the places a name may point to: the gateways where named streets cross the site's edge, and the stops near the site
+found = {}
+for p, g in SITE_STREETS:
+    if p.get('name') and g.intersects(site.exterior):
+        x = g.intersection(site.exterior)
+        for pt in [q for q in getattr(x, 'geoms', [x]) if q.geom_type == 'Point']:
+            found.setdefault(p['name'], []).append(pt)
+AUTO = {}
+for n, pts in found.items():
+    pts = [q for i, q in enumerate(pts) if all(q.distance(r) > 30 for r in pts[:i])]   # one per crossing
+    c = site.centroid
+    for q in pts:
+        side = 'north' if q.y - c.y >= abs(q.x - c.x) else 'south' if c.y - q.y >= abs(q.x - c.x) else 'east' if q.x > c.x else 'west'
+        AUTO[n if len(pts) == 1 else '%s %s' % (n, side)] = ({'kind': 'gateway', 'found': 'street crosses the site edge'}, q)
+USED.add('stop_reach_m')
+for p, g in load(os.path.join(SITE, 'stops.geojson')) or []:
+    if p.get('name') and g.distance(site) <= float(D['stop_reach_m']):
+        AUTO.setdefault(p['name'], ({'kind': 'stop', 'mode': p.get('mode'), 'found': 'stop near the site'}, g))
+json.dump({n: dict(p, at=[round(v, 6) for v in TO_LL(g.x, g.y)], metres_from_site=round(g.distance(site)))
+           for n, (p, g) in sorted(AUTO.items())}, open(os.path.join(OUT, 'places.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
+
+if SP is None:   # no structure plan: the places and routes of config.json stand in for it
+    missing.append('structure plan (places and routes from config.json)')
+    if not CFG.get('routes'):
+        sys.exit('no structure plan: write `places` and `routes` into config.json from the brief; the gateways and stops '
+                 'found around the site are listed in %s' % os.path.join(OUT, 'places.json'))
+    pt = lambda a: Point(TO_M(*a))
+    SP = [({'kind': p.get('kind', 'centre'), 'name': p.get('name'), 'holds': p.get('holds'), 'source': SOURCE.get('places', '')},
+           pt(p['at'])) for p in CFG.get('places') or []]
+    SP += [({'kind': 'gateway', 'name': n, 'source': p['found']}, g)
+           for n, (p, g) in AUTO.items() if p['kind'] == 'gateway' and lower(n) not in {lower(q.get('name')) for q, _ in SP}]
+    _at = {**{lower(n): g for n, (p, g) in AUTO.items()}, **{lower(p.get('name')): g for p, g in SP}}
+    for r in CFG['routes']:
+        cs = [pt(v) if isinstance(v, (list, tuple)) else _at.get(lower(v)) for v in r.get('via') or []]
+        if any(c is None for c in cs) or len(cs) < 2:
+            sys.exit('routes: "%s" needs two or more places in `via` that are in places, places.json or [lon, lat]; '
+                     'unknown: %s' % (r.get('name'), [v for v, c in zip(r.get('via') or [], cs) if c is None]))
+        SP.append(({'kind': 'route', 'name': r.get('name'), 'level': r.get('level'), 'mode': r.get('mode'),
+                    'source': SOURCE.get('routes', '')}, shapely.LineString([(c.x, c.y) for c in cs])))
 GATES = {lower(p.get('name')): g for p, g in SP if p.get('kind') == 'gateway'}
 CENTRES = {lower(p.get('name')): (p, g) for p, g in SP if p.get('kind') == 'centre'}
 ROUTES = [(p, merged(g)) for p, g in SP if p.get('kind') == 'route' and not g.is_empty]
+AUTO_L = {lower(n): g for n, (p, g) in AUTO.items()}
 not_found = []
 
 
@@ -171,6 +297,8 @@ def place(name):
     if n in CENTRES:
         g = CENTRES[n][1]
         return g.centroid if g.contains(g.centroid) else g.representative_point()
+    if n in AUTO_L:   # a street crossing or a stop found around the site (places.json)
+        return AUTO_L[n]
     not_found.append(name)
     return None
 
@@ -200,12 +328,12 @@ def add(geom, **props):
 
 
 # ---------------- routes ----------------
-hub_name, stop_name = CFG['hub'], CFG['main_stop']
-if lower(hub_name) not in CENTRES:
+hub_name, stop_name = CFG.get('hub'), CFG.get('main_stop')   # either may be left out: no hub, no main stop
+if hub_name and lower(hub_name) not in CENTRES:
     sys.exit('hub: no centre named "%s" in the structure plan (centres: %s)'
              % (hub_name, ', '.join(p.get('name') for p, g in CENTRES.values())))
-if lower(stop_name) not in GATES and lower(stop_name) not in CENTRES:
-    sys.exit('main_stop: no gateway or centre named "%s" in the structure plan' % stop_name)
+if stop_name and lower(stop_name) not in GATES and lower(stop_name) not in CENTRES and lower(stop_name) not in AUTO_L:
+    sys.exit('main_stop: no gateway, centre or stop named "%s" in the structure plan, places or places.json' % stop_name)
 
 dest = {lower(b.get('route')): b.get('to') for b in (CFG.get('bike_destinations') or [])}
 over = {lower(k): v for k, v in (CFG.get('modes') or {}).items()}
@@ -237,8 +365,9 @@ for p, g in MASS:
                 source='massing %s street' % lvl, basis='massing')
 
 # ---------------- stops, hubs, accesses ----------------
-stop_pt = place(stop_name)
-add(stop_pt, kind='stop', name=stop_name, mode=CFG.get('main_stop_mode', 'rail'), main=True, source=SOURCE.get('main_stop', ''))
+stop_pt = place(stop_name) if stop_name else None
+if stop_pt is not None:
+    add(stop_pt, kind='stop', name=stop_name, mode=CFG.get('main_stop_mode'), main=True, source=SOURCE.get('main_stop', ''))
 bus_lines = [g for p, g in feats if p.get('kind') == 'route' and p.get('mode') == 'bus']
 for s in CFG.get('stops') or []:
     at = place(s.get('at'))
@@ -249,18 +378,22 @@ for s in CFG.get('stops') or []:
         at = near.interpolate(near.project(at))
     add(at, kind='stop', name=s.get('name') or s.get('at'), mode=s.get('mode', 'bus'), main=False, source=SOURCE.get('stops', ''))
 
-hub_p, hub_g = CENTRES[lower(hub_name)]
-USED.add('hub_words')
-hb = [g for p, g in MASS if p.get('kind') == 'building' and has_word(p.get('use'), D['hub_words'])]
-if hb:
-    b = min(hb, key=lambda g: g.distance(hub_g))
-    hub_pt, hub_on = b.representative_point(), 'on the hub building of the massing'
-else:
-    hub_pt, hub_on = place(hub_name), 'at the centre\'s middle (the massing has no hub building)'
-add(hub_pt, kind='hub', name=hub_name, level='main', function=hub_p.get('holds') or 'main stop', source=SOURCE.get('hub', '') + '; ' + hub_on)
+# the walking distance is measured from the main stop, else from the nearest of the stops
+ORIGINS = [stop_pt] if stop_pt is not None else [g for p, g in feats if p.get('kind') == 'stop']
+hub_on = 'none: no hub in config.json'
+if hub_name:
+    hub_p, hub_g = CENTRES[lower(hub_name)]
+    USED.add('hub_words')
+    hb = [g for p, g in MASS if p.get('kind') == 'building' and has_word(p.get('use'), D['hub_words'])]
+    if hb:
+        b = min(hb, key=lambda g: g.distance(hub_g))
+        hub_pt, hub_on = b.representative_point(), 'on the hub building of the massing'
+    else:
+        hub_pt, hub_on = place(hub_name), 'at the centre\'s middle (the massing has no hub building)'
+    add(hub_pt, kind='hub', name=hub_name, level='main', function=hub_p.get('holds') or 'main stop', source=SOURCE.get('hub', '') + '; ' + hub_on)
 USED.add('local_hub_words')
 for n, (p, g) in CENTRES.items():
-    if n != lower(hub_name) and has_word(p.get('holds'), D['local_hub_words']):
+    if n != lower(hub_name or '') and has_word(p.get('holds'), D['local_hub_words']):
         add(place(n), kind='hub', name=p.get('name'), level='local', function=p.get('holds'), source='the centre holds mobility')
 for gar in CFG.get('garages') or []:
     at = place(gar.get('at'))
@@ -358,15 +491,25 @@ USED.add('join_m')
 WG, joins = network(wl, float(D['join_m']))
 USED.add('housing_words')
 homes = [(p, g) for p, g in MASS if p.get('kind') == 'building' and not p.get('existing') and has_word(p.get('use'), D['housing_words'])]
+measured = 'new housing floor area'
+if not MASS:   # no design yet: the site's area, in squares
+    USED.add('cell_m')
+    cm, (bx0, by0, bx1, by1) = float(D['cell_m']), site.bounds
+    cells = [box(x, y, x + cm, y + cm).intersection(site) for x in np.arange(bx0, bx1, cm) for y in np.arange(by0, by1, cm)]
+    homes, measured = [({'gfa_m2': c.area}, c) for c in cells if c.area > 1], 'site area'
 gfa = lambda p, g: float(p.get('gfa_m2') or (p.get('footprint_m2') or g.area) * float(p.get('floors') or 1))
-walk = dict(from_stop=stop_name, network=walk_base, limits_m=limits, buildings=len(homes), new_buildings_only=True,
+walk = dict(from_stop=stop_name or 'the nearest stop', network=walk_base, limits_m=limits, measured=measured,
+            buildings=len(homes) if MASS else 0, new_buildings_only=True,
             nodes=WG.number_of_nodes(), edges=WG.number_of_edges(), parts=nx.number_connected_components(WG) if WG.number_of_nodes() else 0,
             joins=joins, source=SOURCE.get('walk_limits_m', ''))
 tot = sum(gfa(p, g) for p, g in homes)
 walk['housing_gfa_m2'] = round(tot)
-if WG.number_of_nodes() and tot:
-    s0, d0 = snap(WG, stop_pt)
-    dist = nx.single_source_dijkstra_path_length(WG, s0, weight='w')
+if WG.number_of_nodes() and tot and ORIGINS:
+    dist = {}
+    for o_pt in ORIGINS:   # each node's walk to its nearest origin, the step onto the network included
+        s0, d0 = snap(WG, o_pt)
+        for n, dd in nx.single_source_dijkstra_path_length(WG, s0, weight='w').items():
+            dist[n] = min(dist.get(n, math.inf), d0 + dd)
     within, unreached = {L: 0.0 for L in limits}, 0.0
     for p, g in homes:
         c = g.centroid
@@ -374,7 +517,7 @@ if WG.number_of_nodes() and tot:
         if n not in dist:
             unreached += gfa(p, g)
             continue
-        dd = d0 + dist[n] + dn
+        dd = dist[n] + dn
         for L in limits:
             within[L] += gfa(p, g) if dd <= L else 0
     for L in limits:
@@ -393,6 +536,35 @@ stats['hub'] = hub_on
 stats['features'] = {k: sum(1 for p, g in feats if p['kind'] == k) for k in ('route', 'stop', 'hub', 'access')}
 stats['routes_by_mode'] = {m: sum(1 for p, g in feats if p['kind'] == 'route' and p['mode'] == m) for m in ORDER}
 stats['names_not_found'] = sorted(set(map(str, not_found)))
+if not_found:   # a name left unfilled or misspelt in config.json: skipped, so say so
+    print('names in config.json not found in the structure plan, skipped: ' + ', '.join(stats['names_not_found']), file=sys.stderr)
+
+
+# ---------------- write ----------------
+def write():
+    fc = {'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {k_: v for k_, v in p.items() if v is not None},
+         'geometry': mapping(shapely.set_precision(transform(TO_LL, g), 1e-7))} for p, g in feats if g is not None and not g.is_empty]}
+    open(os.path.join(OUT, 'mobility.geojson'), 'w', encoding='utf8').write(json.dumps(fc, ensure_ascii=False))
+    json.dump(walk, open(os.path.join(OUT, 'walk.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
+    json.dump(stats, open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
+    md = ['# Assumptions', '', 'The skill\'s own values used in this run; config.json may override each.', '']
+    for key in sorted(USED):
+        md.append(f'- `{key}` = {json.dumps(D[key], ensure_ascii=False)}: {DEFAULTS[key][1]}' + (' (from config.json)' if key in CFG else ' (default)'))
+    if missing:
+        md += ['', 'Missing layers: ' + '; '.join(missing) + '.']
+    if not_found:
+        md += ['', 'Names in config.json not found in the structure plan: ' + ', '.join(sorted(set(map(str, not_found)))) + '.']
+    open(os.path.join(OUT, 'assumptions.md'), 'w', encoding='utf8').write('\n'.join(md) + '\n')
+    print(json.dumps(stats, indent=1, ensure_ascii=False))
+
+
+if not S:   # no drawing standard: the plan's data only, no drawing in a look of the skill's own
+    stats['drawing'] = None
+    missing.append('drawing standard (no plan drawn: run the drawing standard first, then this again)')
+    write()
+    print('no drawing standard at %s: wrote the data, drew no plan' % style_path, file=sys.stderr)
+    sys.exit(0)
 
 
 # ---------------- the plan ----------------
@@ -464,9 +636,14 @@ def fill(g, colour, key=None, stroke=None, extra=''):
     o.append(f'<path d="{d(g)}" fill="{colour}"{st} fill-rule="evenodd"{extra}/>')
 
 
+heavy = []   # every line drawn at the mid weight or thicker, as drawn, in drawing units: labels keep off them
+
+
 def stroke(g, colour, w, dash=None, key=None, extra=''):
     if key:
         legend.setdefault(key, ('line', colour, w, dash))
+    if w >= lw('mid') - 1e-9:
+        heavy.append(shapely.affinity.affine_transform(g.intersection(fr.buffer(10)), [1, 0, 0, -1, -wx0, wy1]).buffer(w / 2))
     da = f' stroke-dasharray="{f2(dash[0] * k)} {f2(dash[1] * k)}"' if dash else ''
     o.append(f'<path d="{d(g)}" fill="none" stroke="{colour}" stroke-width="{f2(w)}"{da} stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
@@ -496,14 +673,18 @@ if NEWB:   # the standard's colour for new, light enough for the routes to read 
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
-X, Y = P(stop_pt.x, stop_pt.y)
-for i, L in enumerate(limits):
+ring_boxes = []   # the boxes of the rings' labels, which the other labels keep clear of
+if stop_pt is not None:
+    X, Y = P(stop_pt.x, stop_pt.y)
+for i, L in enumerate(limits if stop_pt is not None else []):   # rings only around a main stop
     da = f' stroke-dasharray="{f2(2 * k)} {f2(1.5 * k)}"' if i else ''
     o.append(f'<circle cx="{f2(X)}" cy="{f2(Y)}" r="{f2(L)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"{da}/>')
     legend.setdefault('ring', ('ring',))
     a = math.radians(45)
-    o.append(f'<text x="{f2(X + L * math.cos(a) + 1.5 * k)}" y="{f2(Y - L * math.sin(a))}" font-size="{f2(fs)}" fill="{S["ink"]}" '
+    rx, ry = X + L * math.cos(a) + 1.5 * k, Y - L * math.sin(a)
+    o.append(f'<text x="{f2(rx)}" y="{f2(ry)}" font-size="{f2(fs)}" fill="{S["ink"]}" '
              f'paint-order="stroke" stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{L:g} m</text>')
+    ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
 LOOK = {'bus': (S['ink'], 'thick', None), 'car': (S['existing'], 'mid', None), 'bike': (S['accent'], 'mid', None),
@@ -545,7 +726,8 @@ def symbol(kind, x, y):
     return f'<path d="M{f2(x)},{f2(y - r)}L{f2(x + r)},{f2(y)}L{f2(x)},{f2(y + r)}L{f2(x - r)},{f2(y)}Z" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
 
 
-labelled = []   # hubs first, the stops on top; one label for a stop and hub at the same place
+SYM_R = {'stop': 2.4, 'bus-stop': 1.4, 'hub': 3.2, 'local-hub': 2.2, 'garage': 1.8, 'access': 1.8}   # mm, as drawn above
+labelled, marks = [], []   # hubs first, the stops on top; one label for a stop and hub at the same place
 for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['kind']) if f[0]['kind'] in ('hub', 'access', 'stop') else 9):
     if p['kind'] in ('stop', 'hub', 'access') and g.intersects(fr):
         kind = {'stop': 'stop' if p.get('main') else 'bus-stop', 'access': 'access'}.get(p['kind'])
@@ -554,15 +736,86 @@ for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['ki
         x, y = P(g.x, g.y)
         o.append(symbol(kind, x, y))
         legend.setdefault(kind, ('symbol', kind))
-        if kind in ('stop', 'hub', 'local-hub') and not any(t == p['name'] and q.distance(g) < 10 * k for t, q in labelled):
-            labelled.append((p['name'], g))
-            o.append(f'<text x="{f2(x + 4 * k)}" y="{f2(y - 2 * k)}" font-size="{f2(fs)}" fill="{S["ink"]}" paint-order="stroke" '
-                     f'stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{escape(str(p["name"]))}</text>')
+        r_ = (SYM_R[kind] + float(S['mid']) / 2) * k
+        marks.append(box(x - r_, y - r_, x + r_, y + r_))
+        if kind in ('stop', 'hub', 'local-hub') and not any(t == p['name'] and q.distance(g) < 10 * k for t, q, *_ in labelled):
+            labelled.append((p['name'], g, x, y, r_, kind))
+
+
+def label_spots(s, x, y, r_):
+    """The places a label may take around its symbol, in order: (text x, baseline y, anchor, box, leader or None).
+    A label's box is its character count times 0.56 of the font size wide, and its font size high."""
+    USED.update(['label_gap_mm', 'leader_mm'])
+    w, gap, pad = tw(s, fs), float(D['label_gap_mm']) * k, 0.4 * k
+    up, dn = 0.75 * fs, 0.25 * fs                              # ascent and descent from the baseline
+
+    def at(bx, by, anchor):                                    # bx: the anchor's x; by: the box's vertical middle
+        x0 = {'start': bx, 'end': bx - w, 'middle': bx - w / 2}[anchor]
+        base = by + (up - dn) / 2
+        return bx, base, anchor, box(x0 - pad, base - up - pad, x0 + w + pad, base + dn + pad)
+
+    e, c, h = r_ + gap, r_ + pad + 0.3 * k, (up + dn) / 2    # c: a corner place clears the symbol's square
+    spots = [at(x + e, y, 'start'), at(x - e, y, 'end'), at(x, y - e - h, 'middle'), at(x, y + e + h, 'middle'),
+             at(x + c, y - c - h, 'start'), at(x + c, y + c + h, 'start'),
+             at(x - c, y - c - h, 'end'), at(x - c, y + c + h, 'end')]
+    spots = [(*sp, None) for sp in spots]
+    for far in D['leader_mm']:                                 # further out, on a short line from the symbol
+        for deg in (0, 180, 45, 135, 315, 225, 90, 270):
+            a = math.radians(deg)
+            ex, ey = x + far * k * math.cos(a), y - far * k * math.sin(a)
+            anchor = 'start' if math.cos(a) > 0.1 else ('end' if math.cos(a) < -0.1 else 'middle')
+            by = ey - h if math.sin(a) > 0.9 else (ey + h if math.sin(a) < -0.9 else ey)
+            sx, sy_ = x + r_ * math.cos(a), y - r_ * math.sin(a)
+            spots.append((*at(ex + (0.5 * k if anchor == 'start' else -0.5 * k if anchor == 'end' else 0), by, anchor),
+                          shapely.LineString([(sx, sy_), (ex, ey)])))
+    return spots
+
+
+# every label keeps clear of the other labels, of every symbol (its own too) and of the map's edge, then of the heavy
+# lines: a place free of all is taken first, else the one least over labels and symbols, then least crossed by lines
+inner = box(0, 0, Wm, Hm)
+taken = list(ring_boxes)
+HEAVY = unary_union(heavy) if heavy else shapely.Polygon()
+lab_stats = dict(placed=0, moved=0, on_leader=0, warned=[], on_lines=[])
+for name, g, x, y, r_, kind in sorted(labelled, key=lambda t: t[5] == 'local-hub'):   # the main stop and hub first
+    s = str(name)
+    own = box(x - r_, y - r_, x + r_, y + r_)
+    others = [m for m in marks if not m.equals(own)]
+    best, best_hit = None, None
+    for i, (tx, ty, anchor, bx_, lead) in enumerate(label_spots(s, x, y, r_)):
+        hit = sum(bx_.intersection(t).area for t in taken + marks) + bx_.difference(inner).area
+        if lead is not None:
+            hit += sum(lead.intersection(t).length for t in taken + others) * fs
+        hit = (round(hit, 6), round(bx_.intersection(HEAVY).area, 6))
+        if hit == (0, 0):
+            best, best_hit = (i, tx, ty, anchor, bx_, lead), hit
+            break
+        if best is None or hit < best_hit:
+            best, best_hit = (i, tx, ty, anchor, bx_, lead), hit
+    i, tx, ty, anchor, bx_, lead = best
+    if best_hit[0]:
+        lab_stats['warned'].append(s)
+        print('label "%s": no free place around its symbol, drawn where it overlaps least' % s, file=sys.stderr)
+    elif best_hit[1]:
+        lab_stats['on_lines'].append(s)
+        print('label "%s": every place clear of labels and symbols is crossed by a route line, drawn where least' % s, file=sys.stderr)
+    elif i == 0:
+        lab_stats['placed'] += 1
+    else:
+        lab_stats['moved'] += 1
+    lab_stats['on_leader'] += lead is not None
+    taken.append(bx_)
+    if lead is not None:
+        o.append(f'<path d="M{f2(lead.coords[0][0])},{f2(lead.coords[0][1])}L{f2(lead.coords[1][0])},{f2(lead.coords[1][1])}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"/>')
+    am = '' if anchor == 'start' else f' text-anchor="{anchor}"'
+    o.append(f'<text x="{f2(tx)}" y="{f2(ty)}" font-size="{f2(fs)}"{am} fill="{S["ink"]}" paint-order="stroke" '
+             f'stroke="{S["paper"]}" stroke-width="{f2(0.6 * k)}">{escape(s)}</text>')
+stats['labels'] = lab_stats
 
 # the walking shares, as one line
 shares = ', '.join(LAB['within'].format(p=round(100 * walk['within_%dm' % L]), m='%g' % L)
                    for L in limits if walk.get('within_%dm' % L) is not None)
-walk_line = LAB['walk'].format(shares=shares, unreached=LAB['unreached'].format(p=round(100 * walk['unreached'])) if walk.get('unreached') else '') if shares else ''
+walk_line = LAB['walk' if MASS else 'walk_site'].format(shares=shares, unreached=LAB['unreached'].format(p=round(100 * walk['unreached'])) if walk.get('unreached') else '') if shares else ''
 
 
 # ---------------- the strip under the map ----------------
@@ -668,20 +921,4 @@ except Exception as e:
     print('no PNG:', e, file=sys.stderr)
 stats['drawing'] = dict(file=fname + '.svg', png=os.path.exists(png), width_mm=round(W, 1), height_mm=round((Hm + Hs) / k, 1),
                         scale=scale, base=walk.get('base', 'site street lines buffered at assumed widths'))
-
-# ---------------- write ----------------
-fc = {'type': 'FeatureCollection', 'features': [
-    {'type': 'Feature', 'properties': {k_: v for k_, v in p.items() if v is not None},
-     'geometry': mapping(shapely.set_precision(transform(TO_LL, g), 1e-7))} for p, g in feats if g is not None and not g.is_empty]}
-open(os.path.join(OUT, 'mobility.geojson'), 'w', encoding='utf8').write(json.dumps(fc, ensure_ascii=False))
-json.dump(walk, open(os.path.join(OUT, 'walk.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
-json.dump(stats, open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf8'), indent=1, ensure_ascii=False)
-md = ['# Assumptions', '', 'The skill\'s own values used in this run; config.json may override each.', '']
-for key in sorted(USED):
-    md.append(f'- `{key}` = {json.dumps(D[key], ensure_ascii=False)}: {DEFAULTS[key][1]}' + (' (from config.json)' if key in CFG else ' (default)'))
-if missing:
-    md += ['', 'Missing layers: ' + '; '.join(missing) + '.']
-if not_found:
-    md += ['', 'Names in config.json not found in the structure plan: ' + ', '.join(sorted(set(map(str, not_found)))) + '.']
-open(os.path.join(OUT, 'assumptions.md'), 'w', encoding='utf8').write('\n'.join(md) + '\n')
-print(json.dumps(stats, indent=1, ensure_ascii=False))
+write()

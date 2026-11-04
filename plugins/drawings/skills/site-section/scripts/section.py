@@ -6,7 +6,7 @@
 
 Reads <site>/site.geojson and its layers (buildings, plots, streets, street-land, rail, water), the site's
 terrain (terrain.py: the site folder's GeoTIFF, else terrain.csv, else a free elevation service, else flat),
-and with --massing <proposal>/massing/massing.geojson. Without --line it chooses the line itself; with
+its 3D building models if there are some (buildings-3d.geojson: roofs cut along the line, roofs.py), and with --massing <proposal>/massing/massing.geojson. Without --line it chooses the line itself; with
 --massing and no --line it keeps the line of the earlier pass (cut.json). Writes into <proposal>/site-section/:
 site-section[_design]_1-<scale>.svg/.png, site-section[_design]_excerpt_1-<detail>.svg/.png, profile.csv,
 cut.json and assumptions.md. The helper writes summary.md.
@@ -22,11 +22,14 @@ from shapely.ops import transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from terrain import Terrain, FLAT_SOURCE
+import roofs
 
 DEFAULTS = {
     'step_m': 10,               # metres between ground samples along the line
     'beyond_m': 200,            # the line runs this far past the site at each end, so the neighbours show
     'behind_m': 80,             # buildings up to this far behind the cut stand in elevation
+    'ground_behind_m': [20, 40, 60, 80],   # the ground behind the cut, drawn along lines this far back, so buildings behind stand on it
+    'landscape_m': [300, 600, 1000],       # on the whole cut, the landscape further back: ground lines this far behind, palest farthest
     'tree_h': {'forest': 16, 'wood': 16, 'park': 10, 'scrub': 4},   # assumed tree heights by land use, m
     'person_h': 1.75,           # height of a person for scale, m
     'floor_h': 3.0,             # storey height, only for existing buildings without a height
@@ -50,6 +53,8 @@ DEFAULTS = {
     'at_m': 100,                # the line counts as passing the given place within this distance
     'person_gap_m': 25,         # people on open ground every this many metres in the excerpt
     'png_dpi': 150,             # resolution of the PNGs
+    'models_file': 'buildings-3d.geojson',   # the site folder's 3D building models, one surface per feature
+    'model_overlap': 0.3,       # a model belongs to a footprint it covers by this share of the smaller of the two
 }
 C = DEFAULTS
 
@@ -146,7 +151,8 @@ for p, g in layer('buildings'):
     if not h or h <= 0:
         fl = fl or C['default_floors']
         h, dflt = fl * C['floor_h'], True
-    B.append(dict(g=g, h=h, floors=fl or max(1, round(h / C['floor_h'])), new=False, default=dflt))
+    B.append(dict(g=g, h=h, floors=fl or max(1, round(h / C['floor_h'])), new=False, default=dflt,
+                  id=None if p.get('id') in (None, '') else str(p['id'])))
 NEW = []
 if ARGS.massing:
     mf = read_fc(Path(ARGS.proposal) / 'massing' / 'massing.geojson')
@@ -324,8 +330,93 @@ def ground(t):
     return np.interp(t, TS, ZS)
 
 
+def behind_profile(u, fill=True):
+    """The ground along a line u m behind the cut, at the cut's samples. Without fill: None where the terrain has no
+    value along half the line or more, NaN where it has none, never the nearest value (that would draw a false, flat land)."""
+    xs, ys = PX + V[0] * u, PY + V[1] * u
+    if fill:
+        return TERRAIN.sample(xs, ys)
+    z = np.asarray(TERRAIN._sampler(xs, ys), float)
+    return None if TERRAIN.flat or np.isfinite(z).mean() < 0.5 else z
+
+
+BANDS, LANDSCAPE = [], []   # far to near
+if not TERRAIN.flat:
+    BANDS = [(u, behind_profile(u)) for u in sorted(C['ground_behind_m'], reverse=True) if 0 < u <= C['behind_m']]
+    for u in sorted(C['landscape_m'], reverse=True):
+        z = behind_profile(u, fill=False)
+        if z is None:
+            NOTES.append(f'The terrain has no ground {u:g} m behind the cut along half of it or more: that landscape line is left out.')
+        else:
+            LANDSCAPE.append((u, z))
+
+
 for c in cut:   # down to the lowest ground under it, so it never floats; the earth hides the rest
     c['bottom'] = min(c['base'], float(ground(np.linspace(c['t0'], c['t1'], 5)).min()))
+
+# ---------------------------------------------------------------- roofs: from the 3D models, else flat at the height
+MODELS = {}
+if (SITE / C['models_file']).exists():
+    MODELS = roofs.models(SITE / C['models_file'], TO_M, CUT.buffer(C['behind_m'] + 50).bounds)
+else:
+    NOTES.append(f'No {C["models_file"]} in the site folder: every roof is a flat top at its height.')
+ABS_Z = False
+if MODELS:
+    keys = list(MODELS)
+    mtree = STRtree([MODELS[k_]['foot'] for k_ in keys])
+    for item in cut + behind:
+        b = item['b']
+        if b['new'] or 'faces' in b:
+            continue
+        b['faces'], zmins = [], []
+        for j in mtree.query(b['g'], predicate='intersects'):
+            m = MODELS[keys[j]]
+            if keys[j] == b['id'] or (b['g'].intersection(m['foot']).area
+                                      >= C['model_overlap'] * min(b['g'].area, m['foot'].area)):
+                b['faces'] += m['faces']
+                zmins.append(m['zmin'])
+        b['model_zmin'] = min(zmins) if zmins else None
+    # z above sea level, or above each building's lowest ground: whichever the models' feet sit closer to
+    feet = [(it['b']['model_zmin'], it['low']) for it in cut + behind if it['b'].get('faces')]
+    ABS_Z = bool(feet) and sum(abs(zm - lo) < abs(zm) for zm, lo in feet) > len(feet) / 2
+
+
+def footprint_t(g):
+    ts = [tpos(c_) for q in parts(g) for c_ in q.exterior.coords]
+    return min(ts), max(ts)
+
+
+for is_cut, items in ((True, cut), (False, behind)):
+    for item in items:
+        b = item['b']
+        off = 0.0 if ABS_Z else item['low']
+        pts = []
+        if b.get('faces'):
+            pts = (roofs.cut if is_cut else roofs.silhouette)(b['faces'], A, e, V, item['t0'], item['t1'])
+        item['model'] = bool(pts)
+        item['roof'] = ([(t, z + off) for t, z in pts] if pts else
+                        [(item['t0'], item['base'] + b['h']), (item['t1'], item['base'] + b['h'])])
+        item['top'] = max(z for _, z in item['roof'])
+        if is_cut and pts:   # what of the cut building stands behind the cut, in elevation
+            back = roofs.silhouette(b['faces'], A, e, V, *footprint_t(b['g']), front=0.0)
+            item['back'] = [(t, z + off) for t, z in back]
+            item['top'] = max([item['top']] + [z for _, z in item['back']])
+
+
+def roof_count(items):
+    by = {}
+    for it in items:
+        if not it['b']['new']:
+            by.setdefault(id(it['b']), []).append(it)
+    model = [v for v in by.values() if any(it['model'] for it in v)]
+    return dict(from_model=len(model), pitched=sum(any(roofs.pitched(it['roof']) for it in v) for v in model),
+                flat_no_model=len(by) - len(model))
+
+
+ROOFS = dict(models=C['models_file'] if MODELS else None,
+             z=None if not MODELS else 'above sea level' if ABS_Z else "above each building's lowest ground",
+             cut=roof_count(cut), behind=roof_count(behind),
+             new_flat=len({id(it['b']) for it in cut + behind if it['b']['new']}))
 
 # fall and rise: the largest drop and the largest climb from A to A'
 run_max, run_min, fall, rise = ZS[0], ZS[0], 0.0, 0.0
@@ -529,7 +620,8 @@ def draw(w0, w1, scale, detail, name):
     sel_beh = sorted((c for c in behind if inwin(c['t0'], c['t1'])), key=lambda c: -c['u'])
     m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
     zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
-    ztops = [c['base'] + c['b']['h'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max(C['tree_h'].values())]
+    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max(C['tree_h'].values())]
+    ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
     zmin = float(zwin.min())
     step = nice_step(FS * 1.4, k)
     zbase = math.floor((zmin - max(4.0, 0.1 * (float(zwin.max()) - zmin))) / step) * step
@@ -566,29 +658,66 @@ def draw(w0, w1, scale, detail, name):
          f'font-family="{esc(S["font"])}">', f'<rect width="{W:.2f}" height="{H:.2f}" fill="{S["paper"]}"/>',
          f'<clipPath id="win"><rect x="{gut:.2f}" y="0" width="{(w1 - w0) * k:.2f}" height="{H:.2f}"/></clipPath>',
          '<g clip-path="url(#win)">']
-    # buildings behind, far to near, lighter the farther
-    for c in sel_beh:
+    def outline(roof, bottom):   # the wall up from its ground, along the roof or the flat top, and down again
+        pts = [(roof[0][0], bottom)] + roof + [(roof[-1][0], bottom)]
+        return 'M' + 'L'.join(f'{X(t):.2f},{Y(z):.2f}' for t, z in pts) + 'Z'
+
+    def floors(c, d_out, stroke):   # floor lines, inside the building's outline only
+        b = c['b']
+        if not (detail and b['floors'] > 1):
+            return
+        cid = f'f{len(o)}'
+        fh = b['h'] / b['floors']
+        d = ''.join(f'M{X(c["t0"]):.2f},{Y(c["base"] + i * fh):.2f}h{(c["t1"] - c["t0"]) * k:.2f}' for i in range(1, b['floors']))
+        o.append(f'<clipPath id="{cid}"><path d="{d_out}"/></clipPath>'
+                 f'<path d="{d}" stroke="{stroke}" stroke-width="{THIN}" clip-path="url(#{cid})"/>')
+
+    def behind_ground(z, cls, f):   # a ground behind the cut, from its line down to the drawing's base, f of the way to paper
+        r, runs = [], []
+        for t, zv in zip(TS[m], np.maximum(z[m], zbase)):   # NaN stays NaN: no ground known there
+            if np.isfinite(zv):
+                r.append((t, zv))
+            elif r:
+                runs.append(r); r = []
+        runs.append(r)
+        for r in (r for r in runs if len(r) > 1):
+            top = 'L'.join(f'{X(t):.2f},{Y(zv):.2f}' for t, zv in r)
+            o.append(f'<path class="{cls}" d="M{top}L{X(r[-1][0]):.2f},{Y(zbase):.2f}L{X(r[0][0]):.2f},{Y(zbase):.2f}Z" '
+                     f'fill="{mix(S["context"], S["paper"], f)}" stroke="none"/>')
+            o.append(f'<path d="M{top}" fill="none" stroke="{mix(S.get("building", "#9a9a9a"), S["paper"], f)}" stroke-width="{THIN}"/>')
+
+    def behind_building(c):   # lighter the farther, on its own ground
         b = c['b']
         fill = mix(S['accent'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
         stroke = mix(S['accent'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')
-        x, y2, y1_ = X(c['t0']), Y(c['low']), Y(c['base'] + b['h'])
-        o.append(f'<rect x="{x:.2f}" y="{y1_:.2f}" width="{(c["t1"] - c["t0"]) * k:.2f}" height="{y2 - y1_:.2f}" '
-                 f'fill="{fill}" stroke="{stroke}" stroke-width="{THIN}"/>')
-        if detail and b['floors'] > 1:
-            fh = b['h'] / b['floors']
-            d = ''.join(f'M{x:.2f},{Y(c["base"] + i * fh):.2f}h{(c["t1"] - c["t0"]) * k:.2f}' for i in range(1, b['floors']))
-            o.append(f'<path d="{d}" stroke="{stroke}" stroke-width="{THIN}"/>')
-    # buildings cut, the strongest tone
+        d_out = outline(c['roof'], c['low'])
+        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{stroke}" stroke-width="{THIN}"/>')
+        floors(c, d_out, stroke)
+
+    # far to near: the landscape (whole cut only), then the ground behind the cut in bands with the buildings standing
+    # on it, so a band hides the feet of the buildings behind it and none floats above the cut
+    if not detail:
+        for i, (u, z) in enumerate(LANDSCAPE):
+            behind_ground(z, 'landscape', 0.85 - 0.25 * i / max(1, len(LANDSCAPE) - 1))
+    beh = list(sel_beh)
+    for i, (u, z) in enumerate(BANDS):
+        while beh and beh[0]['u'] >= u:
+            behind_building(beh.pop(0))
+        behind_ground(z, 'ground-behind', 0.55 - 0.35 * i / max(1, len(BANDS) - 1))
+    for c in beh:
+        behind_building(c)
+    # what of the cut buildings stands behind the cut, nearest of all
+    for c in sel_cut:
+        if c.get('back'):
+            o.append(f'<path d="{outline(c["back"], c["low"])}" fill="{mix(S["existing"], S["paper"], 0.25)}" '
+                     f'stroke="{S.get("building", "#9a9a9a")}" stroke-width="{THIN}"/>')
+    # buildings cut, the strongest tone, the roof cut along the line where there is a model
     for c in sel_cut:
         b = c['b']
         fill = S['accent'] if b['new'] else S['ink']
-        x, y2, y1_ = X(c['t0']), Y(c['bottom']), Y(c['base'] + b['h'])
-        o.append(f'<rect x="{x:.2f}" y="{y1_:.2f}" width="{max(0.2, (c["t1"] - c["t0"]) * k):.2f}" height="{y2 - y1_:.2f}" '
-                 f'fill="{fill}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
-        if detail and b['floors'] > 1:
-            fh = b['h'] / b['floors']
-            d = ''.join(f'M{x:.2f},{Y(c["base"] + i * fh):.2f}h{(c["t1"] - c["t0"]) * k:.2f}' for i in range(1, b['floors']))
-            o.append(f'<path d="{d}" stroke="{S["paper"]}" stroke-width="{THIN}"/>')
+        d_out = outline(c['roof'], c['bottom'])
+        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
+        floors(c, d_out, S['paper'])
     # the earth, cut, and the ground line
     tt = np.concatenate([[w0], TS[(TS > w0) & (TS < w1)], [w1]])
     gl = 'L'.join('%.2f,%.2f' % (X(t), Y(z)) for t, z in zip(tt, ground(tt)))
@@ -719,10 +848,12 @@ info = {
     'cut': len(cut), 'behind': len(behind),
     'new_cut': sum(1 for c in cut if c['b']['new']), 'new_behind': sum(1 for c in behind if c['b']['new']),
     'heights_by_default': n_default,
+    'roofs': ROOFS,
     'fall_m': round(float(fall), 1), 'rise_m': round(float(rise), 1),
     'z_A': round(float(ZS[0]), 1), 'z_A_prime': round(float(ZS[-1]), 1),
     'z_min': round(float(ZS.min()), 1), 'z_max': round(float(ZS.max()), 1),
     'terrain': TERRAIN.source, 'terrain_gaps_filled': TERRAIN.gaps,
+    'ground_behind_m': [u for u, _ in BANDS], 'landscape_m': [u for u, _ in LANDSCAPE],
     'excerpt_t_m': [round(E0, 1), round(E1, 1)], 'excerpt_why': why,
     'labels': [[round(t, 1), s] for t, s, _ in labels],
     'drawings': [whole, part],
@@ -746,13 +877,22 @@ lines += [f'- Ground falls up to {fall:.1f} m and rises up to {rise:.1f} m along
           f'- {len(cut)} buildings cut, {len(behind)} behind within {C["behind_m"]} m'
           + (f' ({info["new_cut"]} and {info["new_behind"]} of them new, heights from the massing)' if ARGS.massing else '')
           + f'; {n_default} heights are defaults ({C["default_floors"]} storeys of {C["floor_h"]} m).',
+          (f'- Roofs from {ROOFS["models"]} (z {ROOFS["z"]}): {ROOFS["cut"]["from_model"]} cut buildings cut along the line'
+           f' ({ROOFS["cut"]["pitched"]} pitched), {ROOFS["behind"]["from_model"]} behind as their roof silhouette'
+           f' ({ROOFS["behind"]["pitched"]} pitched); a flat top at the measured height where there is no model:'
+           f' {ROOFS["cut"]["flat_no_model"]} cut, {ROOFS["behind"]["flat_no_model"]} behind'
+           + (f'; {ROOFS["new_flat"]} new buildings flat at the massing height.' if ARGS.massing else '.')
+           if ROOFS['models'] else '- Roofs: no 3D building models, every roof a flat top at its height.'),
           '- Tree heights assumed: ' + ', '.join(f'{c} {h} m' for c, h in C['tree_h'].items()) + '; person '
           + f'{C["person_h"]} m.',
-          f'- Excerpt {E0:.0f}–{E1:.0f} m from A, {why}.']
+          f'- Excerpt {E0:.0f}–{E1:.0f} m from A, {why}.',
+          (f'- Ground behind the cut drawn at {", ".join(f"{u:g}" for u, _ in BANDS[::-1])} m; landscape lines on the whole cut at '
+           + (", ".join(f"{u:g}" for u, _ in LANDSCAPE[::-1]) + ' m behind.' if LANDSCAPE else 'none (no terrain that far).')
+           if BANDS else '- No ground behind the cut and no landscape lines: the ground is flat.')]
 if MISSING:
     lines.append('- Missing, not drawn: ' + ', '.join(MISSING) + '.')
 lines += [f'- {n}' for n in TERRAIN.notes + NOTES]
 lines.append('- Look: ' + (f'drawing standard ({style_path}).' if USED_STYLE else 'fallback, black on white with one accent.'))
 (OUT / 'assumptions.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 print(json.dumps({k_: info[k_] for k_ in ('choice', 'score', 'runner_up_score', 'cut', 'behind', 'new_cut', 'new_behind',
-                                          'fall_m', 'rise_m', 'terrain', 'look', 'length_m')}, ensure_ascii=False))
+                                          'fall_m', 'rise_m', 'terrain', 'look', 'length_m', 'roofs')}, ensure_ascii=False))

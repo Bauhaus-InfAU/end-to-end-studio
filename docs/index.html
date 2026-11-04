@@ -301,10 +301,12 @@ function buildGraph(){
     if (!n.resolved) continue;
     for (const id of n.spec){
       if (id.startsWith('TOPIC:')){ (n.topics = n.topics || []).push(id.slice(6)); continue; }
-      const t = SK.get(id);
+      const m = id.match(/^(.+?)\s*\(end\)$/);  // "<skill> (end)": waits for that skill's second run
+      const base = m ? m[1] : id, t = SK.get(base);
       if (!t){ n.unknown.push(id); continue; }
-      if (t.standard || id === n.s.id || n.inKeys.includes(id)) continue;
-      n.inKeys.push(id);
+      const key = m && by.has(base + '@end') ? base + '@end' : base;
+      if (t.standard || base === n.s.id || n.inKeys.includes(key)) continue;
+      n.inKeys.push(key);
     }
   }
   const anc = (n, seen = new Set()) => {

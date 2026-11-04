@@ -1,6 +1,6 @@
 # Drawings
 
-Skills that draw. Each decides what its drawing shows; how it looks comes from the studio's standard, and its scale comes from the brief.
+Skills that draw. Each decides what its drawing shows; how it looks comes from the studio's standard, and its scale comes from its frame in the panel plan (`panel-layout/layout.json`), else from the brief.
 
 - The standard: `drawing-graphics` starts from a best-practice base, fits it to the narrative, then to the project's reference images if there are any (where its `CLAUDE.md` says, else `references/`), and writes `drawing-graphics/standard.md` and `style.json`. Every other drawing skill reads that file. Without it, draw black lines on white with one accent colour for what's new.
 - Never fix a colour, line weight, font or scale in a drawing skill. Say what the drawing shows when it is large (a block, 1:500) and when it is small (the district in its city, 1:5000 and smaller), and take the scales from the brief's checklist.

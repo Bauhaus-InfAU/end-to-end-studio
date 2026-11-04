@@ -15,4 +15,4 @@ Work in the proposal folder you are given and write only into `drawing-graphics/
 
 Never go below a floor of `base.md` (12 px text, the contrasts, the line weights). Take the panel format from `brief-reader/checklist.md`. Run `python "${CLAUDE_SKILL_DIR}/scripts/check_style.py" drawing-graphics/style.json` and fix what it names.
 
-Write `drawing-graphics/standard.md`: the base with your changes in place, and each change marked with where it came from (narrative or a reference image by name). Also write `style.json`, which the drawing scripts read, keeping every key of `base.json`. `summary.md`: three lines. The look in one sentence, the accent and what it marks, and what you're unsure of.
+Write `drawing-graphics/standard.md`: the whole base, every section under its own heading (the renders too), never summed up, with your changes in place, and each change marked with where it came from (narrative or a reference image by name). Also write `style.json`, which the drawing scripts read, keeping every key of `base.json`. `summary.md`: three lines. The look in one sentence, the accent and what it marks, and what you're unsure of.
