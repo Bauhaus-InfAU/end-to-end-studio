@@ -74,7 +74,8 @@
  "figure": {
   "value": {
    "*": {"typology": "rows | open courtyard | courtyard | points | halls | perimeter | L | U | ensemble | town houses | tower | hub", "orientation": "long side | route | <bearing in degrees from north>", "row_gap": 24, "heights": "flat | to centre | from green | alternate", "floors_min": 2, "floors_max": 6},
-   "<neighbourhood name>": {"typology": "...", "orientation": 0, "block": {"L": 90, "D": 70, "d": 13, "gap": 6, "roof": "green | pv | gable | flat"}}
+   "<neighbourhood name>": {"mix": {"perimeter": 0.5, "L": 0.3, "town houses": 0.2}, "orientation": 0, "block": {"L": 90, "D": 70, "d": 13, "gap": 6, "roof": "green | pv | gable | flat"}},
+   "<another neighbourhood>": {"mix": ["U", "ensemble", "tower"]}
   },
   "source": "<narrative.md principle N, or brief p. N>; optional: without it the figure follows the density"
  },

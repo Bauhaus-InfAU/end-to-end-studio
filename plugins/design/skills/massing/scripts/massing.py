@@ -93,17 +93,38 @@ FIGURE = CONFIG.get('figure') or {}
 
 
 def figure_for(name):
-    """config `figure`: {"*": {...}, "<neighbourhood>": {...}}; the named entry overrides "*"."""
-    return {**FIGURE.get('*', {}), **FIGURE.get(name, {})}
+    """config `figure`: {"*": {...}, "<neighbourhood>": {...}}; the named entry overrides "*", its typology a mix of "*"."""
+    F, own = {**FIGURE.get('*', {}), **FIGURE.get(name, {})}, FIGURE.get(name, {})
+    if 'typology' in own and 'mix' not in own: F.pop('mix', None)
+    return F
 
 
-def type_for(name):
-    """the block of a neighbourhood: its density's TYPES entry, changed by its figure"""
-    T = dict(TYPES[CONFIG['density'][name]]); F = figure_for(name)
-    if F.get('typology'):
-        if F['typology'] not in TYPOLOGY:
-            sys.exit('figure.%s.typology "%s" is not one of %s' % (name, F['typology'], ', '.join(TYPOLOGY)))
-        T.update(TYPOLOGY[F['typology']])
+def mix_of(F):
+    """figure `mix`: {typology: share}, or a list the blocks take in turn; without it the one typology. As shares
+    that add up to 1."""
+    mx = F.get('mix') or [F.get('typology')]
+    mx = dict(mx) if isinstance(mx, dict) else {ty: mx.count(ty) for ty in mx}
+    return {ty: v / sum(mx.values()) for ty, v in mx.items()}
+
+
+def pick(F, shares, done, count, col, row):
+    """the typologies of the block at col, row, the first to build first: a list's in turn along each row and column;
+    else the one furthest below its share, counted a block further if it is that of the block before it in its row
+    or column. The others follow, for a block where the first doesn't fit."""
+    k, near = sum(count.values()) + 1, {done.get((col - 1, row)), done.get((col, row - 1))}
+    order = sorted(shares, key=lambda ty: shares[ty] * k - count[ty] - (ty in near), reverse=True)
+    if isinstance(F.get('mix'), list):
+        first = F['mix'][(col + row) % len(F['mix'])]; order = [first] + [ty for ty in order if ty != first]
+    return order
+
+
+def type_for(name, typology=None):
+    """the block of a neighbourhood: its density's TYPES entry, changed by its figure or by one typology of its mix"""
+    T = dict(TYPES[CONFIG['density'][name]]); F = figure_for(name); ty = typology or F.get('typology')
+    if ty:
+        if ty not in TYPOLOGY:
+            sys.exit('figure.%s typology "%s" is not one of %s' % (name, ty, ', '.join(TYPOLOGY)))
+        T.update(TYPOLOGY[ty])
     T.update(F.get('block') or {})
     if T.get('rows'):
         T['D'] = 2 * T['d'] + float(F.get('row_gap', CONFIG['row_gap']))
@@ -272,8 +293,11 @@ GRID = {}   # neighbourhood name: (area, bearing) of its largest piece, for the 
 for p, g in nbh:
     if p['action'] == 'keep' or p['name'] not in CONFIG['density']:
         continue
-    t = CONFIG['density'][p['name']]; T = type_for(p['name']); F = figure_for(p['name'])
-    figures[p['name']] = dict(typology=F.get('typology') or 'by density (%s)' % t,
+    t = CONFIG['density'][p['name']]; F = figure_for(p['name']); MIX = mix_of(F); count = dict.fromkeys(MIX, 0)
+    TS = {ty: type_for(p['name'], ty) for ty in MIX}   # the grid's block is the largest of the mix
+    T = dict(next(iter(TS.values())), L=max(x['L'] for x in TS.values()), D=max(x['D'] for x in TS.values()))
+    figures[p['name']] = dict(typology=' + '.join('%s %d %%' % (ty, round(100 * s)) for ty, s in MIX.items())
+                              if len(MIX) > 1 else F.get('typology') or 'by density (%s)' % t,
                               orientation=F.get('orientation', 'long side'),
                               row_gap=float(F.get('row_gap', CONFIG['row_gap'])))
     land = g.intersection(site).difference(excl)
@@ -317,26 +341,28 @@ for p, g in nbh:
                 if best is None or len(bl) > len(best[0]):
                     best = (bl, ox, oy)
         bl, ox, oy = best
-        xs = sorted({x for x, _ in bl}); ys = sorted({y for _, y in bl})
+        xs = sorted({x for x, _ in bl}); ys = sorted({y for _, y in bl}); done = {}
         for x, y in bl:
-            blds, court = block_buildings(T, xs.index(x), ys.index(y))
-            got = []
-            for b, part, kw in blds:
-                cl = clip(affinity.translate(b, x, y), loc)
-                if cl is not None:
-                    got.append((cl, part, kw)); continue
-                # a part that does not fit falls back to its arms, and an arm longer than 50 m to bars
-                got += [(c, 'side', {}) for a in kw['arms'] for q in bars(a, T['gap'])
-                        for c in [clip(affinity.translate(q, x, y), loc)] if c is not None]
+            for ty in pick(F, MIX, done, count, xs.index(x), ys.index(y)):   # the next typology where one builds nothing
+                Tb = dict(TS[ty], L=T['L'], D=T['D']); blds, court = block_buildings(Tb, xs.index(x), ys.index(y))
+                got = []
+                for b, part, kw in blds:
+                    cl = clip(affinity.translate(b, x, y), loc)
+                    if cl is not None:
+                        got.append((cl, part, kw)); continue
+                    # a part that does not fit falls back to its arms, and an arm longer than 50 m to bars
+                    got += [(c, 'side', {}) for a in kw['arms'] for q in bars(a, Tb['gap'])
+                            for c in [clip(affinity.translate(q, x, y), loc)] if c is not None]
+                if got: break
             if not got:
                 continue
-            n_block += 1
+            n_block += 1; done[(xs.index(x), ys.index(y))] = ty; count[ty] += 1
             for cl, part, kw in got:
                 buildings.append(dict(geom=affinity.rotate(cl, ang, origin=o), t=t, nb=p['name'],
                                       phase=1 if p['name'] in CONFIG['phase1'] else None,
-                                      type=T['type'], use0=kw.get('use', T['use']), fl0=T['fl'] + kw.get('fl_add', 0),
+                                      type=Tb['type'], use0=kw.get('use', Tb['use']), fl0=Tb['fl'] + kw.get('fl_add', 0),
                                       col=xs.index(x), row=ys.index(y), block=n_block, part=part,
-                                      roof=kw.get('roof', T['roof']), pmax=T.get('pmax', CAP)))
+                                      roof=kw.get('roof', Tb['roof']), pmax=Tb.get('pmax', CAP)))
                 if 'floors' in kw:   # a part of fixed floors and its own use, such as a garage: not scaled to the programme
                     buildings[-1].update(fixed=True, floors=kw['floors'], use=kw['use'], gf=kw.get('ground_floor'))
             cc = affinity.translate(court, x, y).intersection(loc)
@@ -893,7 +919,10 @@ stats = dict(n_new=len(new), n_kept=len(kept), total_gfa=round(total), far_site=
              green_ha=round(green_land / 1e4, 2), cap=CAP, school_court=school_court is not None, pool=pool is not None,
              loud_commerce=sum(1 for b in new if b['use'] == 'commerce' and b['t'] != 'commercial'))
 stats['far_new'] = round(total / (stats['new_land_ha'] * 1e4), 2)
-stats['figure'] = {n: {'typology': f['typology'], 'orientation': f['orientation']} for n, f in figures.items()}
+def mixed(n):   # the blocks of each type a neighbourhood's grid kept, once the community buildings took theirs
+    G = [b for b in new if b['nb'] == n and 'row' in b]
+    return {t: len({b['block'] for b in G if b['type'] == t}) for t in sorted({b['type'] for b in G})}
+stats['figure'] = {n: {'typology': f['typology'], 'orientation': f['orientation'], 'blocks': mixed(n)} for n, f in figures.items()}
 stats['blocks'] = {t: len({b['block'] for b in new if b['type'] == t}) for t in sorted({b['type'] for b in new})}
 stats['at_cap_share'] = round(stats['at_cap'] / max(1, stats['n_home']), 2)
 stats['profiles'] = {name: figure_for(name).get('heights', 'flat') for name in CONFIG['density']}
@@ -918,8 +947,9 @@ with open(OUT + 'assumptions.md', 'w', encoding='utf8') as fh:
     for n, f in figures.items():
         o = f['orientation']
         src = (SOURCE.get('figure') or 'no source given') if 'figure' in _values else 'skill default'
-        fh.write('- %s: %s, orientation %s, row gap %g m (%s)\n'
-                 % (n, f['typology'], '%g deg' % o if isinstance(o, (int, float)) else o, f['row_gap'], src))
+        fh.write('- %s: %s (blocks: %s), orientation %s, row gap %g m (%s)\n'
+                 % (n, f['typology'], ', '.join('%d %s' % (v, k) for k, v in mixed(n).items()),
+                    '%g deg' % o if isinstance(o, (int, float)) else o, f['row_gap'], src))
     fh.write('\n## Heights\n\n')
     for n in CONFIG['density']:
         F = figure_for(n)

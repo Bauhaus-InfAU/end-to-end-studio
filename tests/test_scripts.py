@@ -229,6 +229,29 @@ def test_massing_block_types(tmp_path, typology):
         assert all(p["use"] == "parking" and p["ground_floor"] == "mobility" for p in mine)
 
 
+# ---------- a mix of block types per neighbourhood ----------
+@pytest.mark.parametrize("mix", [["perimeter", "town houses"], {"L": 2, "U": 1}])
+def test_massing_mix(tmp_path, mix):
+    out, r = synthetic_run(tmp_path, {"*": {"mix": mix}})
+    assert r.returncode == 0, r.stderr[-1500:]
+    blocks = {p["block"]: (p["type"], p["col"], p["row"]) for p, _ in housing(new_buildings_m(out)[0])}
+    name = {"perimeter": "perimeter block", "town houses": "town houses", "L": "L blocks", "U": "U block"}
+    types = [t for t, _, _ in blocks.values()]
+    assert set(types) == {name[t] for t in mix}, types   # every type of the mix is built, and no other
+    if isinstance(mix, dict):   # two L's for each U, give or take a block
+        assert abs(types.count("L blocks") - 2 * types.count("U block")) <= 2, types
+    at = {(c, r): t for t, c, r in blocks.values()}
+    nxt = [(t, at.get((c + 1, r)), at.get((c, r + 1))) for (c, r), t in at.items()]
+    assert all(t not in (a, b) for t, a, b in nxt if mix == ["perimeter", "town houses"]), at   # neighbours differ
+    stats = json.loads((out / "massing/stats.json").read_text(encoding="utf-8"))
+    assert sum(stats["figure"]["Field"]["blocks"].values()) == len(blocks)
+
+
+def test_massing_mix_unknown_stops(tmp_path):
+    out, r = synthetic_run(tmp_path, {"*": {"mix": ["perimeter", "towers"]}})
+    assert r.returncode != 0 and "towers" in r.stderr
+
+
 # ---------- heights: a profile per neighbourhood ----------
 def heights_run(tmp_path, figure=None, homes=1000):
     """the synthetic run with a figure and a home count; 1000 homes leave room under the cap, so a profile shows"""
