@@ -54,7 +54,8 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
-            'path_reach_m': 150.0}    # how far a path may carry a street end across the green to the next street
+            'path_reach_m': 150.0,
+            'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
 CONFIG = {**OPTIONAL, **DEFAULTS, **_values}
 _c = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry']).centroid
@@ -456,11 +457,14 @@ def _grow(R, core, target):
         r_ += 2.0
 
 
+ASSUMED = []   # sizes the brief did not give, named in assumptions.md and stats.json
 CB = []   # (config entry, its building or None)
 for e in CONFIG['community_buildings'] or []:
     use = e.get('use') or 'community building'
     if not e.get('gfa'):
-        WARN.append('%s has no floor area in config.json: not built' % use); CB.append((e, None)); continue
+        e = {**e, 'gfa': CONFIG['community_gfa_m2'], 'assumed': True}
+        ASSUMED.append('%s has no floor area in the brief: built at an assumed %d m2 (community_gfa_m2, %s)'
+                       % (use, e['gfa'], SOURCE.get('community_gfa_m2') or 'skill default'))
     cp, cg = centre_for(e.get('at') or use)
     R, sq = _centre_land(cp, cg); fl = int(e.get('floors') or 1)
     g, s = _fit(R, e['gfa'] / fl, float(e.get('depth') or 14), sq, _bearing(cg))
@@ -786,7 +790,7 @@ rows = [
     ('school sports (land)', round(CONFIG['school_sports']), round(spt), SOURCE.get('school_sports', 'not in the brief')),
     ('indoor pool floor area', round(CONFIG['pool_gfa']), round(poolg), SOURCE.get('pool_gfa', 'not in the brief')),
     *[((e.get('use') or 'community building') + ' floor area', round(e.get('gfa') or 0), round(gfa(b)) if b else 0,
-       SOURCE.get('community_buildings', '')) for e, b in CB],
+       ('assumed size: ' + (SOURCE.get('community_gfa_m2') or 'skill default') if e.get('assumed') else SOURCE.get('community_buildings', ''))) for e, b in CB],
     ('public green (land)', round(CONFIG['green_target']), round(green_land), SOURCE.get('green_target', 'not in the brief') + '; structure plan greens inside the site plus centre grounds, courtyards not counted'),
 ]
 with open(OUT + 'areas.csv', 'w', newline='', encoding='utf8') as fh:
@@ -809,6 +813,7 @@ stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k 
 stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
+stats['assumed_sizes'] = ASSUMED
 stats['warnings'] = WARN
 json.dump(stats, open(OUT + 'stats.json', 'w'), indent=1)
 print(json.dumps(stats, indent=1))
