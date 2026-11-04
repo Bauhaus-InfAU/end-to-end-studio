@@ -203,6 +203,32 @@ def test_massing_figure_unknown_stops(tmp_path):
     assert r.returncode != 0 and "towers" in r.stderr
 
 
+# ---------- block types made of parts ----------
+PART_OF = {"perimeter": "corner", "L": "corner", "U": "wing", "ensemble": "point", "town houses": "town house",
+           "tower": "tower", "hub": "garage"}
+
+
+@pytest.mark.parametrize("typology", list(PART_OF))
+def test_massing_block_types(tmp_path, typology):
+    out, r = synthetic_run(tmp_path, {"*": {"typology": typology}})
+    assert r.returncode == 0, r.stderr[-1500:]
+    B, _ = new_buildings_m(out)
+    for i in range(len(B)):
+        for j in range(i + 1, len(B)):
+            assert B[i][1].intersection(B[j][1]).area < 1, (i, j)
+    assert all({"block", "part", "roof", "ground_floor"} <= set(p) for p, _ in B)
+    G = housing(B)
+    assert len({p["block"] for p, _ in G}) < len(G)   # a block is made of several parts
+    mine = [p for p, _ in G if p["part"] == PART_OF[typology]]
+    assert mine, {p["part"] for p, _ in G}
+    if typology == "town houses":
+        assert all(p["floors"] <= 3 and p["roof"] == "gable" for p in mine)
+    if typology == "tower":
+        assert any(p.get("landmark") for p in mine)
+    if typology == "hub":
+        assert all(p["use"] == "parking" and p["ground_floor"] == "mobility" for p in mine)
+
+
 # ---------- heights: a profile per neighbourhood ----------
 def heights_run(tmp_path, figure=None, homes=1000):
     """the synthetic run with a figure and a home count; 1000 homes leave room under the cap, so a profile shows"""
