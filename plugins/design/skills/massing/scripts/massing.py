@@ -63,21 +63,31 @@ EPSG = CONFIG['epsg'] or utm_epsg(_c.x, _c.y)
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
 TO_LL = pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True).transform
 
-# skill defaults per density: block length, block depth, building depth, base floors, use, type
+# skill defaults per density: block length, block depth, building depth, base floors, use, type, the part and roof
+# of its buildings
 TYPES = {
-    'low':        dict(L=90, D=40, d=10, fl=3, use='housing', type='row houses', gap=6, short=0),
-    'medium':     dict(L=90, D=70, d=13, fl=4, use='housing', type='open courtyard block', gap=6, short=1),
-    'high':       dict(L=100, D=80, d=14, fl=5, use='mixed', type='courtyard block', gap=6, short=2),
-    'urban':      dict(L=100, D=80, d=14, fl=6, use='mixed', type='courtyard block', gap=6, short=2),
-    'commercial': dict(L=100, D=60, d=25, fl=3, use='commerce', type='hall', gap=7, short=0),
+    'low':        dict(L=90, D=40, d=10, fl=3, use='housing', type='row houses', gap=6, short=0, part='row', roof='gable'),
+    'medium':     dict(L=90, D=70, d=13, fl=4, use='housing', type='open courtyard block', gap=6, short=1, part='side', roof='green'),
+    'high':       dict(L=100, D=80, d=14, fl=5, use='mixed', type='courtyard block', gap=6, short=2, part='side', roof='green'),
+    'urban':      dict(L=100, D=80, d=14, fl=6, use='mixed', type='courtyard block', gap=6, short=2, part='side', roof='green'),
+    'commercial': dict(L=100, D=60, d=25, fl=3, use='commerce', type='hall', gap=7, short=0, part='hall', roof='pv'),
 }
-# a typology changes the block of a density; the figure comes from the narrative through config `figure`
+# a typology changes the block of a density; the figure comes from the narrative through config `figure`.
+# `form` names the parts block_buildings() makes; without it the buildings stand along the block's sides
 TYPOLOGY = {
-    'rows':           dict(short=0, rows=True, type='rows'),
-    'open courtyard': dict(short=1, type='open courtyard block'),
-    'courtyard':      dict(short=2, type='courtyard block'),
-    'points':         dict(short=0, rows=True, points=True, type='point buildings'),
-    'halls':          dict(short=0, d=25, gap=7, use='commerce', type='hall'),
+    'rows':           dict(short=0, rows=True, type='rows', part='row'),
+    'open courtyard': dict(short=1, type='open courtyard block', part='side'),
+    'courtyard':      dict(short=2, type='courtyard block', part='side'),
+    'points':         dict(short=0, rows=True, points=True, type='point buildings', part='point'),
+    'halls':          dict(short=0, d=25, gap=7, use='commerce', type='hall', part='hall', roof='pv'),
+    'perimeter':      dict(form='perimeter', type='perimeter block'),
+    'L':              dict(form='L', type='L blocks'),
+    'U':              dict(form='U', type='U block'),
+    'ensemble':       dict(form='ensemble', type='courtyard ensemble'),
+    'town houses':    dict(form='houses', rows=True, d=11, fl=3, pmax=3, plot=6.5, houses_max=8, use='housing',
+                           type='town houses', part='town house', roof='gable'),
+    'tower':          dict(form='tower', type='block with tower', tower=20),
+    'hub':            dict(form='hub', type='mobility hub', use='mixed', tower=20, garage_d=32, garage_fl=4),
 }
 FIGURE = CONFIG.get('figure') or {}
 
@@ -172,19 +182,82 @@ def squares(S, d, gap):
     return [(i * step, i * step + d) for i in range(n)]
 
 
-def block_buildings(T):
+def block_buildings(T, col=0, row=0):
+    """the parts of one block of L x D in its own frame, as (footprint, part, own keys: fl_add floors over the
+    block's, use, roof, floors fixed, ground_floor), and its courtyard. Blocks in odd cols and rows are mirrored,
+    so the open sides of L, U, ensemble, tower and hub blocks alternate."""
     L, D, d, g = T['L'], T['D'], T['d'], T['gap']
-    out = []
-    # points: square buildings d x d along the long sides; otherwise 30 to 50 m long
-    for a, b in (squares(L, d, g) if T.get('points') else segs(L, g)):
-        out.append(box(a, 0, b, d)); out.append(box(a, D - d, b, D))
-    inner = D - 2 * d - 2 * g
-    if T['short'] and inner >= 30:
-        out.append(box(0, d + g, d, D - d - g))
-        if T['short'] == 2:
-            out.append(box(L - d, d + g, L, D - d - g))
-    court = box(d, d, L - d, D - d) if T['short'] else box(0, d, L, D - d)
-    return out, court
+    form, G, out = T.get('form'), 2 * g, []
+    def P(q, part=T['part'], arms=None, **kw): out.append((q, part, {**kw, 'arms': [q] if arms is None else arms}))
+    def ell(lx, ly, s=(1, 1)):   # an L of arms lx along x and ly along y from the corner (0, 0), mirrored by s; and its arms
+        arms = [affinity.scale(a, *s, origin=(L / 2, D / 2)) for a in (box(0, 0, lx, d), box(0, d, d, ly))]
+        return unary_union(arms), 'corner', arms
+    if form is None:   # along the sides; points: square buildings d x d along the long sides; otherwise 30 to 50 m long
+        for a, b in (squares(L, d, g) if T.get('points') else segs(L, g)):
+            P(box(a, 0, b, d)); P(box(a, D - d, b, D))
+        inner = D - 2 * d - 2 * g
+        if T['short'] and inner >= 30:
+            P(box(0, d + g, d, D - d - g), 'end')
+            if T['short'] == 2:
+                P(box(L - d, d + g, L, D - d - g), 'end')
+        return out, (box(d, d, L - d, D - d) if T['short'] else box(0, d, L, D - d))
+    if form == 'perimeter':   # closed corners a floor higher, a gap in the middle of each short side, the long sides between
+        cx, cy = max(d + 8, L / 4), (D - g) / 2
+        if L - 2 * cx - 2 * g < 30: cx = (L - g) / 2
+        for s in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            P(*ell(cx, cy, s), fl_add=1)
+        for a, b in (segs(L - 2 * cx - 2 * g, g) if L - 2 * cx - 2 * g >= 30 else []):
+            P(box(cx + g + a, 0, cx + g + b, d)); P(box(cx + g + a, D - d, cx + g + b, D))
+    elif form == 'L':   # two L-shaped buildings facing each other, the courtyard open at the other two corners
+        for s in (1, -1):
+            P(*ell(L - d - G, D - d - G, (s, s)))
+    elif form == 'U':   # one long side and both short sides joined, open on the far long side
+        P(box(0, 0, L, d)); P(box(0, d, d, D), 'wing'); P(box(L - d, d, L, D), 'wing')
+    elif form == 'ensemble':   # an open courtyard of an L, a bar and a point, their lengths varying from block to block
+        a, b, s = [(0.6, 1.0, 0.0), (0.45, 0.6, 0.3), (0.75, 0.8, 0.15)][(col + row) % 3]
+        P(*ell(a * L, b * D))
+        P(box(d + g if b * D > D - d - g else 0, D - d, L - s * L, D))
+        if a * L + g <= L - d - 4: P(box(L - d - 4, 0, L, d + 4), 'point')
+    elif form == 'houses':   # narrow houses on their own plots, in terraces of 3 to houses_max along both long sides
+        w = T['plot']
+        for a, b in segs(L, g, 3 * w, T['houses_max'] * w):
+            n = max(1, round((b - a) / w)); s = (b - a) / n
+            for i in range(n):
+                P(box(a + i * s, 0, a + i * s + s, d)); P(box(a + i * s, D - d, a + i * s + s, D))
+    elif form == 'tower':   # an L along one long and one short side, a tower on the free corner, a bar between
+        P(*ell(L, D - d - G))
+        P(box(L - T['tower'], D - T['tower'], L, D), 'tower', fl_add=2, roof='flat')
+        if L - T['tower'] - 2 * G - d >= 15: P(box(d + G, D - d, L - T['tower'] - G, D))
+    elif form == 'hub':   # a garage with mobility on its ground floor and a PV roof, a tower beside it, a bar on the far side
+        gd = T['garage_d']
+        P(box(0, 0, min(L - T['tower'] - G, 60), gd), 'garage', use='parking', floors=int(T['garage_fl']), roof='pv',
+          ground_floor='mobility', arms=[])   # a garage that doesn't fit is left out, not made into homes
+        P(box(L - T['tower'], 0, L, T['tower']), 'tower', fl_add=2, roof='flat')
+        if D - d - gd >= g: P(box(0, D - d, L, D))
+    else:
+        sys.exit('typology form "%s" is not one of perimeter, L, U, ensemble, houses, tower, hub' % form)
+    keep = []   # a part that would overlap one before it (block sizes from the config) is left out
+    for q, part, kw in out:
+        if all(q.intersection(k[0]).area < 1 for k in keep): keep.append((q, part, kw))
+    m_ = lambda q: affinity.scale(q, -1 if col % 2 else 1, -1 if row % 2 else 1, origin=(L / 2, D / 2))
+    return ([(m_(q), part, {**kw, 'arms': [m_(a) for a in kw['arms']]}) for q, part, kw in keep],
+            m_(box(d, d, L - d, D - d) if form != 'houses' else box(0, d, L, D - d)))
+
+
+def clip(q, land):
+    """a part cut to its land: the largest piece, if it keeps 60 % of the part and 150 m2 (90 % of a smaller part)"""
+    cl = q.intersection(land)
+    if cl.geom_type == 'MultiPolygon':
+        cl = max(cl.geoms, key=lambda r: r.area)
+    return cl if cl.geom_type == 'Polygon' and cl.area >= 0.6 * q.area and cl.area >= min(150, 0.9 * q.area) else None
+
+
+def bars(q, g):
+    """an arm (a box along the block's axes) longer than 50 m as bars of 30 to 50 m with gaps g, else the arm itself"""
+    x0, y0, x1, y1 = q.bounds
+    if max(x1 - x0, y1 - y0) <= 50: return [q]
+    if x1 - x0 >= y1 - y0: return [box(x0 + a, y0, x0 + b, y1) for a, b in segs(x1 - x0, g)]
+    return [box(x0, y0 + a, x1, y0 + b) for a, b in segs(y1 - y0, g)]
 
 
 def setback(t):
@@ -194,7 +267,7 @@ def setback(t):
     return max(0.0, max(CONFIG['setback_min_m'], CONFIG['setback_h_factor'] * H) - CONFIG['sec_street_w'] / 2)
 
 
-buildings, courts, sec_streets, figures = [], [], [], {}
+buildings, courts, sec_streets, figures, n_block = [], [], [], {}, 0
 GRID = {}   # neighbourhood name: (area, bearing) of its largest piece, for the buildings on its centres
 for p, g in nbh:
     if p['action'] == 'keep' or p['name'] not in CONFIG['density']:
@@ -246,24 +319,29 @@ for p, g in nbh:
         bl, ox, oy = best
         xs = sorted({x for x, _ in bl}); ys = sorted({y for _, y in bl})
         for x, y in bl:
-            blds, court = block_buildings(T)
+            blds, court = block_buildings(T, xs.index(x), ys.index(y))
             got = []
-            for b in blds:
-                bb = affinity.translate(b, x, y)
-                cl = bb.intersection(loc)
-                if cl.geom_type == 'MultiPolygon':
-                    cl = max(cl.geoms, key=lambda q: q.area)
-                if cl.geom_type == 'Polygon' and cl.area >= 0.6 * bb.area and cl.area >= 150:
-                    got.append(cl)
+            for b, part, kw in blds:
+                cl = clip(affinity.translate(b, x, y), loc)
+                if cl is not None:
+                    got.append((cl, part, kw)); continue
+                # a part that does not fit falls back to its arms, and an arm longer than 50 m to bars
+                got += [(c, 'side', {}) for a in kw['arms'] for q in bars(a, T['gap'])
+                        for c in [clip(affinity.translate(q, x, y), loc)] if c is not None]
             if not got:
                 continue
-            for cl in got:
+            n_block += 1
+            for cl, part, kw in got:
                 buildings.append(dict(geom=affinity.rotate(cl, ang, origin=o), t=t, nb=p['name'],
                                       phase=1 if p['name'] in CONFIG['phase1'] else None,
-                                      type=T['type'], use0=T['use'], fl0=T['fl'], col=xs.index(x), row=ys.index(y)))
+                                      type=T['type'], use0=kw.get('use', T['use']), fl0=T['fl'] + kw.get('fl_add', 0),
+                                      col=xs.index(x), row=ys.index(y), block=n_block, part=part,
+                                      roof=kw.get('roof', T['roof']), pmax=T.get('pmax', CAP)))
+                if 'floors' in kw:   # a part of fixed floors and its own use, such as a garage: not scaled to the programme
+                    buildings[-1].update(fixed=True, floors=kw['floors'], use=kw['use'], gf=kw.get('ground_floor'))
             cc = affinity.translate(court, x, y).intersection(loc)
             if cc.area > 200:
-                courts.append(affinity.rotate(cc, ang, origin=o).difference(unary_union([affinity.rotate(q, ang, origin=o) for q in got])))
+                courts.append(affinity.rotate(cc, ang, origin=o).difference(unary_union([affinity.rotate(q, ang, origin=o) for q, _, _ in got])))
         # secondary streets: grid lines between kept blocks
         lines = []
         for x in xs[1:]:
@@ -615,10 +693,12 @@ for name in {b['nb'] for b in buildings if not b.get('fixed')}:
             if b.get('row', 0) % 2: b['base'] -= 1
     for b in grp:
         b['base'] = max(1, b['base'])
-        b['fmin'] = int(F.get('floors_min', 1)); b['fmax'] = int(F.get('floors_max', CAP))
+        b['fmin'] = int(F.get('floors_min', 1)); b['fmax'] = min(int(F.get('floors_max', CAP)), b.get('pmax', CAP))
 
 free =[b for b in buildings if not b.get('fixed')]
-landmarks = sorted([b for b in free if b['use'] == 'mixed'], key=lambda b: b['geom'].distance(main_centre))[:2]
+# the landmarks: the two towers nearest the main centre, else the two mixed buildings nearest it
+landmarks = sorted([b for b in free if b['use'] == 'mixed' or b.get('part') == 'tower'],
+                   key=lambda b: (b.get('part') != 'tower', b['geom'].distance(main_centre)))[:2]
 for b in landmarks: b['landmark'] = True
 
 
@@ -649,11 +729,14 @@ apply(com_grp, 1.0)
 res_target = CONFIG['homes_target'] * CONFIG['m2_per_home']
 f_res = solve(home_grp, res_gfa, res_target)
 # daycares: housing building nearest the centre, then those furthest from each other (in quiet-ish, not loud land)
-dc_cand = [b for b in home_grp if not b['geom'].intersects(loud)]
+dc_cand = [b for b in home_grp if not b['geom'].intersects(loud)
+           and CONFIG['daycare_gfa'] / b['geom'].area < b.get('fmax', CAP)]   # a building that holds it under its cap
 day = []
+if len(dc_cand) < CONFIG['daycares']:
+    WARN.append('only %d of the %d daycares find a building that holds them under its cap' % (len(dc_cand), CONFIG['daycares']))
 if dc_cand and CONFIG['daycares'] > 0:
     day.append(min(dc_cand, key=lambda b: b['geom'].distance(main_centre)))
-    while len(day) < CONFIG['daycares']:
+    while len(day) < min(CONFIG['daycares'], len(dc_cand)):
         day.append(max([b for b in dc_cand if b not in day], key=lambda b: min(b['geom'].distance(d['geom']) for d in day)))
 for b in day:
     b['daycare_floors'] = math.ceil(CONFIG['daycare_gfa'] / b['geom'].area)
@@ -706,8 +789,12 @@ def add(kind, geom, **props):
 
 
 for b in buildings:
+    if 'block' not in b: n_block += 1; b['block'] = n_block   # a community building is a block of its own
+    u = b['use']   # the ground floor: a part's own (a garage's mobility), the shops of a mixed building, a daycare, else the use
+    gf = b.get('gf') or ('commerce' if u.startswith('mixed') else 'daycare' if 'daycare' in u else u)
     pr = dict(floors=b['floors'], height_m=round(b['floors'] * FH, 1), use=b['use'], type=b['type'], existing=False,
-              footprint_m2=round(b['geom'].area), gfa_m2=round(gfa(b)), neighbourhood=b['nb'])
+              footprint_m2=round(b['geom'].area), gfa_m2=round(gfa(b)), neighbourhood=b['nb'], block=b['block'],
+              part=b.get('part', 'building'), roof=b.get('roof', 'flat'), ground_floor=gf)
     if b.get('phase'): pr['phase'] = b['phase']
     if b.get('landmark'): pr['landmark'] = True
     if b.get('daycare_floors'): pr['daycare_floors'] = b['daycare_floors']
@@ -807,6 +894,7 @@ stats = dict(n_new=len(new), n_kept=len(kept), total_gfa=round(total), far_site=
              loud_commerce=sum(1 for b in new if b['use'] == 'commerce' and b['t'] != 'commercial'))
 stats['far_new'] = round(total / (stats['new_land_ha'] * 1e4), 2)
 stats['figure'] = {n: {'typology': f['typology'], 'orientation': f['orientation']} for n, f in figures.items()}
+stats['blocks'] = {t: len({b['block'] for b in new if b['type'] == t}) for t in sorted({b['type'] for b in new})}
 stats['at_cap_share'] = round(stats['at_cap'] / max(1, stats['n_home']), 2)
 stats['profiles'] = {name: figure_for(name).get('heights', 'flat') for name in CONFIG['density']}
 stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k in sorted({kind for kind, _ in street_ends})}
