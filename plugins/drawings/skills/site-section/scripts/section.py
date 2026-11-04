@@ -83,8 +83,9 @@ OUT = Path(ARGS.proposal) / 'site-section'
 OUT.mkdir(parents=True, exist_ok=True)
 style_path = ARGS.style or Path(ARGS.proposal) / 'drawing-graphics' / 'style.json'
 USED_STYLE = bool(style_path) and os.path.exists(style_path)
-if USED_STYLE:
-    STYLE.update(json.load(open(style_path, encoding='utf-8')))
+if USED_STYLE:   # the standard's keys this drawing has, by name, never merged: its other keys (a `tree`, `diagram`) aren't the section's
+    STD = json.load(open(style_path, encoding='utf-8'))
+    STYLE.update({k: STD[k] for k in STYLE if k in STD})
 S = STYLE
 FS = max(3.2, float(S.get('text', 3.2)))                 # text height in mm, never below 3.2
 FT = max(FS, float(S.get('title', FS * 1.6)))
