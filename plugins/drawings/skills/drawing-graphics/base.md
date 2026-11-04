@@ -44,7 +44,7 @@ How a competition entry's drawings and panels look when nothing else is decided.
 
 - Margins of 15 mm, a grid of columns with 6 mm gutters, every box aligned to it.
 - The storyline runs from the top left. Each panel has one main drawing, large.
-- Captions sit under their drawings. Empty space is allowed; filling it with enlarged diagrams is not.
+- Captions sit under their drawings. Never fill space with enlarged diagrams.
 - The panel title and the entry's title stay at the same place and size on every panel.
 
 ## Renders and perspectives
