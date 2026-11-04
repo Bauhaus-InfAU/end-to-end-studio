@@ -1,0 +1,7 @@
+{
+ "m2_per_home": {"value": null, "source": "<brief file> p. N, else the massing's own m2_per_home (massing/config.json), so both count homes alike"},
+ "residents_per_home": {"value": null, "source": "<brief file> p. N, else the programme's residents / homes (programme/programme.csv)"},
+ "min_homes": {"value": {}, "source": "<brief file> p. N: the homes a phase must hold at least, as {\"1\": N}; may stay empty"},
+ "first": {"value": [], "source": "<brief file> p. N: what must be built by a phase, as [{\"what\": \"<a use or a centre's holds>\", \"phase\": 1}]; may stay empty"},
+ "phase_of": {"value": {}, "source": "only where the structure plan gives no phase or this skill changes one: {\"<neighbourhood or centre>\": phase}, with the reason"}
+}

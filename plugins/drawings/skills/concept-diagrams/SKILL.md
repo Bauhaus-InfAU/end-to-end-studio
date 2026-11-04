@@ -5,7 +5,7 @@ description: Draws three to six concept pictograms that tell a proposal's centra
 
 # Concept diagrams
 
-Reads: narrative, structure-plan, drawing-graphics, panel-layout
+Reads: narrative, structure-plan, phasing, drawing-graphics, panel-layout
 
 Turn the narrative's central idea into three to six pictograms, each showing one architectural move that reads without its caption. You translate; you don't design: take the moves from `narrative/narrative.md`, in its words and order, and their places from the site data, the structure plan's GeoJSON and any other GeoJSON other skills left in the proposal folder. The rest is conceptual geometry, as simple as the idea allows: add no use, height, position or route the narrative doesn't give; people and use signs may show a narrative move, marked illustrative. Name what you assumed in `summary.md`. With no narrative, draw nothing; with no site, draw schematically; say so.
 
