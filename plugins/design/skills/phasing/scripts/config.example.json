@@ -1,0 +1,23 @@
+{
+ "phase_count": {"value": null, "source": "<brief file> p. N, or assumption: why (the brief leaves it open)"},
+ "first_phase": {"value": null, "source": "<brief file> p. N: the structure plan's neighbourhood names the first phase is, or \"not stated\""},
+ "household_size": {"value": null, "source": "<brief file> p. N, or \"from programme\" (programme.csv residents / homes), or a cited average"},
+ "requirements": {"value": [
+  {"phase": 1, "measure": "homes", "op": ">=", "value": null, "source": "<brief file> p. N"},
+  {"phase": "each", "measure": "access", "op": ">=", "value": 1.0, "source": "<brief file> p. N, or assumption: every home is reached"}
+ ], "source": "<brief file> p. N. phase: a number, \"each\" or \"all\". measure: homes, residents, floor_area:<use word>, facility:<facility name>, walk:<service name>, access, car, emergency, open_space_per_resident_m2, or anything else (for Claude to judge). op: >=, <=, ==, >, <. value: a number, a share 0-1 for walk/access/car/emergency, or \"not stated\""},
+ "facility_words": {"value": {"<facility name>": ["<word in the massing's use>"]}, "source": "the massing's use words (massing.geojson), or assumption: why"},
+ "services": {"value": [
+  {"name": "<service name>", "facility": "<facility name, or stop>", "walk_m": null, "by_phase": null,
+   "places_per_provider": null, "places_per_resident": null, "source": "<brief file> p. N, or a cited norm"}
+ ], "source": "<brief file> p. N: the everyday services each phase needs. by_phase: the phase it must work by, or \"not stated\". places_*: only where the brief gives both, else null"},
+ "open_space_uses": {"value": ["park", "square", "garden", "playground"], "source": "assumption: the open-space uses that count as open space for residents, and why"},
+ "open_space_per_resident_m2": {"value": null, "source": "<brief file> p. N, or \"not stated\""},
+ "emergency": {"value": null, "source": "<brief file> p. N or a regulation and its clause: {\"max_distance_m\", \"min_width_m\", \"second_access\": true/false}, or \"not stated\" (never a standard of your own)"},
+ "existing_residents": {"value": null, "source": "<brief file> p. N, or a cited source: the residents of the buildings that stay (0 when none hold homes), or \"not stated\""},
+ "entrance_max_m": {"value": null, "source": "assumption: how far a footprint may lie from a street or path and still be reached, and why"},
+ "snap_m": {"value": null, "source": "assumption: how far apart two street ends may be and still be joined, and why"},
+ "near_site_m": {"value": null, "source": "assumption: how far a layer may reach beyond the site and still belong to it"},
+ "scale_large": {"value": null, "source": "<brief file> p. N: the phasing plan's scale when large, as a number (2000 for 1:2,000)"},
+ "scale_small": {"value": null, "source": "<brief file> p. N: the scale when small"}
+}
