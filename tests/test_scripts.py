@@ -180,7 +180,7 @@ def test_massing_figure_rows_bearing(tmp_path):
     assert r.returncode == 0, r.stderr[-1500:]
     B, _ = new_buildings_m(out)
     assert len(B) >= 4
-    for p, g in B:
+    for p, g in housing(B):   # the school now fits on its centre, as the square gives way to what the centre holds
         assert p["type"] == "rows"
         brg = sides(g)[2]
         assert min(abs(brg - 30), 180 - abs(brg - 30)) <= 3, brg

@@ -49,7 +49,7 @@ OPTIONAL = {'school_gfa': 0, 'school_yard': 0, 'school_sports': 0, 'pool_gfa': 0
             'daycare_gfa': 0, 'daycares': 0, 'food_market': '', 'figure': {}, 'homes_target_is_minimum': False,
             'community_buildings': []}
 DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.0, 'keep_buffer': 4.0,
-            'tree_step': 12.0, 'tree_off': 4.0, 'square': 30.0, 'route_bonus_m': 40.0,
+            'tree_step': 12.0, 'tree_off': 4.0, 'square_main_m': 60.0, 'square_local_m': 30.0, 'route_bonus_m': 40.0,
             'centre_bonus_m': 150.0, 'green_minus_m': 15.0, 'epsg': None,
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
@@ -382,6 +382,24 @@ def centre_for(word):
     return c
 
 
+def centre_square(p, g):
+    """the square of a centre: square_main_m on the main centre, square_local_m on a local one, kept inside the
+    centre and to the land left once what it holds (community buildings, school, pool) has taken its share"""
+    need = 0.0
+    for e in CONFIG['community_buildings'] or []:
+        m_ = _match(e.get('at') or e.get('use') or '')
+        if m_ is not None and m_[0] is p:
+            need += max(e.get('ground_m2') or 0, (e.get('gfa') or 0) / max(1, int(e.get('floors') or 1)))
+    for key, share in (('school', CONFIG['school_gfa'] / 3 + CONFIG['school_yard'] + CONFIG['school_sports']), ('pool', CONFIG['pool_plot'])):
+        m_ = _match(key) if share > 0 else None
+        if m_ is not None and m_[0] is p: need += share
+    side = CONFIG['square_main_m'] if p.get('level') == 'main' else CONFIG['square_local_m']
+    side = min(side, math.sqrt(0.4 * g.area), math.sqrt(max(g.area - need, 0.0)))
+    q = g.representative_point()
+    while side > 10 and not box(q.x - side / 2, q.y - side / 2, q.x + side / 2, q.y + side / 2).within(g.buffer(1)): side -= 5
+    return box(q.x - side / 2, q.y - side / 2, q.x + side / 2, q.y + side / 2)
+
+
 def _bearing(c):
     """the grid bearing of the built neighbourhood the centre lies in, else 0"""
     q = c.representative_point()
@@ -391,10 +409,9 @@ def _bearing(c):
     return 0.0
 
 
-def _centre_land(c):
+def _centre_land(p, c):
     """a centre minus its square, the streets, the kept buildings and what community buildings already took; and its square"""
-    q = c.representative_point(); h = CONFIG['square'] / 2
-    sq = box(q.x - h, q.y - h, q.x + h, q.y + h)
+    sq = centre_square(p, c)
     used = unary_union([Polygon()] + [g for _, _, g in community] + [b['geom'].buffer(2) for b in buildings if b.get('fixed')])
     return c.difference(sq).difference(street_area).difference(
         unary_union([Polygon()] + [g.buffer(CONFIG['keep_buffer']) for _, g in kept])).difference(used), sq
@@ -445,7 +462,7 @@ for e in CONFIG['community_buildings'] or []:
     if not e.get('gfa'):
         WARN.append('%s has no floor area in config.json: not built' % use); CB.append((e, None)); continue
     cp, cg = centre_for(e.get('at') or use)
-    R, sq = _centre_land(cg); fl = int(e.get('floors') or 1)
+    R, sq = _centre_land(cp, cg); fl = int(e.get('floors') or 1)
     g, s = _fit(R, e['gfa'] / fl, float(e.get('depth') or 14), sq, _bearing(cg))
     if g is None:
         WARN.append('no room for %s on %s' % (use, cp.get('name'))); CB.append((e, None)); continue
@@ -464,7 +481,7 @@ if CONFIG['school_gfa'] > 0:
     if sc is None:
         WARN.append('no centre holds a school: it takes the courtyard block nearest the main centre')
     else:
-        R, sq = _centre_land(sc[1]); sfl = 3   # own assumption, as on a courtyard block
+        R, sq = _centre_land(*sc); sfl = 3   # own assumption, as on a courtyard block
         sg, s = _fit(R, CONFIG['school_gfa'] / sfl, TYPES['high']['d'], sq, _bearing(sc[1]))
         if sg is None:
             WARN.append('no room for the school on %s: it takes the courtyard block nearest the main centre' % sc[0].get('name'))
@@ -493,7 +510,7 @@ if CONFIG['pool_gfa'] > 0:
     if pc_ is None:
         WARN.append('no centre holds a pool: it takes the courtyard block nearest the main centre')
     else:
-        R, sq = _centre_land(pc_[1])
+        R, sq = _centre_land(*pc_)
         hall, s = _fit(R, CONFIG['pool_gfa'] / 2, 30.0, sq, _bearing(pc_[1]))   # own: two storeys of hall height, 30 m deep
         if hall is None:
             WARN.append('no room for the indoor pool on %s: it takes the courtyard block nearest the main centre' % pc_[0].get('name'))
@@ -712,8 +729,7 @@ for w in water:
     add('open-space', w, use='water')
 sq_all = []
 for p, g in centres:
-    c = g.representative_point()
-    sq = box(c.x - CONFIG['square'] / 2, c.y - CONFIG['square'] / 2, c.x + CONFIG['square'] / 2, c.y + CONFIG['square'] / 2)
+    sq = centre_square(p, g)
     sq_all.append(sq)
     add('open-space', sq, use='square', name=p['name'])
     rest = g.difference(sq).difference(COMMUNITY_LAND)
