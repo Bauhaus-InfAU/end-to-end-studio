@@ -24,6 +24,20 @@ def test_no_font_below_12_px():
     assert not re.search(r"font-size:\s*\.\d+em", h)          # relative sizes get a 12 px floor too
 
 
+def test_big_number_with_its_source_in_one_line(tmp_path):
+    """A key number is big type with its source in one line; its fonts keep the 12 px floor; no source is a problem."""
+    num = {"id": "n", "type": "number", "value": "1,000", "text": "homes", "source": "massing, summary", "pt": 5}
+    h = page([num])
+    sizes = [float(v) for v in re.findall(r"font-size:\s*([\d.]+)pt", h)]
+    assert min(sizes) >= 9 and 'class="big"' in h and "1,000" in h and "massing, summary" in h
+    assert re.search(r"\.box\.number \.src \{[^}]*white-space:\s*nowrap", h)
+    bare = {"id": "m", "type": "number", "value": "1/3", "text": "sealed"}
+    results = [{"n": 1, "placed": [(num, {"x": 15, "y": 15, "w": 90, "h": 30}), (bare, {"x": 15, "y": 50, "w": 90, "h": 30})],
+                "unplaced": [], "checks": [], "story": "", "paths": []}]
+    text = panels.write_report(tmp_path, {}, {"width_mm": 594, "height_mm": 841}, results, [], {"n", "m"}, [], {"missing": []}, None, 96)
+    assert text.count("a number without its source") == 1 and "Problems: 1." in text
+
+
 def test_wide_text_in_columns():
     h = page([{"id": "t", "type": "text", "text": "a"}])
     assert re.search(r"\.box\.text > div \{[^}]*column-width:\s*\d+em", h)

@@ -23,7 +23,8 @@ What `scripts/panels.py render` reads. All lengths in mm, measured from the pane
         "scale_bar": true, "caption": "Site plan"},
        {"id": "idea", "type": "text", "heading": "...", "text": "paragraph\n\nparagraph", "w": 180, "h": 90},
        {"id": "figures", "type": "figures", "heading": "Key figures", "w": 180, "h": 60,
-        "rows": [["label", "value with unit", "source"]]}
+        "rows": [["label", "value with unit", "source"]]},
+       {"id": "homes", "type": "number", "value": "1,000", "text": "homes", "source": "massing, summary", "w": 90, "h": 30}
      ]}
   ]
 }
@@ -33,4 +34,5 @@ What `scripts/panels.py render` reads. All lengths in mm, measured from the pane
 - Items without `x` and `y` flow left to right, top to bottom, in the order given, below the reserved areas, or from `format.content_top_mm` if you give it. Give `x` and `y` to fix one.
 - A drawing with a `scale` (the brief's) is printed at it, rescaled from the scale it is drawn at (its file name such as `_1-2000`, else its summary, or `drawn_at`); `w` is then ignored. `"frame": {"w": 0, "h": 0}` clips it to that box; `"crop": {"focus": [0.5, 0.5]}` puts that point of the drawing (shares of its width and height) at the frame's centre, `{"offset_mm": [0, 0]}` shifts it left and up instead. `"scale": "auto"` picks the largest usual scale at which it fits its frame (default: the content area), never one that brings its text under 12 px, and crops the rest. A drawing without a scale is sized by `w` or `h`. A drawing with a `frame` whose `file` doesn't exist yet prints as a grey frame labelled with its id, scale and `shows`, and the report names it as an empty frame; without a `frame` it is missing. Drawing skills read `frame`, `scale`, `file` and `shows` to draw to it. `scale_bar: true` adds a graphic scale under a drawing; `"scale_bars": "all"` in `format` adds one under every drawing at a scale that has none of its own (never a perspective), and `scale_bar: false` keeps one off. The printed scale is added to the caption, or replaces the scale written there.
 - A text or figures box has the `w` and `h` you give (default: full width, 60 mm). `pt` and `weight` set the size of a text item's text. If its text is longer, the report says how much height it needs.
+- A `number` is one key figure as big type: `value` in the accent at `pt` (default twice the heading size), `text` under it, and its `source` in one line under that. The report names a number without a source, and a source too long for one line as an overflow.
 - `required` lists what the brief asks to see, with the `id` of the item that shows it, or no `id` if nothing does. `missing` is only for what the scan didn't already find missing; `notes` is for anything else the report should say, such as two numbers that don't agree.
