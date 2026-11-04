@@ -2,6 +2,7 @@
 shapely>=2.0     # geometry: footprints, buffers, sections
 pyproj>=3.6      # coordinates: WGS84 to metres and back
 numpy
+Pillow>=10.1    # side-by-side sheets of the references and a run
 trimesh          # 3D, when a skill needs a mesh
 requests         # downloads: OpenStreetMap, image APIs
 networkx         # street networks: walking distances, car links
