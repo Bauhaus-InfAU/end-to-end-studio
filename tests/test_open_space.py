@@ -122,6 +122,16 @@ def test_trees_keep_off_open_land(tmp_path):
         assert not any(z.intersects(g.buffer(p["crown_m"] / 2 - 0.5)) for z in no), (p, g.x - X0, g.y - Y0)
 
 
+def test_plan_fills_its_frame(sloped, tmp_path):
+    """A frame in the panels' plan: the plan is that size at that scale, its legend inside, and stdout stays JSON."""
+    root, _, flat_dir = sloped
+    write(tmp_path / "panel-layout/layout-plan.json", {"panels": [{"items": [
+        {"file": "open-space/open-space_1-5000.svg", "scale": "1:5000", "frame": {"w": 150, "h": 100}}]}]})
+    run(root, flat_dir, tmp_path / "open-space")
+    svg = (tmp_path / "open-space/open-space_1-5000.svg").read_text(encoding="utf-8")
+    assert 'width="150.0mm" height="100.0mm"' in svg and 'viewBox="0 0 750.0 500.0"' in svg
+
+
 def test_without_terrain_says_so(sloped, tmp_path):
     root, _, flat_dir = sloped
     stats, basins, notes = run(root, flat_dir, tmp_path / "flat")

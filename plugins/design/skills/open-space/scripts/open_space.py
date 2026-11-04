@@ -10,7 +10,7 @@ the low ground and the rain runs downhill to them; without, they sit by shape an
 which the skill writes from the brief and the programme; see ../SKILL.md for its keys. Needs shapely and pyproj,
 and Pillow to read a GeoTIFF; the PNG needs Chrome or Edge (or Chromium) for a headless screenshot.
 """
-import argparse, csv, heapq, json, math, os, shutil, subprocess, sys
+import argparse, csv, heapq, json, math, os, re, shutil, subprocess, sys, textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -84,7 +84,8 @@ DEFAULTS = {
 FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "existing": "#d0d0d0", "street": "#f2f2f2",
                   "park": "#dcdcdc", "kept": "#b5b5b5", "water": "#7f7f7f", "accent": "#1f6fb2",
                   "lawn": "#ececec", "meadow": "#dcdcdc", "wet-meadow": "#cfd6dc", "grove": "#bdbdbd", "path": "#fff",
-                  "font": "Helvetica, Arial, sans-serif", "line": 0.25, "outline": 0.6}
+                  "font": "Helvetica, Arial, sans-serif", "line": 0.25, "outline": 0.6, "text": 3.2, "title": 4.2,
+                  "context": "#e4e4e4"}
 
 PUBLIC_USES = {"park", "square", "playground", "sports", "water"}
 
@@ -119,6 +120,8 @@ def main():
     ap.add_argument("--keep-free")  # GeoJSON of the brief's strips and protected land; lines carry `width_m`
     ap.add_argument("--style")
     ap.add_argument("--streets", help="the streets skill's streets.geojson; its surface replaces the buffered lines")
+    ap.add_argument("--frame", nargs=2, type=float, metavar=("W", "H"), help="without a frame in the panels' plan: the plan's frame, mm")
+    ap.add_argument("--centre", nargs=2, type=float, metavar=("LON", "LAT"), help="the frame's centre (default: the site's)")
     a = ap.parse_args()
 
     cfg_in = load_json(a.config)
@@ -135,6 +138,9 @@ def main():
         cfg[k] = cfg_in[k]
     std = load_json(a.style) if a.style else {}   # the standard's keys this plan has, by name, never merged
     style = {k: std.get(k, v) for k, v in FALLBACK_STYLE.items()}
+    dg = std.get("diagram") if isinstance(std.get("diagram"), dict) else {}   # a thematic plan's weights and text sizes, px
+    style.update({k: dg[d] * 25.4 / 96 for k, d in (("line", "line"), ("outline", "outline"), ("text", "label_size"),
+                                                    ("title", "title_size")) if d in dg})
 
     site_ll = unary_union([shape(f["geometry"]) for f in load(a.site)])
     to_m, to_ll = utm_for(site_ll.centroid.x, site_ll.centroid.y)
@@ -491,8 +497,10 @@ def main():
     src_md = Path(a.layers) / "SOURCES.md"
     cfg["map_credit"] = next((l.lstrip("> ").split(" (")[0].strip() for l in (src_md.read_text(encoding="utf-8").splitlines() if src_md.exists() else [])
                               if "©" in l), "")
+    frame = plan_frame(out.resolve().parent) or ((*a.frame, a.centre, None) if a.frame else None)
+    ctx = ([g for _, g in layer("buildings") if not g.intersects(site)], [g for _, g in layer("streets")]) if frame else None
     draw(out, site, buildings, old_bld, streets, kept_u, water, parks, playgrounds, basins, links, cfg, style, to_ll,
-         covers, pools, paths, boardwalks, keep_free, trees)
+         covers, pools, paths, boardwalks, keep_free, trees, frame, ctx)
     print(json.dumps({"parks": len(parks), "park_m2": round(park_a), "need_green_m2": round(need_green),
                       "trees": {g: sum(1 for t in trees if t[1] == g) for g in sorted({t[1] for t in trees})},
                       "trees_planted": len(trees) - n_old,
@@ -846,12 +854,26 @@ def nearest_sealed(park, sealed):
     return Point(shortest_line(park, sealed).coords[0])
 
 
+def plan_frame(proposal):
+    """(w, h mm, centre [lon, lat] or None, scale or None) of this plan's frame in the panels' plan, else None."""
+    p = next((q for q in (proposal / "panel-layout" / n for n in ("layout-plan.json", "layout.json")) if q.exists()), None)
+    for it in [it for q in (load_json(p).get("panels", []) if p else []) for it in q.get("items", [])]:
+        fr, m = it.get("frame") or {}, re.search(r"1\s*:\s*([\d,. ]+)", str(it.get("scale") or ""))
+        if str(it.get("file") or "").replace("\\", "/").startswith("open-space/") and fr.get("w") and fr.get("h"):
+            return float(fr["w"]), float(fr["h"]), fr.get("centre"), int(re.sub(r"\D", "", m.group(1))) if m else None
+
+
 def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds, basins, links, cfg, s, to_ll,
-         covers, pools, paths, boardwalks, keep_free, trees=()):
-    x0, y0, x1, y1 = site.buffer(80).bounds
-    scale = cfg["scale"]
-    wmm, hmm = (x1 - x0) / scale * 1000, (y1 - y0) / scale * 1000
-    head = 40 * scale / 1000  # 40 mm for the legend, in metres
+         covers, pools, paths, boardwalks, keep_free, trees=(), frame=None, ctx=None):
+    scale = (frame and frame[3]) or cfg["scale"]
+    k = scale / 1000  # metres per mm
+    if frame:   # the frame's size at its scale, around its centre, else the site's; the legend inside it
+        c = Point(to_ll.transform(*frame[2], direction="INVERSE")) if frame[2] else shapely.box(*site.bounds).centroid
+        x0, y0, x1, y1 = c.x - frame[0] * k / 2, c.y - frame[1] * k / 2, c.x + frame[0] * k / 2, c.y + frame[1] * k / 2
+    else:
+        x0, y0, x1, y1 = site.buffer(80).bounds
+    wmm = (x1 - x0) / k
+    head = 0 if frame else 40 * k  # 40 mm for the legend, in metres
     H = (y1 - y0) + head
 
     def path(g):
@@ -867,7 +889,6 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
                 d.append(path(p))
         return " ".join(d)
 
-    k = scale / 1000  # metres per mm
     lw = lambda mm: f"{mm * k:.2f}"
     els = []
 
@@ -876,6 +897,10 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
             return
         els.append(f'<path d="{path(g)}" fill="{fill}" stroke="{stroke}" stroke-width="{lw(w)}" fill-rule="evenodd" {extra}/>')
 
+    if ctx:   # in a frame, the city around the site, pale, as the other thematic plans draw it
+        win = shapely.box(x0, y0, x1, y1)
+        shape_el(unary_union(ctx[1]).intersection(win).difference(site), "none", s["context"], s["line"])
+        shape_el(unary_union(ctx[0]).intersection(win), s["context"])
     shape_el(streets, s["street"], s["ink"], s["line"] / 2)
     shape_el(unary_union(parks) if parks else None, s["park"])
     for name, g in covers.items():
@@ -901,17 +926,26 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
     for g, _ in links:
         shape_el(g, "none", s["accent"], s["outline"] * 1.5, extra=f'stroke-dasharray="{lw(2)} {lw(1.2)}"')
     shape_el(keep_free, "none", s["ink"], s["line"], extra=f'stroke-dasharray="{lw(0.6)} {lw(0.6)}"')
-    shape_el(site.boundary, "none", s["ink"], s["outline"] * 1.5, extra=f'stroke-dasharray="{lw(4)} {lw(1.5)}"')
+    shape_el(site.boundary, "none", s["ink"], s["outline"], extra=f'stroke-dasharray="{lw(3)} {lw(1.5)}"')
 
-    fs = 3.2 * k
-    ly = (y1 - y0) + 8 * k
+    fs = max(3.2, s["text"]) * k
     legend = [("lawn", s["lawn"], ""), ("meadow", s["meadow"], ""), ("wet meadow", s["wet-meadow"], ""),
               ("grove", s["grove"], ""), ("kept green", s["kept"], ""), ("water", s["water"], ""),
               ("retention, shallow", s["accent"], 'fill-opacity="0.35"'),
               ("deep core", s["accent"], 'fill-opacity="0.68"'), ("playground", "none", ""),
               ("green link", None, "")] + ([("kept free", "none", "")] if not keep_free.is_empty else []) \
         + ([("tree", tree_fill, "")] if trees else [])
-    lx = 6 * k
+    credit = textwrap.wrap(cfg.get("map_credit", ""), 32) if frame else []
+    if frame:   # a box in the corner where it hides least of the site: the title, one entry a row, the scale, the credit
+        bw, bh = 66 * k, (s["title"] + 18 + 5.5 * len(legend) + 4.5 * len(credit)) * k
+        bx, by = min(((a_, b_) for b_ in (y0, y1 - bh) for a_ in (x0, x1 - bw)),
+                     key=lambda c_: shapely.box(c_[0], c_[1], c_[0] + bw, c_[1] + bh).intersection(site).area)
+        lx, ly = bx - x0 + 4 * k, y1 - by - bh + (s["title"] + 7) * k
+        els.append(f'<rect x="{bx - x0:.1f}" y="{y1 - by - bh:.1f}" width="{bw:.1f}" height="{bh:.1f}" fill="{s["paper"]}"/>'
+                   f'<text x="{lx:.1f}" y="{y1 - by - bh + (s["title"] + 3) * k:.1f}" font-size="{max(fs, s["title"] * k):.1f}" '
+                   f'font-weight="bold" font-family="{s["font"]}">Open space, 1:{scale:,}</text>')
+    else:
+        lx, ly = 6 * k, (y1 - y0) + 8 * k
     for name, fill, extra in legend:
         if fill is None:
             els.append(f'<line x1="{lx}" y1="{ly + 2 * k}" x2="{lx + 8 * k}" y2="{ly + 2 * k}" stroke="{s["accent"]}" '
@@ -921,17 +955,20 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
             els.append(f'<rect x="{lx}" y="{ly}" width="{8 * k}" height="{4 * k}" fill="{fill}" {extra} '
                        f'stroke="{st}" stroke-width="{lw(s["line"])}"/>')
         els.append(f'<text x="{lx + 10 * k}" y="{ly + 3.3 * k}" font-size="{fs}" font-family="{s["font"]}">{name}</text>')
-        lx += (14 + len(name) * 1.9) * k
-    # graphic scale: a round length near a fifth of the width
-    bar = min((b for b in (50, 100, 200, 250, 500, 1000, 2000) if b >= (x1 - x0) / 6), default=1000)
-    by = ly + 14 * k
-    for i in range(4):
-        els.append(f'<rect x="{6 * k + i * bar / 4}" y="{by}" width="{bar / 4}" height="{1.5 * k}" '
-                   f'fill="{s["ink"] if i % 2 == 0 else s["paper"]}" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
-    els.append(f'<text x="{6 * k}" y="{by + 6 * k}" font-size="{fs}" font-family="{s["font"]}">0</text>')
-    els.append(f'<text x="{6 * k + bar}" y="{by + 6 * k}" font-size="{fs}" font-family="{s["font"]}" text-anchor="middle">{bar} m</text>')
-    els.append(f'<text x="{6 * k + bar + 12 * k}" y="{by + 2 * k}" font-size="{fs}" font-family="{s["font"]}">'
-               f'1:{scale}   N ↑   {cfg.get("map_credit", "")}</text>')
+        lx, ly = (lx, ly + 5.5 * k) if frame else (lx + (14 + len(name) * 1.9) * k, ly)
+    # graphic scale: a thin line stepping up and down, a tick at every step, the numbers under, the unit on the last
+    bar = min((b for b in (50, 100, 200, 250, 500, 1000, 2000) if b >= (bw / 3 if frame else (x1 - x0) / 6)), default=1000)
+    sx, sy, sg = (lx if frame else 6 * k), ly + (2 if frame else 14) * k, bar / 4
+    els.append(f'<path d="{"".join(f"M{sx + i * sg:.1f},{sy + 1.5 * k * (i % 2):.1f}h{sg:.1f}" for i in range(4))}'
+               f'{"".join(f"M{sx + i * sg:.1f},{sy:.1f}v{1.5 * k:.1f}" for i in range(5))}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
+    for v, t in ((0, "0"), (bar, f"{bar} m")):
+        els.append(f'<text x="{sx + v:.1f}" y="{sy + 1.5 * k + fs + 0.5 * k:.1f}" font-size="{fs}" font-family="{s["font"]}" text-anchor="middle">{t}</text>')
+    nx, ny = sx + bar + 12 * k, sy + 1 * k   # north: a circle in outline, a line from its centre to the circle, pointing north
+    els.append(f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="{3 * k:.1f}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>'
+               f'<line x1="{nx:.1f}" y1="{ny:.1f}" x2="{nx:.1f}" y2="{ny - 3 * k:.1f}" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
+    for i, t in enumerate(credit or [f'1:{scale:,}   {cfg.get("map_credit", "")}']):
+        els.append(f'<text x="{sx if frame else nx + 6 * k:.1f}" y="{(sy + (10.5 + 4.5 * i) * k) if frame else ny + 1 * k:.1f}" '
+                   f'font-size="{fs}" font-family="{s["font"]}">{t}</text>')
 
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{wmm:.1f}mm" height="{wmm * H / (x1 - x0):.1f}mm" '
            f'viewBox="0 0 {x1 - x0:.1f} {H:.1f}"><rect width="100%" height="100%" fill="{s["paper"]}"/>'
