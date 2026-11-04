@@ -225,7 +225,7 @@ sel.onchange = async () => {
   drop("run:");
   const r = RUNS.find(x => x.key === sel.value);
   document.getElementById("runTitle").textContent = r ? r.title : "";
-  document.getElementById("runLinks").innerHTML = r ? r.panels.map((p, i) => `<a href="${esc(p)}" target="_blank">panel ${i + 1}</a>`).join("") : "";
+  document.getElementById("runLinks").innerHTML = r ? r.panels.map((p, i) => `<a href="${esc(p)}" target="_blank">panel ${i + 1}</a>`).join("") + (r.sheets || []).map(p => `<a href="${esc(p)}" target="_blank">${esc(p.split("/").pop().replace(".jpg", ""))}</a>`).join("") : "";
   runEl.innerHTML = '<div class="hint">Loading...</div>';
   if (r) list(runEl, "run:" + r.key, await loadData(r.key), remembered);
   first = false;

@@ -89,7 +89,8 @@ def main():
         write(out, run.name, found)
         panels = sorted(run.glob("panel-layout/panel-*.pdf"))
         runs.append({"key": run.name, "title": title(run),
-                     "panels": [Path("..", run.name, p.relative_to(run)).as_posix() for p in panels]})
+                     "panels": [Path("..", run.name, p.relative_to(run)).as_posix() for p in panels],
+                     "sheets": [Path("..", run.name, p.relative_to(run)).as_posix() for p in sorted(run.glob(".compare/*.jpg"))]})
         print(f"  {run.name}: {sum(len(v) for v in found.values())} layers")
 
     html = (Path(__file__).with_name("preview.html")).read_text(encoding="utf-8")
