@@ -112,6 +112,31 @@ def test_plans_reads_streets_when_present(drawn, tmp_path):
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 
+def test_plans_take_their_frames_and_roman_storeys(drawn):
+    """A plan the panels' plan frames takes the frame's scale and is drawn to its size, its legend strip included."""
+    out, site_dir = drawn
+    frames = {"site-plan": ("plans/site-plan_1-3000.svg", "1:3000", 400, 300),
+              "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180)}
+    plan = out / "panel-layout/layout-plan.json"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text(json.dumps({"panels": [{"items": [{"id": k, "type": "drawing", "file": f, "scale": s, "frame": {"w": w, "h": h}}
+                                                      for k, (f, s, w, h) in frames.items()]}]}), encoding="utf-8")
+    style = out / "drawing-graphics/style.json"
+    keep = style.read_text(encoding="utf-8")
+    style.write_text(json.dumps({**json.loads(keep), "storey_labels": "roman"}), encoding="utf-8")
+    try:
+        draw(out, site_dir)
+        for f, s, w, h in frames.values():
+            svg = (out / f).read_text(encoding="utf-8")
+            assert abs(mm(svg, "width") - w) <= 0.5 and abs(mm(svg, "height") - h) <= 0.5, (f, mm(svg, "width"), mm(svg, "height"))
+        storeys = re.findall(r'text-anchor="middle" fill="[^"]+">([^<]+)</text>', (out / frames["detail-area-1"][0]).read_text(encoding="utf-8"))
+        assert storeys and all(re.fullmatch(r"[IVXL]+", s) for s in storeys), storeys
+    finally:
+        plan.unlink()
+        style.write_text(keep, encoding="utf-8")
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
 def test_plans_missing_required_stops(drawn):
     out, site_dir = drawn
     cfg = {k: v for k, v in CONFIG.items() if k != "site_plan_scale"}

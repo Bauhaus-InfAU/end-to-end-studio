@@ -8,10 +8,12 @@ site_plan_scale, panel_width_mm and panel_height_mm are required; figure_ground_
 margin_mm, detail_areas (a list of {"name", "scale", "at", "shows", "page"}, `at` a centre's name in the structure
 plan, "phase1", or [lon, lat]) and labels (the legend's words) are optional. Every layer but the massing is
 optional: buildings from massing/, the street surface from streets/, the ground from open-space/, stops and hubs
-from mobility/, the centres from structure-plan/. A missing layer is left out and named in drawings.json.
+from mobility/, the centres from structure-plan/. A missing layer is left out and named in drawings.json. A detail area or the site plan that
+the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json) frames takes that frame's scale and is
+drawn to its size, the legend strip included. The style's storey_labels writes the storeys roman or arabic (default).
 Writes <name>_1-<scale>.svg and .png and drawings.json into <proposal>/plans/.
 """
-import argparse, json, math, os, subprocess, sys
+import argparse, json, math, os, re, subprocess, sys
 from xml.sax.saxutils import escape
 from shapely.geometry import shape, box, Point, Polygon
 from shapely.ops import transform, unary_union
@@ -150,14 +152,37 @@ PH = PH_ALL - float(CFG['caption_room_mm'])                               # room
 
 
 # ---------------- windows ----------------
-def clamp(bounds, scale, centre=None):
-    """The window of these bounds, cut to the panel room at this scale; an axis that is cut centres on `centre`."""
+def layout_frames():
+    """{plan name: (scale or None, frame w, frame h in mm)} of the plans the panels' plan frames."""
+    p = next((q for q in (os.path.join(RUN, 'panel-layout', n) for n in ('layout-plan.json', 'layout.json')) if os.path.exists(q)), None)
+    out = {}
+    for it in [it for q in (json.load(open(p, encoding='utf8')).get('panels', []) if p else []) for it in q.get('items', [])]:
+        f, fr = str(it.get('file') or '').replace('\\', '/'), it.get('frame') or {}
+        m = re.search(r'1\s*:\s*([\d,. ]+)', str(it.get('scale') or ''))
+        if f.startswith('plans/') and fr.get('w') and fr.get('h'):
+            out[re.sub(r'_1-\d+$', '', os.path.splitext(f[6:])[0])] = (
+                int(re.sub(r'\D', '', m.group(1))) if m else None, float(fr['w']), float(fr['h']))
+    return out
+
+
+def fitted(name, title, scale, kind, window_of, frame, windows=()):
+    """The window of a plan in a frame (w, h mm): the frame's width, and its height less the legend strip under the
+    map, which a first drawing without its PNG measures. window_of(room in metres) gives (window, cut)."""
+    k = scale / 1000.0
+    e = draw_plan(name, title, scale, window_of((frame[0] * k, (frame[1] - CFG['legend_mm']) * k))[0], kind, windows, False)
+    return window_of((frame[0] * k, max(frame[1] - e['height_mm'] + e['map_height_mm'], frame[1] / 2) * k))
+
+
+def clamp(bounds, scale, centre=None, frame_m=None):
+    """The window of these bounds, cut to the panel room at this scale; an axis that is cut centres on `centre`.
+    With frame_m, a frame's (w, h) in metres, the window is that size, grown around the bounds where they are smaller."""
     k = scale / 1000.0
     x0, y0, x1, y1 = bounds
+    full = frame_m or (PW * k, PH * k)
     axes, cut = [], False
-    for lo, hi, room, c in ((x0, x1, PW * k, centre[0] if centre else None), (y0, y1, PH * k, centre[1] if centre else None)):
+    for lo, hi, room, c in ((x0, x1, full[0], centre[0] if centre else None), (y0, y1, full[1], centre[1] if centre else None)):
         if hi - lo <= room:
-            axes.append((lo, hi))
+            axes.append(((lo + hi - room) / 2, (lo + hi + room) / 2) if frame_m else (lo, hi))
             continue
         cut = True
         c = (lo + hi) / 2 if c is None else c
@@ -187,10 +212,10 @@ def anchor_of(at):
     return (unary_union(gs), '') if gs else (None, 'no centre named "%s" in the structure plan' % at)
 
 
-def detail_window(anchor, scale):
+def detail_window(anchor, scale, frame_m=None):
     k = scale / 1000.0
     c = anchor.centroid
-    full = (PW * k, PH * k)
+    full = frame_m or (PW * k, PH * k)
     near = [g for p, g in NEW if g.distance(anchor) <= CFG['detail_near_m']]
     want = pad(unary_union(near + [anchor]).bounds, CFG['detail_pad_m'])
     axes, cut = [], False
@@ -199,8 +224,8 @@ def detail_window(anchor, scale):
         if hi - lo > room:                       # more than the panel holds: the whole room, centred on the anchor
             cut = True
             axes.append((mid - room / 2, mid + room / 2))
-        else:                                    # smaller: just the new buildings around it, never tiny
-            size = min(room, max(hi - lo, CFG['detail_min_mm'] * k))
+        else:                                    # smaller: just the new buildings around it, never tiny; a frame filled
+            size = room if frame_m else min(room, max(hi - lo, CFG['detail_min_mm'] * k))
             m = (lo + hi) / 2
             axes.append((m - size / 2, m + size / 2))
     return (axes[0][0], axes[1][0], axes[0][1], axes[1][1]), cut
@@ -240,8 +265,19 @@ def shot(svg, png, w, h):
     os.remove(html)
 
 
-def draw_plan(name, title, scale, window, kind, windows=()):
-    """One plan as SVG and PNG. kind: site, detail or figure-ground. Returns its drawings.json entry."""
+def storeys(n):
+    """A number of storeys as the standard's storey_labels writes it: arabic (4), or roman (IV)."""
+    if str(S.get('storey_labels', 'arabic')).lower() != 'roman':
+        return str(n)
+    out = ''
+    for v, r in ((50, 'L'), (40, 'XL'), (10, 'X'), (9, 'IX'), (5, 'V'), (4, 'IV'), (1, 'I')):
+        q, n = divmod(n, v)
+        out += r * q
+    return out or '0'
+
+
+def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
+    """One plan as SVG and PNG (without shoot, the SVG only). kind: site, detail or figure-ground. Returns its drawings.json entry."""
     k = scale / 1000.0                                   # metres per mm on paper
     wx0, wy0, wx1, wy1 = window
     Wm, Hm = wx1 - wx0, wy1 - wy0
@@ -414,7 +450,7 @@ def draw_plan(name, title, scale, window, kind, windows=()):
             for p, g in inside(NEW):
                 if p.get('floors') is None:
                     continue
-                s = str(int(round(float(p['floors']))))
+                s = storeys(int(round(float(p['floors']))))
                 if g.area < 3 * tw(s, fs) * fs:
                     continue
                 c = g.representative_point()
@@ -443,7 +479,8 @@ def draw_plan(name, title, scale, window, kind, windows=()):
     png = os.path.join(OUT, fname + '.png')
     try:
         px = CFG['png_px_per_mm']
-        shot(svgp, png, int(W * px), int(H * px))
+        if shoot:
+            shot(svgp, png, int(W * px), int(H * px))
     except Exception as e:
         print('no PNG for', fname, ':', e, file=sys.stderr)
     return dict(name=name, file=fname + '.svg', png=os.path.exists(png), title=title, scale=scale,
@@ -552,7 +589,7 @@ def legend_strip(title, scale, W, legend, k, Hm, window):
             o.append(f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>')
         elif spec[0] == 'text':
             o.append(f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{S["new"]}"/>')
-            o.append(f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">4</text>')
+            o.append(f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>')
         else:
             o.append(symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k))
         text(x + 7.5, y, lab)
@@ -574,25 +611,32 @@ def legend_strip(title, scale, W, legend, k, Hm, window):
 # ---------------- the plans ----------------
 made = []
 fig_scale = CFG.get('figure_ground_scale')
-site_scale = int(CFG['site_plan_scale'])
+FRAMES = layout_frames()                                 # a framed plan takes its frame's scale and size
+frame = FRAMES.get('site-plan')
+site_scale = int(frame and frame[0] or CFG['site_plan_scale'])
 cx_new = unary_union([g for p, g in NEW]).centroid if NEW else site.centroid
 
 details = []
 for i, a in enumerate(CFG.get('detail_areas') or []):
     name = a.get('name') or 'detail-area-%d' % (i + 1)
     title = a.get('title') or LAB.get(name) or name.replace('-', ' ').capitalize()
-    if not a.get('scale'):
+    fr = FRAMES.get(name)
+    scale = int(fr and fr[0] or a.get('scale') or 0)
+    if not scale:
         made.append(dict(name=name, drawn=False, fits=False, reason='no scale given in config.json'))
         continue
     anchor, why = anchor_of(a.get('at'))
     if anchor is None:
         made.append(dict(name=name, drawn=False, fits=False, reason=why))
         continue
-    win, cut = detail_window(anchor, int(a['scale']))
-    details.append((name, title, int(a['scale']), win, cut, a))
+    win, cut = (fitted(name, title, scale, 'detail', lambda m: detail_window(anchor, scale, m), fr[1:]) if fr
+                else detail_window(anchor, scale))
+    details.append((name, title, scale, win, cut, a))
 
-sp_win, sp_cut = clamp(pad(site.bounds, CFG['site_pad_m']), site_scale, (cx_new.x, cx_new.y))
-e = draw_plan('site-plan', LAB['site-plan'], site_scale, sp_win, 'site', [(t, w) for n, t, s, w, c, a in details])
+outlines = [(t, w) for n, t, s, w, c, a in details]
+sp_of = lambda m: clamp(pad(site.bounds, CFG['site_pad_m']), site_scale, (cx_new.x, cx_new.y), m)
+sp_win, sp_cut = fitted('site-plan', LAB['site-plan'], site_scale, 'site', sp_of, frame[1:], outlines) if frame else sp_of(None)
+e = draw_plan('site-plan', LAB['site-plan'], site_scale, sp_win, 'site', outlines)
 e['cropped'] = sp_cut
 made.append(e)
 
