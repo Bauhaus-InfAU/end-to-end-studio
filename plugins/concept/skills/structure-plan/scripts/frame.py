@@ -141,7 +141,7 @@ class Frame:
     def programme(self, homes, commerce_m2=0, m2_per_home=95, storeys=6, coverage=0.22, source=None):
         """What the plan must hold, for the checks: homes per phase as {phase: homes}, the commerce floor area, the
         floor area of a home, the storey cap and the share of a neighbourhood its buildings cover (own assumption 0.22:
-        what massing reached, 3,022 homes and 151,893 m2 of commerce at six storeys on 31.9 ha). A neighbourhood's own storeys or coverage
+        about what the massing skill's blocks cover once its streets, squares and courtyards are taken). A neighbourhood's own storeys or coverage
         overrides these."""
         self.asked = {'homes': {str(k): v for k, v in dict(homes).items()}, 'commerce_m2': commerce_m2,
                       'm2_per_home': m2_per_home, 'storeys': storeys, 'coverage': coverage, 'source': source}
