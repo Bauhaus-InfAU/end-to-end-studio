@@ -3,7 +3,7 @@
 python3 isometric.py <site folder> <proposal folder> <site plan scale> <panel width mm> [--style style.json]
 
 Reads <site folder>/site.geojson and its layers (buildings, plots, streets, water, rail),
-and <proposal folder>/massing/massing.geojson if it exists. Writes into
+and <proposal folder>/massing/massing.geojson and open-space/open-space.geojson's trees if they exist. Writes into
 <proposal folder>/isometric/: isometric_1-<scale>.svg and .png, and summary.md.
 --style: the drawing standard's style.json, its keys mapped onto STYLE below.
 Needs shapely and pyproj; the PNG needs a headless Chrome, Chromium or Edge.
@@ -27,7 +27,9 @@ STYLE = {"accent": "#d9302b", "new_wall": "#ececec", "new_wall_shade": "#cfcfcf"
          "new_line": "#1a1a1a", "floor_line": "#a8a8a8", "existing_line": "#c2c2c2", "existing_fill": "#ffffff",
          "ground": "#ffffff", "field": "#f4f4f1", "field_line": "#dcdcd6", "design_green": "#fafaf8",
          "design_green_hatch": "#cfcfc7", "water": "#e3e7e9", "water_line": "#9aa3a8", "street": "#fafaf8",
-         "street_line": "#a0a0a0", "rail": "#444444", "tree": "#9a9a9a", "text": "#1a1a1a", "public": "#f0b8b5"}
+         "street_line": "#a0a0a0", "rail": "#444444", "tree": "#9a9a9a", "text": "#1a1a1a", "public": "#f0b8b5",
+         "shadow": "#a8a8a8"}
+TREE_H, TREE_CROWN = 10.0, 6.0   # height and crown diameter of a tree without height_m or crown_m, metres
 mix = lambda c1, c2, t: "#%02x%02x%02x" % tuple(round(int(c1[i:i + 2], 16) * (1 - t) + int(c2[i:i + 2], 16) * t) for i in (1, 3, 5))
 used_standard = False
 if a.style and os.path.exists(a.style):
@@ -39,7 +41,7 @@ if a.style and os.path.exists(a.style):
         "new_wall_shade": mix(nw, sh, 0.6), "new_line": s.get("ink"), "floor_line": sh, "existing_line": s.get("existing"),
         "existing_fill": s.get("paper"), "ground": s.get("paper"), "design_green": s.get("park"), "design_green_hatch": s.get("grove"),
         "water": s.get("water"), "street": s.get("street"), "street_line": s.get("path"), "rail": s.get("ink"),
-        "tree": s.get("grove"), "text": s.get("ink")}.items() if v})
+        "tree": s.get("grove"), "text": s.get("ink"), "shadow": s.get("shadow")}.items() if v})
 
 summary = os.path.join(out_dir, "summary.md")
 def load(path):
@@ -60,6 +62,8 @@ tr = Transformer.from_crs(4326, epsg, always_xy=True).transform
 site = transform(tr, site_ll)
 
 mass = load(os.path.join(a.proposal, "massing", "massing.geojson"))
+trees = [f for f in mass + load(os.path.join(a.proposal, "open-space", "open-space.geojson"))   # street trees, and open-space's
+         if (f.get("properties") or {}).get("kind") == "tree" and f.get("geometry")]
 new = [(f["properties"], transform(tr, shape(f["geometry"]))) for f in mass
        if f["properties"].get("kind") == "building" and not f["properties"].get("existing")]
 focus = unary_union([g for _, g in new]) if new else site
@@ -109,7 +113,7 @@ scale = a.scale
 for s_ in [a.scale] + [u for u in USUAL if u > a.scale]:
     scale = s_
     if W / s_ * 1000 <= a.panel_mm: break
-LARGE = scale <= 1000                          # large: floor lines, roofs, single trees
+LARGE = scale <= 1000                          # large: floor lines and roofs
 frame = Polygon([(fx0, fy0), (fx1, fy0), (fx1, fy1), (fx0, fy1)])
 def in_frame(g):
     if g.geom_type == "Point": return frame.contains(Point(iso(g.x, g.y)))
@@ -182,19 +186,19 @@ for p, g in new:
     fl = int(p.get("floors") or 1); h = float(p.get("height_m") or 3 * fl)
     for q in getattr(rot(g), "geoms", [rot(g)]):
         if q.geom_type == "Polygon": items.append((q.centroid.x + q.centroid.y, "n", q, h, fl, p.get("roof")))
-if LARGE:
-    for f in mass:
-        if f["properties"].get("kind") == "tree":
-            t = rot(transform(tr, shape(f["geometry"])))
-            if t.geom_type == "Point" and in_frame(t): items.append((t.x + t.y, "t", t, 0, 0, None))
+for f in trees:   # at every scale; a tree's crown radius rides in the roof's place
+    t, p = rot(transform(tr, shape(f["geometry"]))), f["properties"]
+    if t.geom_type == "Point" and in_frame(t):
+        items.append((t.x + t.y, "t", t, float(p.get("height_m") or TREE_H), 0, float(p.get("crown_m") or TREE_CROWN) / 2))
 items.sort(key=lambda i: -i[0])
 
 for _, k, g, h, fl, roof in items:
-    if k == "t":
-        cx, cy = iso(g.x, g.y, 6)
-        svg.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="0.35"/>'
-                   '<circle cx="%.1f" cy="%.1f" r="2.6" fill="#fff" stroke="%s" stroke-width="0.35"/>'
-                   % (*iso(g.x, g.y), cx, cy + 2.6, S["tree"], cx, cy, S["tree"]))
+    if k == "t":   # its soft shadow on the ground, the trunk, the crown at the top of its height
+        r, dark = roof, mix(S["tree"], S["new_line"], 0.3); cx, cy = iso(g.x, g.y, h - r); gx, gy = iso(g.x, g.y)
+        svg.append('<ellipse cx="%.1f" cy="%.1f" rx="%.1f" ry="%.1f" fill="%s" fill-opacity="0.5"/>'
+                   '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="0.35"/>'
+                   '<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" fill-opacity="0.9" stroke="%s" stroke-width="0.35"/>'
+                   % (gx + 0.4 * r, gy, 1.22 * r, 0.71 * r, S["shadow"], gx, gy, cx, cy + r, dark, cx, cy, r, S["tree"], dark))
         continue
     if k == "n": wall, top_, line = S["new_wall"], S["new_roof"], S["new_line"]
     else: wall, top_, line = S["existing_fill"], S["existing_fill"], S["existing_line"]
@@ -272,8 +276,8 @@ streets_note = ("streets from streets/streets.geojson" if street_feats
                 else "street widths assumed by class (%s)" % widths)
 open(summary, "w").write(
     "- %s, isometric at 1:%d, seen from the %s, %.0f × %.0f mm in print.%s\n" % (what, scale, SIDE, mmw, mmh, why) +
-    "- %d new buildings%s; %d existing buildings, %d of them at default heights from the site data.\n"
-    % (n_new, " with floor lines" if LARGE and n_new else "", n_exist, defaults) +
+    "- %d new buildings%s; %d existing buildings, %d of them at default heights from the site data; %d trees.\n"
+    % (n_new, " with floor lines" if LARGE and n_new else "", n_exist, defaults, sum(i[1] == "t" for i in items)) +
     "- Unsure: %s; %s; %s.\n"
     % (streets_note, "colours from the drawing standard" if used_standard else "no drawing standard, so the fallback look", png_note))
 print(open(summary).read())

@@ -47,8 +47,8 @@ DEFAULTS = {
     'street_w_new': 10.0,       # metres for a massing street without a width
     'green_landuse': ['forest', 'wood', 'scrub', 'meadow', 'grass', 'park', 'farmland', 'allotments'],  # context green
     'gone_rail': ['abandoned', 'razed', 'dismantled'],   # rail lines no longer there, not drawn
-    'tree_scale_max': 2000,     # trees drawn only at 1:2,000 and larger
-    'tree_r_m': 2.5,            # crown radius of a tree, metres
+    'tree_crown_m': 6,          # crown diameter of a tree without crown_m, metres
+    'tree_shadow': 0.3,         # a crown's shadow falls this share of its diameter away, the way the buildings' fall
     'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
     'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
@@ -376,6 +376,18 @@ def draw_plan(name, title, scale, window, kind, windows=()):
         sh = shadows(inside(BUILD))
         if not sh.is_empty:
             o.append(f'<path d="{d(sh)}" fill="{S["shadow"]}" stroke="none" fill-rule="evenodd" style="mix-blend-mode:multiply"/>')
+        # 4c. trees at every scale, the massing's and open-space's: a crown over its soft shadow, under the buildings
+        trees = [(*P(g.x, g.y), float(p.get('crown_m') or CFG['tree_crown_m']) / 2) for p, g in inside(MASS + (OPEN or []))
+                 if p.get('kind') == 'tree' and g.geom_type == 'Point']
+        if trees:
+            a = math.radians(CFG['shadow_az_deg'])
+            dx, dy = 2 * CFG['tree_shadow'] * math.sin(a), -2 * CFG['tree_shadow'] * math.cos(a)
+            o.append(f'<g fill="{S["shadow"]}" fill-opacity="0.5" style="mix-blend-mode:multiply">' + ''.join(
+                f'<circle cx="{f2(x + dx * r)}" cy="{f2(y + dy * r)}" r="{f2(r)}"/>' for x, y, r in trees) + '</g>')
+            o.append(f'<g fill="{S["grove"]}" fill-opacity="0.9" stroke="{mix(S["grove"], S["ink"], 0.3)}" '
+                     f'stroke-width="{f2(lw("thin"))}">' + ''.join(
+                         f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for x, y, r in trees) + '</g>')
+            legend.setdefault('tree', ('dot', S['grove']))
         # 5. existing buildings: around the site pale, kept ones in it with an outline
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
@@ -388,13 +400,6 @@ def draw_plan(name, title, scale, window, kind, windows=()):
                 fill(g, S['new'], 'landmark', S['ink'], 'thick')
             else:
                 fill(g, S['new'], 'new', S['ink'], 'mid')
-        # 7. trees, large plans only
-        if scale <= CFG['tree_scale_max']:
-            r = CFG['tree_r_m']
-            for p, g in inside([(p, g) for p, g in MASS if p.get('kind') == 'tree']):
-                x, y = P(g.x, g.y)
-                o.append(f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}" fill="{S["grove"]}" fill-opacity="0.85"/>')
-                legend.setdefault('tree', ('dot', S['grove']))
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')

@@ -31,6 +31,8 @@ DEFAULTS = {
     'ground_behind_m': [20, 40, 60, 80],   # the ground behind the cut, drawn along lines this far back, so buildings behind stand on it
     'landscape_m': [300, 600, 1000],       # on the whole cut, the landscape further back: ground lines this far behind, palest farthest
     'tree_h': {'forest': 16, 'wood': 16, 'park': 10, 'scrub': 4},   # assumed tree heights by land use, m
+    'tree_new': [10, 6],        # height and crown diameter of a design tree without height_m or crown_m, m
+    'tree_band_m': 10,          # with --massing, the design's trees whose crown reaches the line or stand this far behind it
     'person_h': 1.75,           # height of a person for scale, m
     'floor_h': 3.0,             # storey height, only for existing buildings without a height
     'default_floors': 2,        # storeys of an existing building with neither height nor storeys
@@ -179,6 +181,12 @@ if ARGS.massing:
         B = keep
 B += NEW
 BTREE = STRtree([b['g'] for b in B]) if B else None
+TREES = []   # with --massing, the design's trees, the massing's and open-space's: (point, height, crown, assumed)
+for f in (mf or []) + (read_fc(Path(ARGS.proposal) / 'open-space' / 'open-space.geojson') or []) if ARGS.massing else []:
+    p = f.get('properties') or {}
+    if p.get('kind') == 'tree' and (f.get('geometry') or {}).get('type') == 'Point':
+        TREES.append((transform(TO_M, shape(f['geometry'])), float(p.get('height_m') or C['tree_new'][0]),
+                      float(p.get('crown_m') or C['tree_new'][1]), not (p.get('height_m') and p.get('crown_m'))))
 
 STREETS = layer('streets')
 RAIL = layer('rail')
@@ -285,6 +293,14 @@ def tu(x, y):
 
 def tpos(p):   # position along A-A' of a point
     return float((np.asarray(p) - A) @ e)
+
+
+DTREES = [(t, h, cr) for (t, u), h, cr in ((tu(g.x, g.y), h, cr) for g, h, cr, _ in TREES)
+          if -cr / 2 <= u <= C['tree_band_m'] and 0 <= t <= L]   # (t, height, crown) of the design's trees on the line
+if ARGS.massing:
+    NOTES.append(f'{len(DTREES)} of the design\'s {len(TREES)} trees reach the line or stand up to {C["tree_band_m"]} m behind it, '
+                 f'drawn at their height and crown; {sum(a_ for *_, a_ in TREES)} of the {len(TREES)} have an assumed '
+                 f'{C["tree_new"][0]} m height or {C["tree_new"][1]} m crown.')
 
 
 # ---------------------------------------------------------------- buildings cut and behind
@@ -559,8 +575,8 @@ def scale_bar(x, y, scale):
     return o, total * k
 
 
-def tree(x, yg, h_mm):
-    r = h_mm * 0.28
+def tree(x, yg, h_mm, r=None):
+    r = r or h_mm * 0.28
     return (f'<line x1="{x:.2f}" y1="{yg:.2f}" x2="{x:.2f}" y2="{yg - h_mm + r:.2f}" stroke="{S["grove"]}" stroke-width="{THIN}"/>'
             f'<circle cx="{x:.2f}" cy="{yg - h_mm + r:.2f}" r="{r:.2f}" fill="{S["grove"]}" fill-opacity="0.85"/>')
 
@@ -620,7 +636,7 @@ def draw(w0, w1, scale, detail, name):
     sel_beh = sorted((c for c in behind if inwin(c['t0'], c['t1'])), key=lambda c: -c['u'])
     m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
     zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
-    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max(C['tree_h'].values())]
+    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max([*C['tree_h'].values(), *(h for _, h, _ in DTREES)])]
     ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
     zmin = float(zwin.min())
     step = nice_step(FS * 1.4, k)
@@ -711,6 +727,10 @@ def draw(w0, w1, scale, detail, name):
         if c.get('back'):
             o.append(f'<path d="{outline(c["back"], c["low"])}" fill="{mix(S["existing"], S["paper"], 0.25)}" '
                      f'stroke="{S.get("building", "#9a9a9a")}" stroke-width="{THIN}"/>')
+    # the design's trees on and just behind the line, at their height and crown, before the cut buildings
+    for t, h, cr in DTREES:
+        if w0 <= t <= w1:
+            o.append(tree(X(t), Y(float(ground(t))), h * k, cr / 2 * k))
     # buildings cut, the strongest tone, the roof cut along the line where there is a model
     for c in sel_cut:
         b = c['b']

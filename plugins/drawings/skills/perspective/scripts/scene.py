@@ -394,12 +394,17 @@ class Scene:
             self.open_spaces.append((g, use))
             if use in ("park", "square"):
                 self.public_parts.append((g, use))
-        for f in self.by_kind.get("tree", []):
-            g, p = self.geom(f, "massing trees"), f["properties"]
+        osp = self.proposal / "open-space" / "open-space.geojson"   # the street trees are the massing's, the rest open-space's
+        planted = [f for f in (json.loads(osp.read_text(encoding="utf-8")).get("features") or [] if osp.exists() else [])
+                   if (f.get("properties") or {}).get("kind") == "tree"]
+        if planted:
+            self.used.append("open-space/open-space.geojson")
+        for f in self.by_kind.get("tree", []) + planted:
+            g, p = self.geom(f, "trees"), f["properties"]
             if g is None:
                 continue
             if g.geom_type != "Point":
-                self.warn("Massing trees that aren't single points were left out.")
+                self.warn("Trees that aren't single points were left out.")
                 continue
             self.trees.append((g.x, g.y, number(p.get("height_m")) or self.assumed["tree_height"]))
         built = [b["geom"].buffer(2) for b in self.buildings if b["group"] != "context"]
