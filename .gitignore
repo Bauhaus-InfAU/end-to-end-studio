@@ -25,3 +25,6 @@ __pycache__/
 
 # made once per site by climate; anyone can remake it
 /competition/climate/
+
+# the Europan 18 winners, references for the runs: other people's work, so they stay off the public repo (zip on Moodle)
+/competition/references/winners/
