@@ -7,9 +7,10 @@ Reads <proposal>/structure-plan/structure-plan.geojson, the site and, if there i
 (default <proposal>/climate). Writes into <proposal>/structure-plan/: checks.txt, check-plan.svg and check-plan.png.
 build.py runs it after every build; it also runs alone.
 """
-import argparse, html, json, math, os, subprocess, sys
+import argparse, heapq, html, json, math, os, re, subprocess, sys
 from pathlib import Path
 
+from shapely import STRtree, segmentize
 from shapely.geometry import shape, Point
 from shapely.ops import unary_union
 
@@ -18,6 +19,12 @@ from frame import Frame, parts
 
 DEFAULTS = {
     'distance_m': 150,          # proximity: new land within this straight-line distance of a centre or public green
+    'walk_m': 400,              # walk: homes within this distance of the stop, along routes and streets
+    'spare': 0.15,              # each phase holds this much more than it is asked for
+    'grid_m': 20,               # the walk is measured from points this far apart in the neighbourhoods
+    'node_step_m': 25,          # routes and streets get a node at least this often
+    'reach_m': 250,             # from a point in a neighbourhood to the network, at most this far ...
+    'detour': 1.3,              # ... and this much longer than the straight line
     'route_buffer_m': 10,       # a route takes this much land on each side when looking for unassigned land
     'loose_end_m': 20,          # a route end farther than this from every other route, street, gateway and the boundary is loose
     'listed': 10,               # at most this many pieces are listed under a check
@@ -69,7 +76,93 @@ def read_plan(path, F):
     return out
 
 
-def checks(feats, F, distance):
+def floor_area(p, g, asked):
+    """The floor area a neighbourhood can hold, and the floor area its homes and commerce need, in m2."""
+    cap = g.area * float(p.get('coverage') or asked['coverage']) * float(p.get('storeys') or asked['storeys'])
+    return cap, (p.get('homes') or 0) * asked['m2_per_home'] + (p.get('commerce_m2') or 0)
+
+
+def programme(nb, asked):
+    """Each phase against what it is asked for: homes, and floor area for homes and commerce under the storey cap."""
+    if not asked:
+        return ['PROGRAMME', '  no F.programme(...) in design.py: nothing to check against']
+    L = ['PROGRAMME' + (f" ({asked['source']})" if asked.get('source') else '')]
+    sp = 1 + C['spare']
+    L.append(f"  {asked['m2_per_home']} m2 per home, {asked['storeys']} storeys, coverage {asked['coverage']:.2f}; "
+             f"each phase needs {C['spare']:.0%} to spare")
+    phases = sorted({str(p.get('phase')) for p, g in nb if p.get('phase') is not None} | set(asked['homes']))
+    for ph in phases:
+        part = [(p, g) for p, g in nb if str(p.get('phase')) == ph]
+        homes = sum(p.get('homes') or 0 for p, g in part)
+        want = asked['homes'].get(ph, 0)
+        cap = sum(floor_area(p, g, asked)[0] for p, g in part)
+        need = sum(floor_area(p, g, asked)[1] for p, g in part)
+        bad = [w for w, ok in (('homes', homes >= want * sp), ('floor area', cap >= need * sp)) if not ok]
+        L.append(f"  phase {ph}: {homes} homes of {want} asked; floor area needed {need:,.0f} of {cap:,.0f} m2 possible "
+                 f"({100 * need / cap if cap else 0:.0f} %)  " + (f"SHORT: {', '.join(bad)}" if bad else 'ok'))
+    com = sum(p.get('commerce_m2') or 0 for p, g in nb)
+    L.append(f"  commerce placed {com:,.0f} of {asked['commerce_m2']:,.0f} m2 asked  "
+             + ('ok' if com >= asked['commerce_m2'] else 'SHORT: give the neighbourhoods commerce_m2'))
+    return L
+
+
+def walk(nb, ce, ro, F):
+    """The share of homes within walk_m of a centre that holds the stop, along routes and streets."""
+    L = [f"WALK ({C['walk_m']} m along routes and streets to a centre that holds the stop)"]
+    stops = [(p, g) for p, g in ce if re.search(r'stop|station|halt|bahnhof|tram|s-bahn', str(p.get('holds', '')), re.I)]
+    if not stops:
+        return L + ["  no centre holds the stop: say holds='the stop, ...' on the centre at the station"]
+    main = [p for p, g in stops if p.get('level') == 'main']
+    L.append(f"  stop in {', '.join(p.get('name', '') for p, g in stops)}"
+             + ('' if main else '  NOTE: the main centre does not hold the stop'))
+    net = unary_union([g for p, g in ro] + [g for p, g in F.streets]).intersection(
+        F.site.buffer(C['walk_m'] + C['reach_m']))
+    G = {}
+    for ln in [q for x in parts(net) for q in parts(x) if 'LineString' in q.geom_type]:
+        cs = [tuple(round(v, 1) for v in c[:2]) for c in segmentize(ln, C['node_step_m']).coords]
+        for a, b in zip(cs, cs[1:]):
+            d = math.dist(a, b)
+            G.setdefault(a, []).append((b, d))
+            G.setdefault(b, []).append((a, d))
+    goal = unary_union([g for p, g in stops])
+    D = {n: goal.distance(Point(n)) * C['detour'] for n in G if goal.distance(Point(n)) <= C['reach_m']}
+    q = [(d, n) for n, d in D.items()]
+    heapq.heapify(q)
+    while q:
+        d, n = heapq.heappop(q)
+        if d > D.get(n, 1e18) or d > C['walk_m']:
+            continue
+        for m, e in G[n]:
+            if d + e < D.get(m, 1e18):
+                D[m] = d + e
+                heapq.heappush(q, (d + e, m))
+    nodes = [n for n, d in D.items() if d <= C['walk_m']]
+    tree = STRtree([Point(n) for n in nodes])
+    near = total = 0.0
+    for p, g in nb:
+        if not p.get('homes'):
+            continue
+        x0, y0, x1, y1 = g.bounds
+        s = C['grid_m']
+        pts = [Point(x0 + s * (i + 0.5), y0 + s * (j + 0.5)) for i in range(int((x1 - x0) / s) + 1)
+               for j in range(int((y1 - y0) / s) + 1)]
+        pts = [pt for pt in pts if g.contains(pt)] or [g.representative_point()]
+        ok = 0
+        for pt in pts:
+            if goal.distance(pt) * C['detour'] <= C['walk_m'] or any(
+                    D[nodes[i]] + pt.distance(Point(nodes[i])) * C['detour'] <= C['walk_m']
+                    for i in tree.query(pt.buffer(C['reach_m']))):
+                ok += 1
+        near += p['homes'] * ok / len(pts)
+        total += p['homes']
+        L.append(f"  {p.get('name', '')}: {100 * ok / len(pts):.0f} % of its homes")
+    if total:
+        L.append(f"  all homes within {C['walk_m']} m walk of the stop: {100 * near / total:.0f} % "
+                 f"({near:,.0f} of {total:,.0f})")
+    return L
+
+
+def checks(feats, F, distance, asked=None):
     L = []
     by = lambda k: [(p, g) for p, g, b in feats if p.get('kind') == k and g is not None]
     nb, gr, ce, ro, ga = (by(k) for k in ('neighbourhood', 'green', 'centre', 'route', 'gateway'))
@@ -93,6 +186,10 @@ def checks(feats, F, distance):
              f'{ha(left):.2f} ha')
     for q in pieces(left):
         L.append(f'     {ha(q):.2f} ha at {at(q)}')
+    L.append('')
+    L += programme(nb, asked)
+    L.append('')
+    L += walk(nb, ce, ro, F)
     L.append('')
     L.append('GREEN')
     for p, g in gr:
@@ -321,7 +418,8 @@ def run(proposal, F, distance=None, style_path=None):
         raise SystemExit(f'no structure-plan.geojson in {out}: run build.py first')
     distance = C['distance_m'] if distance is None else distance
     feats = read_plan(plan, F)
-    L = checks(feats, F, distance)
+    asked = json.loads(plan.read_text(encoding='utf-8')).get('programme')
+    L = checks(feats, F, distance, asked)
     style_path = Path(style_path) if style_path else Path(proposal) / 'drawing-graphics' / 'style.json'
     S = dict(STYLE)
     if style_path.exists():
