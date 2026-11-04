@@ -23,10 +23,14 @@ DEFAULTS = {
     "image_size": "2K",
     "send_depth": True,
     "fit_to_base": True,   # a result with the base's proportions but another size is resampled to the base's size
-    "look": ("Soft daylight under a lightly clouded sky, late spring, trees in fresh leaf. Real materials on the facades "
-             "and the ground. People of all ages walking, sitting and cycling, at their true size for where they stand. "
+    "look": ("Soft daylight under a lightly clouded sky, late spring, trees in fresh leaf. Materials on the facades "
+             "and the ground drawn in flat, simple colour. People of all ages walking, sitting and cycling, at their true size for where they stand. "
              "No lens flare, no sunset sky, no glow; the buildings are not lit brighter than the street."),
 }
+RENDER_STYLE = ("Render it as an illustrated architectural perspective at a pedestrian's eye height, not a photograph: a "
+                "clean line drawing with flat areas of colour, in the manner of a vector or watercolour collage. Simple "
+                "textured planes for facades and ground, cut-out trees and people, a pale painted sky, no photographic "
+                "detail, no gloss, no lens effects.")
 KEYS = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 LOOK_HEADING = r"render|perspective|atmospher|mood|people|material|season"
 KEEP_GEOMETRY = (
@@ -115,14 +119,23 @@ def trimmed(text, n=400):
     return text if len(text) <= n else text[:n].rsplit(" ", 1)[0] + "…"
 
 
-def build_prompt(view, title, idea, look, send_depth=True):
+def render_style_from(proposal):
+    """render_style in drawing-graphics/style.json, else None."""
+    try:
+        value = json.loads((proposal / "drawing-graphics" / "style.json").read_text(encoding="utf-8")).get("render_style")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return plain(value) if isinstance(value, str) and value.strip() else None
+
+
+def build_prompt(view, title, idea, look, send_depth=True, style=None):
     tell = []
     if view.get("why"):
         tell.append(f"This eye-level view shows {view['why']}" + (f" ({view['situation']})." if view.get("situation") else "."))
     if title or idea:
         tell.append("The idea of the project" + (f", \"{title}\"" if title else "") + (f": {trimmed(idea)}" if idea else "."))
     parts = [KEEP_GEOMETRY, DEPTH_NOTE if send_depth else "",
-             "Render it as a photorealistic architectural perspective at a pedestrian's eye height.",
+             style or RENDER_STYLE,
              " ".join(tell), f"The look: {look}", CLOSING]
     return "\n\n".join(p for p in parts if p)
 
@@ -158,6 +171,7 @@ def render(proposal, client, opts, only=None, key_source=None, types=None):
     if not look:
         look, look_source = opts["look"], "default"
         notes.append("drawing-graphics/standard.md has no section on renders, perspectives or atmosphere: the prompts use the script's default look.")
+    style = render_style_from(proposal)
     record = {"model": opts["model"], "image_size": opts["image_size"], "key": key_source,
               "look_source": look_source, "notes": notes, "views": []}
     for view in spec["views"]:
@@ -175,7 +189,7 @@ def render(proposal, client, opts, only=None, key_source=None, types=None):
         base = Image.open(base_path).convert("RGB")
         send_depth = opts["send_depth"] and depth_path.exists()
         entry["depth"] = depth_path.name if send_depth else None
-        entry["prompt"] = build_prompt(view, title, idea, look, send_depth)
+        entry["prompt"] = build_prompt(view, title, idea, look, send_depth, style)
         contents = [base] + ([Image.open(depth_path)] if send_depth else []) + [entry["prompt"]]
         config = None
         if types is not None:
