@@ -16,6 +16,8 @@ stops nearby are found and listed in mobility/places.json; without a massing, th
 The massing, the streets skill's surface and the drawing standard are read when they exist. Writes mobility.geojson,
 stats.json, walk.json, places.json, assumptions.md and mobility_1-<scale>.svg and .png into <proposal>/mobility/;
 the plan is drawn only in the drawing standard's look, so without its style.json the data is written and no plan drawn.
+Its frame in the panels' plan (panel-layout/layout-plan.json, else layout.json; else --frame W H [--centre LON LAT])
+gives its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills it, a short legend inside.
 """
 import numpy as np
 import argparse, json, math, os, re, subprocess, sys
@@ -71,6 +73,7 @@ DEFAULTS = {
     'crop_pad_m': (60.0, 'ground around the new buildings when the plan is cropped, metres'),
     'text_floor_mm': (3.2, 'no text smaller than this on paper (12 px, 9 pt)'),
     'legend_mm': (30.0, 'the least height of the strip under the map, mm'),
+    'legend_w_mm': (70.0, 'in a frame: the width of the legend box in its corner, mm'),
     'png_px_per_mm': (4, 'PNG resolution, pixels per printed mm'),
     'label_gap_mm': (1.2, 'a label sits this far from the edge of its symbol, mm on paper'),
     'leader_mm': ([7, 11, 15], 'how far out a label on a leader line may go when no place beside its symbol is free, mm'),
@@ -158,6 +161,8 @@ A.add_argument('--proposal')
 A.add_argument('--site', help='the folder with site.geojson and its layers; without it, config.json\'s `site` and OpenStreetMap')
 A.add_argument('--config')
 A.add_argument('--style', help='the drawing standard\'s style.json')
+A.add_argument('--frame', nargs=2, type=float, metavar=('W', 'H'), help='without a frame in the panels\' plan: the plan\'s frame in mm')
+A.add_argument('--centre', nargs=2, type=float, metavar=('LON', 'LAT'), help='the frame\'s centre (default: the site\'s)')
 ARGS = A.parse_args()
 if ARGS.find:
     find(ARGS.find)
@@ -183,9 +188,12 @@ if not (SITE and os.path.exists(os.path.join(SITE, 'site.geojson'))):
 
 style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
-if S:   # its keys this plan draws with, by name, never merged: the others (a `tree`, `diagram`) aren't the plan's
+if S:   # its keys this plan draws with, by name, never merged; a thematic plan's weights and text sizes are `diagram`'s (px)
+    DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font',
                            'thin', 'mid', 'thick', 'text', 'title') if k in S}
+    S.update({k: DG[d] * 25.4 / 96 for k, d in (('thin', 'line'), ('mid', 'outline'), ('thick', 'heavy'),
+                                                ('text', 'label_size'), ('title', 'title_size')) if d in DG})
     FONT = escape(str(S['font']), {'"': "'"})
     TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
     TITLE = max(TXT, float(S.get('title') or 0))
@@ -593,14 +601,29 @@ def shot(svg, png, w, h):
     os.remove(html)
 
 
-scale = int(CFG['scale'])
+def plan_frame():
+    """(w, h mm, centre [lon, lat] or None, scale or None) of this plan's frame in the panels' plan, else of --frame."""
+    p = next((q for q in (os.path.join(RUN, 'panel-layout', n) for n in ('layout-plan.json', 'layout.json')) if os.path.exists(q)), None)
+    for it in [it for q in (json.load(open(p, encoding='utf8')).get('panels', []) if p else []) for it in q.get('items', [])]:
+        fr, m = it.get('frame') or {}, re.search(r'1\s*:\s*([\d,. ]+)', str(it.get('scale') or ''))
+        if str(it.get('file') or '').replace('\\', '/').startswith('mobility/') and fr.get('w') and fr.get('h'):
+            return float(fr['w']), float(fr['h']), fr.get('centre'), int(re.sub(r'\D', '', m.group(1))) if m else None
+    return (*ARGS.frame, ARGS.centre, None) if ARGS.frame else None
+
+
+FRAME = plan_frame()   # a frame: the map fills it at its scale around its centre, else the site's, the legend inside
+scale = int((FRAME and FRAME[3]) or CFG['scale'])
 k = scale / 1000.0                                     # metres per mm on paper
-USED.update(['site_pad_m', 'panel_w_mm'])
+USED.update(['site_pad_m', 'panel_w_mm'] if not FRAME else ['legend_w_mm'])
 win = site.buffer(float(D['site_pad_m'])).bounds
 NEWB = [(p, g) for p, g in MASS if p.get('kind') == 'building' and not p.get('existing')]
 room = float(D['panel_w_mm']) * k
 stats['cropped'] = False
-if win[2] - win[0] > room:
+if FRAME:
+    c_ = Point(TO_M(*FRAME[2])) if FRAME[2] else box(*site.bounds).centroid
+    win = (c_.x - FRAME[0] * k / 2, c_.y - FRAME[1] * k / 2, c_.x + FRAME[0] * k / 2, c_.y + FRAME[1] * k / 2)
+    stats['cropped'] = not box(*win).contains(site) and 'the site is larger than its frame: cropped to it'
+elif win[2] - win[0] > room:
     USED.add('crop_pad_m')
     if NEWB:
         win = unary_union([g for p, g in NEWB]).buffer(float(D['crop_pad_m'])).bounds
@@ -828,10 +851,10 @@ def north_angle():
     return math.atan2(x - cx, y - cy)
 
 
-W = Wm / k
+W = min(Wm / k, float(D['legend_w_mm'])) if FRAME else Wm / k   # the strip's width; in a frame, its legend box's
 st = []
 m_ = lambda v: f2(v * k)
-Yb = lambda y: Hm / k + y
+Yb = lambda y: y if FRAME else Hm / k + y
 ink, thin = S['ink'], float(S['thin'])
 
 
@@ -875,6 +898,8 @@ for i in range(n + 1):
 # legend: every line, fill and symbol drawn
 y, x = row_y + 4, 4
 for key, spec in legend.items():
+    if FRAME and key in ('street', 'context', 'existing', 'new'):   # a short legend: the theme, not the base
+        continue
     lab = LAB.get(key, key)
     wi = 8 + 1.5 + tw(lab, TXT) + 5
     if x + wi > W - 4 and x > 4:
@@ -894,7 +919,7 @@ for key, spec in legend.items():
     text(x + 9.5, y, lab)
     x += wi
 y += TXT + 3
-for line_ in ([walk_line] if walk_line else []) + ([CREDIT] if CREDIT else []):
+for line_ in ([walk_line] if walk_line and not FRAME else []) + ([CREDIT] if CREDIT else []):
     cur = ''
     for w_ in line_.split():
         if cur and tw(cur + ' ' + w_, TXT) > W - 8:
@@ -905,9 +930,15 @@ for line_ in ([walk_line] if walk_line else []) + ([CREDIT] if CREDIT else []):
     if cur:
         text(4, y, cur)
         y += TXT + 1.5
-H_strip = max(float(D['legend_mm']), y + 2)
-USED.update(['text_floor_mm', 'legend_mm', 'png_px_per_mm'])
+H_strip = y + 2 if FRAME else max(float(D['legend_mm']), y + 2)
+USED.update(['text_floor_mm', 'png_px_per_mm'] + ([] if FRAME else ['legend_mm']))
 Hs = H_strip * k
+if FRAME:   # the legend box goes in the corner where it hides least of the site, the labels and the symbols
+    sd, bw = shapely.affinity.affine_transform(site, [1, 0, 0, -1, -wx0, wy1]), W * k
+    cost = lambda b: b.intersection(sd).area + 10 * sum(b.intersection(t).area for t in taken + marks)
+    bx, by = min(((x_, y_) for y_ in (Hm - Hs, 0) for x_ in (0, Wm - bw)), key=lambda s: cost(box(s[0], s[1], s[0] + bw, s[1] + Hs)))
+    o += [f'<g transform="translate({f2(bx)},{f2(by)})"><rect width="{f2(bw)}" height="{f2(Hs)}" fill="{S["paper"]}"/>'] + st + ['</g>']
+    st, Hs, W = [], 0, Wm / k
 svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
        f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
        f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath></defs>',

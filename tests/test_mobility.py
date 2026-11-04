@@ -56,6 +56,25 @@ def test_mobility_runs_on_synthetic(massed):
     assert sizes and min(sizes) / k >= 3.2 - 1e-6, min(sizes) / k
 
 
+def test_mobility_fills_its_frame(massed):
+    """A frame in the panels' plan: the plan is that size at that scale, its legend inside, in the standard's `diagram`."""
+    out, site_dir = massed
+    plan = out / "panel-layout/layout-plan.json"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text(json.dumps({"panels": [{"items": [{"file": "mobility/mobility_1-5000.svg", "scale": "1:5000",
+                                                        "frame": {"w": 150, "h": 120}}]}]}), encoding="utf-8")
+    try:
+        mobility(out, site_dir, CONFIG)
+    finally:
+        plan.unlink()
+    svg = (out / "mobility/mobility_1-5000.svg").read_text(encoding="utf-8")
+    assert 'width="150.0mm" height="120.0mm"' in svg and 'viewBox="0 0 750.00 600.00"' in svg
+    k = 5000 / 1000
+    assert min(float(s) for s in re.findall(r'font-size="([\d.]+)"', svg)) / k >= 3.2 - 1e-6
+    heavy = 3.2 * 25.4 / 96 * k   # base.json's diagram.heavy, 3.2 px, the bus line
+    assert any(abs(float(w) - heavy) < 0.01 for w in re.findall(r'stroke-width="([\d.]+)"', svg))
+
+
 def test_mobility_without_hub_runs(massed):
     """A brief with no hub: the plan is made without one."""
     out, site_dir = massed
