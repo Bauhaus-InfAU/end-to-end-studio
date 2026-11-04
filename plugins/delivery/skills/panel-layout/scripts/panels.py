@@ -629,7 +629,9 @@ def render(layout_path, png_dpi):
     used = {it.get("file") for r in results for it, _ in r["placed"]}
     unused = [d for d in inv["drawings"] if d["file"] not in used]
     ids = {it["id"] for r in results for it, _ in r["placed"]}
-    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi)
+    plan = out / "layout-plan.json"  # the first run's plan, which the second run keeps
+    plan = json.loads(plan.read_text(encoding="utf-8")) if plan.exists() and plan != layout_path else None
+    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan)
     print(report)
 
 
@@ -646,7 +648,7 @@ def paths_left(placed, folder):
     return out
 
 
-def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi):
+def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan=None):
     W, H = fmt["width_mm"], fmt["height_mm"]
     max_mb = fmt.get("max_mb")
     lines = [f"# Panel layout: report", "",
@@ -722,6 +724,18 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
     if not req:
         lines.append("- **No list of required items in layout.json: nothing was checked against the brief.**")
     lines.append("")
+    if plan is not None:  # every item of the first run's plan is on the panels, by its id or its file
+        files = {it.get("file") for r in results for it, _ in r["placed"]}
+        why = {it.get("id"): w for r in results for it, w in r["unplaced"]}
+        dropped = [it for p in plan.get("panels", []) for it in p.get("items", [])
+                   if it.get("id") not in ids and not (it.get("file") and it["file"] in files)]
+        problems += sum(it.get("id") not in why for it in dropped)  # one that did not fit is counted on its panel
+        lines.append("## Planned items not on the panels")
+        lines.append("In `layout-plan.json`, the first run's plan, and not placed now. Never drop a planned drawing.")
+        lines += [f"- **`{it.get('id', '?')}`** ({it.get('file', it.get('type', 'text'))}): "
+                  + (f"not placed, {why[it.get('id')]}" if it.get("id") in why else "left out of layout.json")
+                  for it in dropped] or ["- none"]
+        lines.append("")
     lines.append("## Drawings at a scale without a scale bar")
     lines.append("Tested on the SVG: no element named scale-bar, and no text \"0\" together with a text such as \"200 m\" "
                  "or \"1 km\"; a PNG or JPEG is not tested. `\"scale_bars\": \"all\"` in `format` adds one to each.")
