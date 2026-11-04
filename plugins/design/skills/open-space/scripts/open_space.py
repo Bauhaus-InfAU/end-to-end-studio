@@ -1,4 +1,4 @@
-"""The open-space layer of a design: parks, kept green, playgrounds, rain retention and green links.
+"""The open-space layer of a design: parks, kept green, playgrounds, rain retention, green links and trees.
 
   python open_space.py --site site.geojson --layers SITE_DIR --massing massing.geojson \
                        --config config.json --out OUT_DIR [--structure corridors.geojson ...]
@@ -64,6 +64,16 @@ DEFAULTS = {
     "path_inset_m": (12, "a park's loop path runs this far inside its edge, m"),
     "path_width_m": (3, "width of a path, partly sealed, m"),
     "min_loop_park_m2": (8000, "smallest park that gets a loop path, m²"),
+    "tree_sizes": ({"avenue": [8, 14, 12], "courtyard": [7, 10, 12], "grove": [8, 15, 9], "park": [10, 15, 8]},
+                   "planted trees by group: crown diameter, height, spacing, m"),
+    "canopy_landuse": ({"forest": ["wood", 10, 20], "natural:wood": ["wood", 10, 20], "natural:scrub": ["wood", 5, 5],
+                        "orchard": ["orchard", 6, 6]}, "kept land uses drawn as canopy: group, crown diameter, height, m"),
+    "avenue_offset_m": (4, "avenue trees stand this far either side of a park path's centre line, m"),
+    "cluster_every_m": (35, "in parks, a loose cluster of one to five trees about this far apart, m"),
+    "treeless_roles": (["agriculture", "energy", "utility", "sport"], "structure-plan green roles whose land gets no trees"),
+    "open_landuse": (["farmland", "meadow", "grass"],
+                     "land uses that stay without trees where the structure plan keeps them (everywhere without one)"),
+    "tree_seed": (1, "seed of the trees' jitter, so that a run repeats"),
     "terrain_cell_m": (2, "with terrain: grid on which pools and hollows fill the low ground, m"),
     "flow_cell_m": (5, "with terrain: grid on which the rain's way downhill is traced, m"),
     "flow_margin_m": (100, "with terrain: the rain's way is traced this far beyond the site, m"),
@@ -104,7 +114,8 @@ def main():
     ap.add_argument("--massing", required=True)
     ap.add_argument("--config", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--structure", nargs="*", default=[])  # GeoJSONs whose corridors (structure plan, climate) are spines
+    ap.add_argument("--structure", nargs="*", default=[])  # GeoJSONs whose corridors (structure plan, climate) are spines;
+    # the structure plan's `action` and green `roles` also say which land keeps no trees
     ap.add_argument("--keep-free")  # GeoJSON of the brief's strips and protected land; lines carry `width_m`
     ap.add_argument("--style")
     ap.add_argument("--streets", help="the streets skill's streets.geojson; its surface replaces the buffered lines")
@@ -346,6 +357,23 @@ def main():
     linked = {i for i, p in enumerate(parks) for ln, _ in links if ln.distance(p) < 0.5}
     alone = sum(1 for i, p in enumerate(parks) if i not in linked and not any(p.intersects(q) for q in parks if q is not p))
 
+    # Trees: no trunk on a street, building or path; no crown over a kept-free strip, water, a pool, a playground, a
+    # building, a green whose roles keep it open (fields, solar park) or land the plan keeps that is open today.
+    plan = [(p, g) for src_path in a.structure for f in load(src_path)
+            for p, g in [(f["properties"], m(shape(f["geometry"])))] if g.geom_type.endswith("Polygon")]
+    kept_zone = unary_union([g for p, g in plan if p.get("action") == "keep"]) if any("action" in p for p, _ in plan) else site
+    wood = unary_union([g for lu, g in kept if lu in cfg["canopy_landuse"]])   # a wood on a field or a meadow is wood
+    treeless = unary_union([g for p, g in plan if {str(r).lower() for r in p.get("roles") or []} & set(cfg["treeless_roles"])]
+                           + [unary_union([g for p, g in plots if p.get("landuse") in cfg["open_landuse"]]).intersection(kept_zone)
+                              .difference(wood)])
+    no_crown = unary_union([keep_free, treeless, water_u, buildings] + water + playgrounds
+                           + [g for p, g in mass_open if p.get("use") == "water"])
+    no_trunk = unary_union([sealed] + [g.buffer(cfg["path_width_m"] / 2 + 0.5) for g in paths + boardwalks]
+                           + [unary_union([g for lu, g in kept if lu not in cfg["canopy_landuse"]]).difference(wood)])
+    courts = [g.intersection(site) for p, g in mass_open if p.get("use") == "garden"]
+    trees = plant(cfg, kept, covers, paths, courts, sealed, no_crown, no_trunk)
+    n_old = sum(1 for t in trees if t[4])
+
     # Write.
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -381,6 +409,8 @@ def main():
     for g, to in links:
         add(g, kind="green-link", to=to, length_m=round(g.length),
             crosses_street=bool(g.intersects(streets)))
+    for pt, group, crown, height, existing in trees:
+        add(pt, kind="tree", group=group, crown_m=crown, height_m=height, existing=existing)
     with open(out / "open-space.geojson", "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f)
 
@@ -404,6 +434,8 @@ def main():
                                                                " and counts here only when nothing below it takes the rest" if flow else "")),
         ("corridors", "", sum(1 for c in corridor if c), "parks",
          f"at least {cfg['corridor_min_length_m']} m long and {cfg['corridor_min_width_m']} m wide"),
+        ("trees planted (not kept wood)", "", len(trees) - n_old, "trees", "parks, park paths, courtyards, groves"),
+        ("trees drawn over kept woods (existing)", "", n_old, "trees", "the kept woods' canopy, illustrative"),
     ] + [(f"ground cover: {n}", "", g.area, "m2", "parks, by distance rules") for n, g in covers.items()]
     with open(out / "areas.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -448,14 +480,21 @@ def main():
                       "park, not where it flows; levels must be checked.\n")
         terrain_md += "".join(f"- {n}\n" for n in ter_notes)
         f.write(f"\nGeneral:\n\n- `streets`: {streets_src}.\n{terrain_md}- Distances are straight lines, not walking routes.\n"
-                "- The massing's courtyards are private gardens and are not counted as public green.\n")
+                "- The massing's courtyards are private gardens and are not counted as public green.\n"
+                "- Trees: planted ones (`existing: false`) are design intent; those over the kept woods (`existing: true`) only "
+                "show the kept canopy and are not planting. None stands on land the plan keeps open: greens whose roles are "
+                f"{', '.join(cfg['treeless_roles'])}, and {', '.join(cfg['open_landuse'])} "
+                + ("that the structure plan keeps.\n" if any("action" in p for p, _ in plan) else
+                   "anywhere, since no structure plan says which fields change.\n"))
 
     src_md = Path(a.layers) / "SOURCES.md"
     cfg["map_credit"] = next((l.lstrip("> ").split(" (")[0].strip() for l in (src_md.read_text(encoding="utf-8").splitlines() if src_md.exists() else [])
                               if "©" in l), "")
     draw(out, site, buildings, old_bld, streets, kept_u, water, parks, playgrounds, basins, links, cfg, style, to_ll,
-         covers, pools, paths, boardwalks, keep_free)
+         covers, pools, paths, boardwalks, keep_free, trees)
     print(json.dumps({"parks": len(parks), "park_m2": round(park_a), "need_green_m2": round(need_green),
+                      "trees": {g: sum(1 for t in trees if t[1] == g) for g in sorted({t[1] for t in trees})},
+                      "trees_planted": len(trees) - n_old,
                       "playgrounds": len(playgrounds), "play_m2": round(play_a), "need_play_m2": round(need_play),
                       "homes_unreached": unreached, "basins": len(basins), "retention_m3": round(held_vol),
                       "need_retention_m3": round(need_vol), "links": len(links),
@@ -732,6 +771,73 @@ def pool_chain(park, vol, cfg, avoid, ground=None):
     return (g, deep, held) if not g.is_empty else None
 
 
+def plant(cfg, kept, covers, paths, courts, sealed, no_crown, no_trunk):
+    """Canopy over the kept woods, avenues along the park paths, trees in the courtyards, groves on the grove ground and
+    loose clusters in the parks, in this order; a tree stands at least half its crown from those before it.
+    Returns [(point, group, crown_m, height_m, existing)]."""
+    rng = np.random.default_rng(cfg["tree_seed"])
+    shapely.prepare(no_crown)
+    shapely.prepare(no_trunk)
+    out, near = [], {}
+
+    def put(xs, ys, group, crown, height, existing=False):
+        xs, ys = np.asarray(xs, float), np.asarray(ys, float)
+        if not len(xs):
+            return
+        ok = ~shapely.dwithin(no_crown, shapely.points(xs, ys), crown / 2) & ~shapely.contains_xy(no_trunk, xs, ys)
+        n = math.ceil(crown / 20)
+        for x, y in zip(xs[ok].tolist(), ys[ok].tolist()):
+            i, j = int(x // 10), int(y // 10)
+            if any(math.hypot(x - u, y - v) < crown / 2 for di in range(-n, n + 1) for dj in range(-n, n + 1)
+                   for u, v in near.get((i + di, j + dj), ())):
+                continue
+            near.setdefault((i, j), []).append((x, y))
+            out.append((Point(x, y), group, crown, height, existing))
+
+    for lu, g in kept:
+        if lu in cfg["canopy_landuse"]:
+            group, crown, height = cfg["canopy_landuse"][lu]
+            put(*scatter(g.difference(sealed), 0.8 * crown, rng, 0.3 if group == "wood" else 0), group, crown, height, existing=True)
+    crown, height, step = cfg["tree_sizes"]["avenue"]
+    for ln in [q for g in paths for q in getattr(g, "geoms", [g])]:
+        for side in (-1, 1):
+            off = shapely.offset_curve(ln, side * cfg["avenue_offset_m"])
+            for q in getattr(off, "geoms", [off]):
+                pts = [q.interpolate(d) for d in np.arange(step / 2, q.length, step)]
+                put([p.x for p in pts], [p.y for p in pts], "avenue", crown, height)
+    crown, height, step = cfg["tree_sizes"]["courtyard"]
+    for c in courts:
+        inner = c.buffer(-crown / 2 - 1)
+        xs, ys = scatter(inner, step, rng, 0.15)
+        if not len(xs) and not inner.is_empty:
+            q = inner.representative_point()
+            xs, ys = [q.x], [q.y]
+        put(xs, ys, "courtyard", crown, height)
+    crown, height, step = cfg["tree_sizes"]["grove"]
+    put(*scatter(covers["grove"], step, rng), "grove", crown, height)
+    crown, height, step = cfg["tree_sizes"]["park"]
+    ground = unary_union([covers[n] for n in ("lawn", "meadow", "wet-meadow")])
+    for x, y in zip(*scatter(ground, cfg["cluster_every_m"], rng, 0.4)):
+        k = int(rng.integers(1, 6))
+        ang = rng.uniform(0, 2 * math.pi) + np.arange(k - 1) * 2 * math.pi / max(k - 1, 1)
+        xs, ys = np.array([x, *(x + step * np.cos(ang))]), np.array([y, *(y + step * np.sin(ang))])
+        inside = shapely.contains_xy(ground, xs, ys)
+        put(xs[inside], ys[inside], "park", crown, height)
+    return out
+
+
+def scatter(area, step, rng, jitter=0.3):
+    """Points about step apart inside area, on a jittered triangular grid: xs, ys."""
+    if area.is_empty:
+        return np.zeros(0), np.zeros(0)
+    x0, y0, x1, y1 = area.bounds
+    X, Y = np.meshgrid(np.arange(x0, x1 + step, step), np.arange(y0, y1 + step, step * 0.87))
+    X = (X + (np.arange(X.shape[0])[:, None] % 2) * step / 2).ravel() + rng.uniform(-jitter, jitter, X.size) * step
+    Y = Y.ravel() + rng.uniform(-jitter, jitter, Y.size) * step
+    inside = shapely.contains_xy(area, X, Y)
+    return X[inside], Y[inside]
+
+
 def nearest_sealed(park, sealed):
     """The point of the park nearest to the sealed land, where its rain arrives."""
     if sealed.is_empty:
@@ -740,7 +846,7 @@ def nearest_sealed(park, sealed):
 
 
 def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds, basins, links, cfg, s, to_ll,
-         covers, pools, paths, boardwalks, keep_free):
+         covers, pools, paths, boardwalks, keep_free, trees=()):
     x0, y0, x1, y1 = site.buffer(80).bounds
     scale = cfg["scale"]
     wmm, hmm = (x1 - x0) / scale * 1000, (y1 - y0) / scale * 1000
@@ -785,6 +891,10 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
         shape_el(g, "none", s["ink"], cfg["path_width_m"] / k)
     for g in playgrounds:
         shape_el(g, "none", s["accent"], s["outline"], extra=f'stroke-dasharray="{lw(1)} {lw(0.6)}"')
+    tree_fill = s.get("tree", s["grove"])
+    for pt, _, crown, *_ in trees:
+        els.append(f'<circle cx="{pt.x - x0:.1f}" cy="{y1 - pt.y:.1f}" r="{crown / 2:.1f}" fill="{tree_fill}" '
+                   f'fill-opacity="0.8" stroke="{s["ink"]}" stroke-width="{lw(s["line"] / 2)}"/>')
     shape_el(unary_union(old_bld).intersection(site.buffer(80)) if old_bld else None, s["existing"], s["ink"], s["line"])
     shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["building"], s["ink"], s["line"])
     for g, _ in links:
@@ -798,7 +908,8 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
               ("grove", s["grove"], ""), ("kept green", s["kept"], ""), ("water", s["water"], ""),
               ("retention, shallow", s["accent"], 'fill-opacity="0.35"'),
               ("deep core", s["accent"], 'fill-opacity="0.68"'), ("playground", "none", ""),
-              ("green link", None, "")] + ([("kept free", "none", "")] if not keep_free.is_empty else [])
+              ("green link", None, "")] + ([("kept free", "none", "")] if not keep_free.is_empty else []) \
+        + ([("tree", tree_fill, "")] if trees else [])
     lx = 6 * k
     for name, fill, extra in legend:
         if fill is None:
