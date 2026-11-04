@@ -12,7 +12,7 @@ Every step you take re-reads everything before it, so keep what you read small:
 - **The brief.** Read `checklist.md` next to the brief first (or `brief-reader/checklist.md` in the proposal folder). Open the brief's Markdown only at the pages the checklist names, a few hundred lines at a time with Read's offset and limit, never the whole file and never with `cat`.
 - **Other skills' output.** Read their `summary.md`, then only the files you need. Never print a whole folder or a large GeoJSON; read what you need from it in a script.
 - **Scripts.** If the skill's folder has `scripts/`, run them first and change only what this brief needs: copy a script into your own folder and change the copy, never the skill's files. Write a new script to a file and run it, rather than retyping it.
-- **Pictures.** Look at one preview of each drawing you make, at most twice. Check widths, scales and counts in code, not by eye.
+- **Pictures.** Look at one preview of each drawing you make, at most twice. Check widths, scales and counts in code, not by eye. If the project has reference images of the kind your skill draws, look at them before you draw, and name the largest differences in `summary.md`.
 
 **Drawings for the panels.** Text in a drawing is never smaller than 12 px (9 pt) printed at its scale.
 
