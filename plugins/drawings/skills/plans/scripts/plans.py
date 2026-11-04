@@ -13,8 +13,9 @@ Writes <name>_1-<scale>.svg and .png and drawings.json into <proposal>/plans/.
 """
 import argparse, json, math, os, subprocess, sys
 from xml.sax.saxutils import escape
-from shapely.geometry import shape, box, Point
+from shapely.geometry import shape, box, Point, Polygon
 from shapely.ops import transform, unary_union
+from shapely import affinity
 import pyproj
 
 
@@ -48,6 +49,8 @@ DEFAULTS = {
     'gone_rail': ['abandoned', 'razed', 'dismantled'],   # rail lines no longer there, not drawn
     'tree_scale_max': 2000,     # trees drawn only at 1:2,000 and larger
     'tree_r_m': 2.5,            # crown radius of a tree, metres
+    'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
+    'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
     'site_pad_m': 40,           # ground shown around the site on the site plan, metres
     'fg_pad_m': 600,            # ground around the site on the figure-ground without the kit's bbox, metres
@@ -65,9 +68,11 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
           'rail': 'Rail', 'tree': 'Trees', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
+          'public': 'Squares, shared streets',
           'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
 # the look without a drawing standard: black on white, one accent
-FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#d9302b',
+FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#ffffff', 'public': '#f0b8b5',
+                  'shadow': '#a8a8a8', 'shadow_len': 1.2,
                   'existing': '#d0d0d0', 'context': '#e4e4e4', 'building': '#9a9a9a', 'street': '#f4f4f4',
                   'path': '#b0b0b0', 'park': '#e2e2e2', 'kept': '#d2d2d2', 'lawn': '#ececec', 'meadow': '#f0f0f0',
                   'wet-meadow': '#e6e6e6', 'grove': '#a8a8a8', 'water': '#cfd8dc',
@@ -316,8 +321,6 @@ def draw_plan(name, title, scale, window, kind, windows=()):
                     fill(g, S['park'], 'park')
                 elif u == 'water':
                     fill(g, S['water'], 'water')
-                elif u == 'square':
-                    fill(g, S['paper'], stroke=S['path'])
         # 3. streets: the streets skill's surface, else lines at their widths
         paths = [g for p, g in (OPEN or []) if p.get('kind') == 'path']
         if STREETS is not None:
@@ -349,6 +352,13 @@ def draw_plan(name, title, scale, window, kind, windows=()):
                             g.buffer(float(p.get('width') or CFG['street_w_new']) / 2, cap_style=2, join_style=1))
             if surf:
                 fill(unary_union(surf).intersection(fr.buffer(10)), S['street'], 'street', S['path'])
+        # 3b. the public ground in the accent's pale tone: the massing's squares, the shared streets
+        pub = [g for p, g in MASS if p.get('kind') == 'open-space' and p.get('use') == 'square']
+        pub += [g.buffer(CFG['shared_street_w_m'] / 2, cap_style=2) for p, g in (MOB or [])
+                if p.get('kind') == 'route' and p.get('access_only')]
+        pub = unary_union([g for g in pub if g.intersects(fr)]) if pub else None
+        if pub is not None and not pub.is_empty:
+            fill(pub.intersection(fr.buffer(10)), S['public'], 'public')
         for g in paths:
             if g.intersects(fr):
                 line(g, S['path'], 'thin', (1.2, 0.8), 'path')
@@ -362,6 +372,10 @@ def draw_plan(name, title, scale, window, kind, windows=()):
                         line(q.offset_curve(off), S['ink'], 'thin', key='rail')
                     except Exception:
                         pass
+        # 4b. the buildings' cast shadow, one shape, darkening whatever ground it falls on
+        sh = shadows(inside(BUILD))
+        if not sh.is_empty:
+            o.append(f'<path d="{d(sh)}" fill="{S["shadow"]}" stroke="none" fill-rule="evenodd" style="mix-blend-mode:multiply"/>')
         # 5. existing buildings: around the site pale, kept ones in it with an outline
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
@@ -430,6 +444,24 @@ def draw_plan(name, title, scale, window, kind, windows=()):
     return dict(name=name, file=fname + '.svg', png=os.path.exists(png), title=title, scale=scale,
                 width_mm=round(W, 1), height_mm=round(H, 1), map_width_mm=round(W, 1), map_height_mm=round(Hm / k, 1),
                 fits=W <= PW + 0.5 and H <= PH_ALL + 0.5, layers_used=used, layers_missing=missing)
+
+
+def shadows(items):
+    """The ground shadow of buildings, shadow_len metres per floor: each footprint swept along the light (the footprint,
+    it moved, and the band each edge sweeps), so a courtyard stays open where no wall shades it."""
+    a = math.radians(CFG['shadow_az_deg'])
+    out = []
+    for p, g in items:
+        L = float(S['shadow_len']) * float(p.get('floors') or 1)
+        vx, vy = math.sin(a) * L, math.cos(a) * L
+        for q in getattr(g, 'geoms', [g]):
+            if q.geom_type != 'Polygon':
+                continue
+            out += [q, affinity.translate(q, vx, vy)]
+            for r in [q.exterior, *q.interiors]:
+                c = [xy[:2] for xy in r.coords]
+                out += [Polygon([(x1, y1), (x2, y2), (x2 + vx, y2 + vy), (x1 + vx, y1 + vy)]) for (x1, y1), (x2, y2) in zip(c, c[1:])]
+    return unary_union([q for q in out if q.area > 0]) if out else Polygon()
 
 
 def symbol(kind, x, y, k):

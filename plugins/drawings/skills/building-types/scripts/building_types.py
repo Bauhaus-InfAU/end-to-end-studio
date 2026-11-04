@@ -72,7 +72,10 @@ else:
     style_src = 'no drawing standard: black on white with one accent'
     UNSURE.append('no drawing-graphics/style.json, so black on white with one accent')
 INK, PAPER = ST.get('ink', '#000'), ST.get('paper', '#fff')
-ACC = ST.get('new') or ST.get('accent', '#c8442b')
+ACC = ST.get('accent', '#c8442b')
+NEW = ST.get('new', '#ffffff')                       # the buildings white, their left faces in shade
+SHADE = '#%02x%02x%02x' % tuple(round(int(NEW[i:i + 2], 16) * 0.4 + int(ST.get('shadow', '#a8a8a8')[i:i + 2], 16) * 0.6)
+                                for i in (1, 3, 5))
 FONT = ST.get('font', 'Arial, sans-serif')
 THIN, MID = float(ST.get('thin', 0.13)), float(ST.get('mid', 0.25))
 TXT = max(float(ST.get('text', 3.2)), 3.2)          # never under 12 px printed
@@ -224,7 +227,7 @@ def draw(t):
     for _, p1, p2, left in sorted(walls, key=lambda w: -w[0]):   # far to near
         quad = [(*p1, 0), (*p2, 0), (*p2, h), (*p1, h)]
         g.append('<polygon points="%s" fill="%s" stroke="%s" stroke-width="%.2f" stroke-linejoin="round"/>'
-                 % (pts(quad), ACC if left else PAPER, INK, MID))
+                 % (pts(quad), SHADE if left else NEW, INK, MID))
         for k in range(1, n if h / n * MM >= 0.8 else 1):   # floors as fine lines, dropped when they would merge in print
             z = h * k / n
             (u1, v1), (u2, v2) = iso(*p1, z), iso(*p2, z)
@@ -232,7 +235,7 @@ def draw(t):
                      % (u1, v1, u2, v2, INK, THIN))
     d = ' '.join('M ' + ' L '.join('%.2f %.2f' % iso(x, y, h) for x, y in r) + ' Z' for r in rings)
     g.append('<path d="%s" fill="%s" fill-rule="evenodd" stroke="%s" stroke-width="%.2f" stroke-linejoin="round"/>'
-             % (d, PAPER, INK, MID))
+             % (d, NEW, INK, MID))
     us = [iso(x, y, z)[0] for r in rings for x, y in r for z in (0, h)]
     vs = [iso(x, y, z)[1] for r in rings for x, y in r for z in (0, h)]
     v0 = max(iso(x, y, 0)[1] for r in rings for x, y in r)   # the lowest ground corner
@@ -318,8 +321,8 @@ for row, BASE in zip(ROWS, BASES):
 
 # legend and source line
 ly = H - M - LH
-svg.append('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s" stroke="%s" stroke-width="%.2f"/>' % (M, ly - TXT * 0.8, TXT, TXT, ACC, INK, MID))
-T(M + TXT * 1.6, ly, 'new building, one face in the accent; fine lines: floors. True lengths along the three axes.', TXT)
+svg.append('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s" stroke="%s" stroke-width="%.2f"/>' % (M, ly - TXT * 0.8, TXT, TXT, SHADE, INK, MID))
+T(M + TXT * 1.6, ly, 'new building, one face in shade; fine lines: floors. True lengths along the three axes.', TXT)
 src = 'Sources: %s; %s; one building of median footprint per type.' % (
     'stand-in shapes (assumed sizes)' if not FEATS else 'massing/massing.geojson' + (' (itself a stand-in)' if mass_stand_in else ''),
     ('no programme' if not FEATS else 'programme stand-in from the massing') if prog_stand_in else 'programme/programme.csv')

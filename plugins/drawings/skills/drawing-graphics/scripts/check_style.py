@@ -4,9 +4,9 @@
 """
 import json, re, sys
 
-COLOURS = ["paper", "background", "ink", "accent", "new", "existing", "context", "building", "street", "path",
-           "park", "kept", "lawn", "meadow", "wet-meadow", "grove", "water"]
-NUMBERS = ["thin", "mid", "thick", "line", "line_mm", "outline", "text", "title", "body_pt", "heading_pt"]
+COLOURS = ["paper", "background", "ink", "accent", "new", "public", "shadow", "existing", "context", "building", "street",
+           "path", "park", "kept", "lawn", "meadow", "wet-meadow", "grove", "water"]
+NUMBERS = ["thin", "mid", "thick", "line", "line_mm", "outline", "text", "title", "body_pt", "heading_pt", "shadow_len"]
 MIN_TEXT_MM = 3.17   # 12 px = 9 pt printed
 
 
@@ -30,9 +30,8 @@ def problems(s):
         return out
     if contrast(s["ink"], s["paper"]) < 7:
         out.append(f"ink: contrast with paper {contrast(s['ink'], s['paper']):.1f}, needs 7")
-    for k in ("accent", "new"):
-        if contrast(s[k], s["paper"]) < 3:
-            out.append(f"{k}: contrast with paper {contrast(s[k], s['paper']):.1f}, needs 3")
+    if contrast(s["accent"], s["paper"]) < 3:   # not `new`: white buildings read by their outline and shadow
+        out.append(f"accent: contrast with paper {contrast(s['accent'], s['paper']):.1f}, needs 3")
     if s["text"] < MIN_TEXT_MM:
         out.append(f"text: {s['text']} mm, needs at least {MIN_TEXT_MM} mm (12 px printed)")
     if s["title"] < s["text"]:

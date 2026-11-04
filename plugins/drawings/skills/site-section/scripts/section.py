@@ -59,7 +59,7 @@ DEFAULTS = {
 C = DEFAULTS
 
 # fallback look: black on white, greys, one accent. A standard overrides it through --style.
-STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#c8442b', 'new': '#c8442b', 'existing': '#cfcfcf',
+STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#c8442b', 'new': '#ffffff', 'existing': '#cfcfcf',
          'context': '#e4e4e4', 'building': '#9a9a9a', 'street': '#f2f2f2', 'path': '#bcbcbc', 'park': '#c9dcbc',
          'grove': '#8f8f8f', 'lawn': '#dddddd', 'water': '#9ec5d8', 'font': 'Arial, Helvetica, sans-serif',
          'thin': 0.13, 'mid': 0.25, 'thick': 0.5, 'text': 3.2, 'title': 5.6}
@@ -688,8 +688,8 @@ def draw(w0, w1, scale, detail, name):
 
     def behind_building(c):   # lighter the farther, on its own ground
         b = c['b']
-        fill = mix(S['accent'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
-        stroke = mix(S['accent'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')
+        fill = mix(S['new'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
+        stroke = mix(S['ink'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')   # white ones keep their outline
         d_out = outline(c['roof'], c['low'])
         o.append(f'<path d="{d_out}" fill="{fill}" stroke="{stroke}" stroke-width="{THIN}"/>')
         floors(c, d_out, stroke)
@@ -714,10 +714,10 @@ def draw(w0, w1, scale, detail, name):
     # buildings cut, the strongest tone, the roof cut along the line where there is a model
     for c in sel_cut:
         b = c['b']
-        fill = S['accent'] if b['new'] else S['ink']
+        fill = S['new'] if b['new'] else S['ink']
         d_out = outline(c['roof'], c['bottom'])
-        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
-        floors(c, d_out, S['paper'])
+        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{S["ink"]}" stroke-width="{MID if b["new"] else THIN}"/>')
+        floors(c, d_out, mix(S['new'], S['ink'], 0.5) if b['new'] else S['paper'])
     # the earth, cut, and the ground line
     tt = np.concatenate([[w0], TS[(TS > w0) & (TS < w1)], [w1]])
     gl = 'L'.join('%.2f,%.2f' % (X(t), Y(z)) for t, z in zip(tt, ground(tt)))
