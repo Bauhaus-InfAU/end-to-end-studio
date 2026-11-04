@@ -80,6 +80,16 @@ def test_plans_text_floor(drawn):
         assert min(sizes) / scale * 1000 >= 3.2 - 1e-6, (f, min(sizes))
 
 
+def test_plans_white_buildings_shadow_and_public_ground(drawn):
+    out, _ = drawn
+    style = json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))
+    site_plan = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    assert 'mix-blend-mode:multiply' in site_plan                     # the cast shadow
+    assert 'fill="%s"' % style["public"] in site_plan                 # the massing's square in the public tone
+    assert 'fill="%s"' % style["accent"] not in site_plan              # the accent is off the buildings
+    assert 'mix-blend-mode' not in (out / "plans/figure-ground_1-15000.svg").read_text(encoding="utf-8")
+
+
 def test_plans_reads_streets_when_present(drawn, tmp_path):
     out, site_dir = drawn
     g = shape(json.loads((site_dir / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"])

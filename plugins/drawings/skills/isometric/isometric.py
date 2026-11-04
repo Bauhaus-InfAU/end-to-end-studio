@@ -5,7 +5,7 @@ python3 isometric.py <site folder> <proposal folder> <site plan scale> <panel wi
 Reads <site folder>/site.geojson and its layers (buildings, plots, streets, water, rail),
 and <proposal folder>/massing/massing.geojson if it exists. Writes into
 <proposal folder>/isometric/: isometric_1-<scale>.svg and .png, and summary.md.
---style: a JSON of colours taken from the drawing standard (keys as in STYLE below).
+--style: the drawing standard's style.json, its keys mapped onto STYLE below.
 Needs shapely and pyproj; the PNG needs a headless Chrome, Chromium or Edge.
 """
 import argparse, json, math, os, shutil, subprocess, sys
@@ -22,15 +22,24 @@ ap.add_argument("--style")
 a = ap.parse_args()
 out_dir = os.path.join(a.proposal, "isometric"); os.makedirs(out_dir, exist_ok=True)
 
-# fallback look: black on white, one accent. A standard overrides it through --style.
-STYLE = {"accent": "#d9302b", "new_wall": "#e2554d", "new_wall_shade": "#c23d36", "new_roof": "#f28b84",
-         "new_line": "#8e1d18", "floor_line": "#f6c3bf", "existing_line": "#c2c2c2", "existing_fill": "#ffffff",
+# fallback look: black on white, white buildings with shaded walls, the accent's pale tone on the squares.
+STYLE = {"accent": "#d9302b", "new_wall": "#ececec", "new_wall_shade": "#cfcfcf", "new_roof": "#ffffff",
+         "new_line": "#1a1a1a", "floor_line": "#a8a8a8", "existing_line": "#c2c2c2", "existing_fill": "#ffffff",
          "ground": "#ffffff", "field": "#f4f4f1", "field_line": "#dcdcd6", "design_green": "#fafaf8",
          "design_green_hatch": "#cfcfc7", "water": "#e3e7e9", "water_line": "#9aa3a8", "street": "#fafaf8",
-         "street_line": "#a0a0a0", "rail": "#444444", "tree": "#9a9a9a", "text": "#1a1a1a"}
+         "street_line": "#a0a0a0", "rail": "#444444", "tree": "#9a9a9a", "text": "#1a1a1a", "public": "#f0b8b5"}
+mix = lambda c1, c2, t: "#%02x%02x%02x" % tuple(round(int(c1[i:i + 2], 16) * (1 - t) + int(c2[i:i + 2], 16) * t) for i in (1, 3, 5))
 used_standard = False
 if a.style and os.path.exists(a.style):
-    STYLE.update(json.load(open(a.style))); used_standard = True
+    s = json.load(open(a.style)); used_standard = True
+    # the standard's keys mapped onto this drawing's, never merged: its `text` is a size, its `field` another layer
+    nw, sh = s.get("new", STYLE["new_roof"]), s.get("shadow", STYLE["floor_line"])
+    STYLE.update({k: v for k, v in {
+        "accent": s.get("accent"), "public": s.get("public"), "new_roof": nw, "new_wall": mix(nw, sh, 0.25),
+        "new_wall_shade": mix(nw, sh, 0.6), "new_line": s.get("ink"), "floor_line": sh, "existing_line": s.get("existing"),
+        "existing_fill": s.get("paper"), "ground": s.get("paper"), "design_green": s.get("park"), "design_green_hatch": s.get("grove"),
+        "water": s.get("water"), "street": s.get("street"), "street_line": s.get("path"), "rail": s.get("ink"),
+        "tree": s.get("grove"), "text": s.get("ink")}.items() if v})
 
 summary = os.path.join(out_dir, "summary.md")
 def load(path):
@@ -117,7 +126,7 @@ for p, g in layer("water"):
 for f in mass:
     p = f["properties"]
     if p.get("kind") == "open-space":
-        fill = S["water"] if p.get("use") == "water" else "url(#hatch)"
+        fill = {"water": S["water"], "square": S["public"]}.get(p.get("use"), "url(#hatch)")
         svg.append('<path d="%s" fill="%s" stroke="%s" stroke-width="0.4"/>'
                    % (poly_d(rot(transform(tr, shape(f["geometry"])))), fill, S["field_line"]))
 

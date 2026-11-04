@@ -1,7 +1,7 @@
 {
  "source": "base: the studio's best-practice standard",
  "paper": "#ffffff", "background": "#ffffff", "ink": "#1a1a1a",
- "accent": "#c8442b", "new": "#c8442b",
+ "accent": "#c8442b", "new": "#ffffff", "public": "#e9b4aa", "shadow": "#a8a8a8", "shadow_len": 1.2,
  "existing": "#cfcfcf", "context": "#e4e4e4", "building": "#9a9a9a", "street": "#f2f2f2", "path": "#bcbcbc",
  "park": "#c9dcbc", "kept": "#a9c79a", "lawn": "#dbe8cf", "meadow": "#e6ecd2", "wet-meadow": "#cfe0d8",
  "grove": "#8fb27f", "water": "#9ec5d8",

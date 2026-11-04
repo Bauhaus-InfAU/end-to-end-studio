@@ -1,6 +1,6 @@
 ---
 name: isometric
-description: Draws an isometric of an urban design, zoomed in on its new buildings with about 100 m of the city around them, the new in the accent and the existing pale; without a design yet, the site as it is. Use when asked for an isometric, an isometry, an axonometric or a 3D overview of a design or a site.
+description: Draws an isometric of an urban design, zoomed in on its new buildings with about 100 m of the city around them, the new white with shaded walls and the existing pale; without a design yet, the site as it is. Use when asked for an isometric, an isometry, an axonometric or a 3D overview of a design or a site.
 ---
 # Isometric
 
@@ -11,7 +11,7 @@ Draw only what the files hold: the project's site folder, `massing/massing.geojs
 
 **View.** A true isometric from the side where the fewest tall buildings stand in front of the new ones, framing them with about 100 m of city, cut by the frame. Without a massing: the site with 200 m around it, its boundary in the accent, and say the design is missing.
 
-**What it shows.** New buildings in the accent with floor lines, roofs only where the massing names them; existing buildings pale (say how many heights are defaults); the streets skill's surface when it exists, else streets at their width, rail, water, green, and the trees the data has; planting, people and use labels only where a design layer or the narrative proposes them, marked illustrative. The new reads first: the strongest tone in the drawing; the design's parks and gardens told apart from fields. No arrows; no label, person or tree the data and the narrative don't give. Large (a block, 1:500 to 1:1000) it shows floor lines, roofs and single trees; small (the district, 1:2500 and smaller) only the volumes, streets, water and green.
+**What it shows.** New buildings white with shaded walls, an ink outline and floor lines, roofs only where the massing names them, and the massing's squares in the accent's pale `public` tone; existing buildings pale (say how many heights are defaults); the streets skill's surface when it exists, else streets at their width, rail, water, green, and the trees the data has; planting, people and use labels only where a design layer or the narrative proposes them, marked illustrative. The new reads first, by its outline and shade; the design's parks and gardens told apart from fields. No arrows; no label, person or tree the data and the narrative don't give. Large (a block, 1:500 to 1:1000) it shows floor lines, roofs and single trees; small (the district, 1:2500 and smaller) only the volumes, streets, water and green.
 
 **Scale and look.** Its frame's scale in `panel-layout/layout.json`, showing what its `shows` asks, under its `file` name; without one, the brief's site plan scale, or the next smaller usual one if the drawing is wider than the panel; print size in mm. The look comes from the standard; without it, black on white and one accent. Check the PNG: new buildings cut or floating are mistakes.
 

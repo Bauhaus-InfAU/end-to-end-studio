@@ -668,8 +668,8 @@ fill(unary_union([g for p, g in CTX if g.intersects(fr) and not site.contains(g.
 kept = [g for p, g in MASS if p.get('kind') == 'building' and p.get('existing') and g.intersects(fr)]
 if kept:
     fill(unary_union(kept), S['existing'], 'existing')
-if NEWB:   # the standard's colour for new, light enough for the routes to read on it
-    fill(unary_union([g for p, g in NEWB if g.intersects(fr)]), S['new'], 'new', extra=' fill-opacity="0.45"')
+if NEWB:   # the standard's colour for new, light enough for the routes to read on it, outlined so white ones show
+    fill(unary_union([g for p, g in NEWB if g.intersects(fr)]), S['new'], 'new', S['ink'], extra=' fill-opacity="0.45"')
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
