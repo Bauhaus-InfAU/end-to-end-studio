@@ -6,5 +6,6 @@ Skills that draw. Each decides what its drawing shows; how it looks comes from t
 - Never fix a colour, line weight, font or scale in a drawing skill. Say what the drawing shows when it is large (a block, 1:500) and when it is small (the district in its city, 1:5000 and smaller), and take the scales from the brief's checklist.
 - How: SVG written in code from the GeoJSON, not Rhino (see "The tools" in `STUDIO.md`). 3D drawings extrude the footprints by their heights; sections cut through them.
 - `streets` writes the one street surface (`streets/streets.geojson`); a skill that draws streets reads it when it exists and buffers lines only without it.
+- Facts and intent: facts and numbers keep their source. Planting, people, use labels and furniture may be drawn where a design layer or a narrative line proposes them, marked as illustrative and named in `summary.md`; with no such source, leave them out.
 - Output: SVG with a PNG next to each, named after what it shows, and the drawings listed in `summary.md` with their scales. Give each SVG its print width and height in mm at the scale it is drawn at, so the panels can print it true to scale.
 - A new skill here: another kind of drawing, such as a street elevation, an exploded axonometric or a diagram of a process.

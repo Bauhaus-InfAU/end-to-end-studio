@@ -60,7 +60,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 
 ## Shared rules
 
-- Never invent data. Every number has its source or its assumption next to it.
+- Never invent data. Every number has its source or its assumption next to it. Design intent is not data: a drawing may show what a design layer or a line of the narrative proposes (planting, people, use labels, furniture), marked as illustrative and named in `summary.md`; a skill never adds a fact, a number or a use that neither gives.
 - The look comes from `drawing-graphics`: a best-practice base, fitted to the entry's narrative, then to the project's reference images if there are any (here `competition/references/`). It writes `drawing-graphics/standard.md` and `style.json`. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
 - Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
