@@ -1,0 +1,14 @@
+{
+ "centre_uses": {
+  "value": [{"use": "<a use the programme gives an area for>", "area_m2": null, "at": "<a centre's name in the structure plan>",
+             "source": "<programme row or brief file p. N>"}],
+  "source": "<programme/programme.csv and the structure plan's holds: the uses with an area that go into a centre's ground floors; may be []>"
+ },
+ "hubs": {
+  "value": [{"at": "<a hub's name in mobility.geojson, or a centre's name>", "bus_bays": null, "bike_spaces": null,
+             "source": "<brief file p. N, or assumption: why>"}],
+  "source": "<brief file p. N: the bus bays and bike spaces the brief asks for at a hub; may be []>"
+ },
+ "bike_stands_per_entrance": {"value": 4, "source": "assumption: four stands, eight bikes, beside each door; the brief's or the city's bike parking rule where there is one"},
+ "play_m2": {"value": 100, "source": "assumption: a small children's play area in each courtyard; the brief's or the building code's size where there is one"}
+}

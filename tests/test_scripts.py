@@ -19,6 +19,7 @@ NEW_SCRIPTS += [REPO / "plugins/studio/skills/competition-proposal/scripts/frame
 NEW_SCRIPTS += [REPO / "plugins/drawings/skills/site-section/scripts" / f for f in ("section.py", "terrain.py")]
 NEW_SCRIPTS += [REPO / "plugins/design/skills/mobility/scripts" / f for f in ("mobility.py", "config.example.json")]
 NEW_SCRIPTS += [REPO / "plugins/design/skills/phasing/scripts" / f for f in ("phases.py", "config.example.json")]
+NEW_SCRIPTS += [REPO / "plugins/design/skills/ground-floor/scripts" / f for f in ("ground_floor.py", "config.example.json")]
 NEW_SCRIPTS += [REPO / "plugins/concept/skills/structure-plan/scripts" / f
                 for f in ("frame.py", "build.py", "check.py", "georef.py", "design.example.py")]
 FORBIDDEN = re.compile(r"Regensburg|Europan|Pilsenallee|Chamer|Brandlberg|Haslbach|Wutzlhofen|run-3|25832"

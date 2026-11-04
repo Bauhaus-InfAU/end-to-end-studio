@@ -8,7 +8,8 @@ site_plan_scale, panel_width_mm and panel_height_mm are required; figure_ground_
 margin_mm, detail_areas (a list of {"name", "scale", "at", "shows", "page"}, `at` a centre's name in the structure
 plan, "phase1", or [lon, lat]) and labels (the legend's words) are optional. Every layer but the massing is
 optional: buildings from massing/, the street surface from streets/, the ground from open-space/, stops and hubs
-from mobility/, the centres from structure-plan/. A missing layer is left out and named in drawings.json. A detail area or the site plan that
+from mobility/, the centres from structure-plan/, and in the detail areas only the ground floors from
+ground-floor/detail.geojson. A missing layer is left out and named in drawings.json. A detail area or the site plan that
 the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json) frames takes that frame's scale and is
 drawn to its size, the legend strip included. The style's storey_labels writes the storeys roman or arabic (default).
 Writes <name>_1-<scale>.svg and .png and drawings.json into <proposal>/plans/.
@@ -70,7 +71,8 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
           'rail': 'Rail', 'tree': 'Trees', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
-          'public': 'Squares, shared streets',
+          'public': 'Squares, shared streets', 'entrance': 'Entrances', 'bike-stands': 'Bike stands',
+          'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
           'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
 # the look without a drawing standard: black on white, one accent
 FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#ffffff', 'public': '#f0b8b5',
@@ -135,6 +137,7 @@ STREETS = load(os.path.join(RUN, 'streets', 'streets.geojson'))
 OPEN = load(os.path.join(RUN, 'open-space', 'open-space.geojson'))
 MOB = load(os.path.join(RUN, 'mobility', 'mobility.geojson'))
 SP = load(os.path.join(RUN, 'structure-plan', 'structure-plan.geojson'))
+GF = load(os.path.join(RUN, 'ground-floor', 'detail.geojson'))
 CTX = load(os.path.join(SITE, 'buildings.geojson')) or []
 PLOTS = load(os.path.join(SITE, 'plots.geojson')) or []
 WATER = load(os.path.join(SITE, 'water.geojson')) or []
@@ -395,6 +398,13 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         pub = unary_union([g for g in pub if g.intersects(fr)]) if pub else None
         if pub is not None and not pub.is_empty:
             fill(pub.intersection(fr.buffer(10)), S['public'], 'public')
+        # 3c. the ground floors' surfaces from ground-floor/, in a detail area only: play, bus bays, bike parking
+        gfd = inside(GF) if kind == 'detail' and GF is not None else []
+        for p, g in gfd:
+            if p.get('kind') == 'play':
+                fill(g, 'none', 'playground', S['ink'], 'mid')
+            elif p.get('kind') in ('bus-bay', 'bike-parking'):
+                fill(g, S['street'], p['kind'], S['ink'], 'thin')
         for g in paths:
             if g.intersects(fr):
                 line(g, S['path'], 'thin', (1.2, 0.8), 'path')
@@ -444,6 +454,36 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 legend.setdefault(p['kind'], (p['kind'],))
         else:
             missing.append('mobility (no stops or hubs)')
+        # 8b. the ground floors' marks, in a detail area only: bike stands, each door a triangle pointing in, the uses
+        if kind == 'detail':
+            if GF is not None:
+                used.append('ground-floor')
+            else:
+                missing.append('ground-floor (no entrances or uses)')
+            for p, g in gfd:
+                if p.get('kind') == 'bike-stands':
+                    line(g, S['ink'], 'thin', key='bike-stands')
+                elif p.get('kind') == 'entrance' and g.geom_type == 'Point':
+                    o.append(symbol('entrance', *P(g.x, g.y), k, p.get('bearing_deg')))
+                    legend.setdefault('entrance', ('entrance',))
+            taken = []                                    # the boxes of the labels written so far
+            for p, g in gfd:
+                if p.get('kind') != 'use' or not p.get('label') or g.geom_type != 'Point':
+                    continue
+                b = p.get('bearing_deg')                  # the label stands outside the door, away from the building
+                ox, oy = (math.sin(math.radians(b)), -math.cos(math.radians(b))) if b is not None else (0, 0)
+                x, y = P(g.x, g.y)
+                x, y = x + ox * 3.5 * k, y + oy * 3.5 * k
+                anchor = 'start' if ox > 0.4 else 'end' if ox < -0.4 else 'middle'
+                y += 0.36 * fs if anchor != 'middle' or b is None else (fs if oy > 0 else -0.2 * fs)
+                wt = tw(str(p['label']), fs)
+                x0_ = x if anchor == 'start' else x - wt if anchor == 'end' else x - wt / 2
+                bb = (x0_, y - fs, x0_ + wt, y + 0.2 * fs)
+                if any(bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
+                    continue                              # a label that would cover another is left out
+                taken.append(bb)
+                o.append(f'<text x="{f2(x)}" y="{f2(y)}" font-size="{f2(fs)}" text-anchor="{anchor}" fill="{S["ink"]}" '
+                         f'stroke="{S["paper"]}" stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(str(p["label"]))}</text>')
         # 9. storeys on the new buildings
         if kind == 'detail' or CFG.get('storeys_on_site_plan'):
             ink_on_new = S['ink'] if lum(S['new']) > 0.55 else S['paper']   # whichever reads on the new buildings' tone
@@ -506,9 +546,14 @@ def shadows(items):
     return unary_union([q for q in out if q.area > 0]) if out else Polygon()
 
 
-def symbol(kind, x, y, k):
+def symbol(kind, x, y, k, b=None):
     ink, paper = S['ink'], S['paper']
     sw = '%.2f' % (float(S['mid']) * k)
+    if kind == 'entrance':   # a triangle outside the facade, its tip at the door; b: the way the door faces, degrees
+        a = math.radians(180 if b is None else float(b))
+        ox, oy, L, hw = math.sin(a), -math.cos(a), 2.2 * k, 1.1 * k
+        bx, by = x + ox * L, y + oy * L
+        return f'<path d="M{x:.2f},{y:.2f}L{bx - oy * hw:.2f},{by + ox * hw:.2f}L{bx + oy * hw:.2f},{by - ox * hw:.2f}Z" fill="{ink}"/>'
     if kind == 'stop':
         return (f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{2.0 * k:.2f}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
                 f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{1.0 * k:.2f}" fill="{ink}"/>')
