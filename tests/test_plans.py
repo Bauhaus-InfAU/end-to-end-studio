@@ -1,5 +1,5 @@
 """The plans skill draws the site plan, a detail area and the figure-ground from the design layers, fitted to the panel."""
-import json, os, re, subprocess, sys
+import json, os, re, shutil, subprocess, sys
 import pytest
 import pyproj
 from shapely.geometry import shape, mapping, box
@@ -134,6 +134,27 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
     finally:
         plan.unlink()
         style.write_text(keep, encoding="utf-8")
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
+    """With ground-floor/detail.geojson, a detail area shows the doors and bike stands; the site plan doesn't."""
+    out, site_dir = drawn
+    gf = out / "ground-floor"
+    gf.mkdir()
+    (gf / "config.json").write_text(json.dumps({k: {"value": v, "source": "test"} for k, v in
+                                                {"bike_stands_per_entrance": 4, "play_m2": 100, "centre_uses": [], "hubs": []}.items()}),
+                                    encoding="utf-8")
+    try:
+        run(REPO / "plugins/design/skills/ground-floor/scripts/ground_floor.py", "--proposal", out, "--config", gf / "config.json")
+        draw(out, site_dir)
+        made = {e["name"]: e for e in json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))}
+        detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
+        assert "ground-floor" in made["detail-area-1"]["layers_used"] and ">Entrances</text>" in detail
+        assert "ground-floor" not in made["site-plan"]["layers_used"]
+        assert ">Entrances</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    finally:
+        shutil.rmtree(gf)
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 

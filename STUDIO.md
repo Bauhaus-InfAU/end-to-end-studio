@@ -85,6 +85,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |
 | | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | `basak-unver` |
 | | `streets` | One clean street surface at real widths, existing and new, for every drawing | `YegorGaidukov` |
+| | `ground-floor` | The ground floors by rules: doors on the street side, bike stands, play in the courtyards, the uses and their areas at the centres, a hub's bus bays and bike parking | open |
 | drawings | `drawing-graphics` | The studio's drawing standard: a best-practice base, fitted to the narrative, then to the reference images. Example | `YegorGaidukov` |
 | | `figure-ground` | The figure-ground plan of the district in its city | open |
 | | `plans` | Every plan the brief asks for, at its scales: the overall plan and the detail areas | open |
