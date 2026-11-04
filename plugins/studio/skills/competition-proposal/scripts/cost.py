@@ -1,8 +1,9 @@
 """What a studio run cost, from its Claude Code transcripts, at API prices.
 
-    python cost.py --version <version folder> [--projects <transcripts dir>] [--session <id>]
+    python cost.py --version <version folder> [--projects <transcripts dir>] [--session <id>] [--ceiling <usd>]
 
-Writes <version>/cost.csv: one row per helper, one for the lead, one total. The lead's
+Writes <version>/cost.csv: one row per helper, one for the lead, one total, and prints whether the total is past
+the ceiling (default $30), past which the lead skips its revision round. The lead's
 transcript is the session that mentions the version folder's name and started the most
 helpers named after its label; --session picks one by id instead.
 """
@@ -107,6 +108,8 @@ def main(argv=None):
     a.add_argument("--version", required=True, help="the version folder")
     a.add_argument("--projects", help="the transcripts folder (default: this project's in ~/.claude/projects)")
     a.add_argument("--session", help="the lead's session id")
+    a.add_argument("--ceiling", type=float, default=30.0,
+                   help="dollars the run may cost (default 30: what a full run used to cost, about three of a Pro plan's 5-hour windows)")
     args = a.parse_args(argv)
     version = Path(args.version)
     projects = Path(args.projects) if args.projects else default_projects()
@@ -137,7 +140,8 @@ def main(argv=None):
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
-    print(f"total ${total['usd']:.2f}, lead ${t['usd']:.2f}, {len(rows) - 2} helpers")
+    side = "past" if total["usd"] > args.ceiling else "under"
+    print(f"total ${total['usd']:.2f}, lead ${t['usd']:.2f}, {len(rows) - 2} helpers, {side} its ceiling of ${args.ceiling:.2f}")
 
 
 if __name__ == "__main__":

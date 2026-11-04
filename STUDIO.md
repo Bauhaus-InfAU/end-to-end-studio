@@ -46,7 +46,7 @@ Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJS
 
 ## The order
 
-Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist; a skill that reads it starts after its first run, unless it writes `<skill> (end)`, as in `Reads: panel-layout (end)`. `everything` means every skill that doesn't wait for this one (a skill that waits only for its first run still counts); `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead never adds a round. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
+Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist; a skill that reads it starts after its first run, unless it writes `<skill> (end)`, as in `Reads: panel-layout (end)`. `everything` means every skill that doesn't wait for this one (a skill that waits only for its first run still counts); `every analysis` means every skill of that topic that doesn't wait for this one, and `every drawings (end)` waits for the second run of those that have one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead adds one round only: before `panel-layout (end)`, the skills that `art-direction` or the frame check name redraw once, unless the run is past its cost ceiling. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
 
 ## The tools
 
@@ -95,6 +95,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `concept-diagrams` | Three to six pictograms that tell the idea | `nouranmoustafa` |
 | | `perspective` | Eye-level views with people, from a view in the massing | `Isabelacano` |
 | delivery | `panel-layout` | The panels the brief asks for, along the storyline | `bengunur` |
+| | `art-direction` | Puts each drawing beside the references of its kind and gives each drawing skill at most three fixes for one redraw | open |
 | | `jury` | Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict | `nandimateo` |
 | studio | `competition-proposal` | The lead: runs the others, keeps the versions | `YegorGaidukov` |
 
