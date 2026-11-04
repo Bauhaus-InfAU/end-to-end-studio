@@ -93,6 +93,14 @@
   ],
   "source": "optional: every community building the brief asks for, with its page; `at` is a word in a centre's `holds`"
  },
+ "square_main_m": {
+  "value": null,
+  "source": "optional: side in m of the square on the main centre (default 60); kept inside the centre and to the land its `holds` leave"
+ },
+ "square_local_m": {
+  "value": null,
+  "source": "optional: side in m of the square on every local centre (default 30)"
+ },
  "food_market": {
   "value": null,
   "source": "optional: a shop the brief asks for near the centre, as a note"
