@@ -133,7 +133,8 @@ def main():
         if k not in cfg_in:
             sys.exit(f"config.json needs '{k}', from the programme or the brief")
         cfg[k] = cfg_in[k]
-    style = dict(FALLBACK_STYLE, **(load_json(a.style) if a.style else {}))
+    std = load_json(a.style) if a.style else {}   # the standard's keys this plan has, by name, never merged
+    style = {k: std.get(k, v) for k, v in FALLBACK_STYLE.items()}
 
     site_ll = unary_union([shape(f["geometry"]) for f in load(a.site)])
     to_m, to_ll = utm_for(site_ll.centroid.x, site_ll.centroid.y)
@@ -891,7 +892,7 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
         shape_el(g, "none", s["ink"], cfg["path_width_m"] / k)
     for g in playgrounds:
         shape_el(g, "none", s["accent"], s["outline"], extra=f'stroke-dasharray="{lw(1)} {lw(0.6)}"')
-    tree_fill = s.get("tree", s["grove"])
+    tree_fill = s["grove"]   # a standard's `tree` may be a symbol, not a colour
     for pt, _, crown, *_ in trees:
         els.append(f'<circle cx="{pt.x - x0:.1f}" cy="{y1 - pt.y:.1f}" r="{crown / 2:.1f}" fill="{tree_fill}" '
                    f'fill-opacity="0.8" stroke="{s["ink"]}" stroke-width="{lw(s["line"] / 2)}"/>')

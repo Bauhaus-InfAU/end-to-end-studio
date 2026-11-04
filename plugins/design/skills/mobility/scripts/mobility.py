@@ -183,7 +183,9 @@ if not (SITE and os.path.exists(os.path.join(SITE, 'site.geojson'))):
 
 style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
-if S:
+if S:   # its keys this plan draws with, by name, never merged: the others (a `tree`, `diagram`) aren't the plan's
+    S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font',
+                           'thin', 'mid', 'thick', 'text', 'title') if k in S}
     FONT = escape(str(S['font']), {'"': "'"})
     TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
     TITLE = max(TXT, float(S.get('title') or 0))

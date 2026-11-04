@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Draws one eye-level base view of a scene: a shaded massing as SVG and PNG, a depth map and a map of what each pixel is."""
+import json
 import math
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -25,6 +27,11 @@ STYLE = {"sky": "#ffffff", "ground": "#e4e4e4", "field": "#dcdcdc", "green": "#c
          "edge_base": .6, "edge_top": 1.2, "floor_line": .35, "corner": 1,
          "map_paper": "#fff", "map_tall": "#d0d0d0", "map_new": "#333", "map_kept": "#777", "map_context": "#bbb",
          "map_site": "#000", "map_view": "#e0301e"}
+# the drawing standard's colours mapped onto these tones (tone: style.json key), never merged: there `line` is a weight,
+# `new` one colour where here it is a range of greys, `tree` may be a symbol. The buildings keep their greys.
+FROM_STANDARD = {"sky": "paper", "ground": "context", "field": "meadow", "green": "lawn", "park": "park", "garden": "lawn",
+                 "water": "water", "street": "street", "old_street": "street", "square": "public", "line": "ink",
+                 "forest": "grove", "scrub": "kept", "tree": "grove", "map_paper": "paper", "map_site": "ink", "map_view": "accent"}
 CLASSES = {"sky": 0, "ground": 1, "street": 2, "green": 3, "water": 4, "new": 5, "kept": 6, "context": 7, "forest": 8, "scrub": 9, "tree": 10}
 CLASS_OF_TONE = {"street": 2, "old_street": 2, "square": 2, "rail": 2, "green": 3, "park": 3, "garden": 3, "field": 1, "water": 4}
 
@@ -282,9 +289,21 @@ def draw_block(scene, cam, style, buf, items, geom, height, tone, cls, floors=No
                         items.append((math.hypot(tri.centroid.x - cam.ex, tri.centroid.y - cam.ey) + 1, path([cam.px(c) for c in near], roof)))
 
 
+def from_standard(scene):
+    """The tones <proposal>/drawing-graphics/style.json gives, through FROM_STANDARD; {} without it."""
+    try:
+        s = json.loads((scene.proposal / "drawing-graphics" / "style.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    tones = {k: s[v] for k, v in FROM_STANDARD.items() if isinstance(s.get(v), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", s[v])}
+    if tones and "tones from drawing-graphics/style.json" not in scene.used:
+        scene.used.append("tones from drawing-graphics/style.json")
+    return tones
+
+
 def draw_view(scene, view, out, stem, style):
     """Writes <stem>_base.svg and .png, <stem>_depth.png and <stem>_ids.png. Returns what the view can't vouch for."""
-    style = {**STYLE, **style}
+    style = {**STYLE, **from_standard(scene), **style}
     cam = Camera(scene, view)
     buf, items = Buffers(), []
     tree = STRtree([g for _, g, _ in scene.flats]) if scene.flats else None
@@ -338,7 +357,7 @@ def _point(cam):
 
 def draw_map(scene, views, out, stem, style=None):
     """A plan of the site with each camera on it, to check the choice at a glance."""
-    st = {**STYLE, **(style or {})}
+    st = {**STYLE, **from_standard(scene), **(style or {})}
     x0, y0, x1, y1 = scene.site.bounds
     m = 60
     k = 1000 / max(x1 - x0 + 2 * m, y1 - y0 + 2 * m)

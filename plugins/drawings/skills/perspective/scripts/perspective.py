@@ -5,8 +5,8 @@
                           [--floor-height M] [--no-terrain] [--options FILE] [--views FILE]
 
 Reads <proposal>/massing/massing.geojson, the project's site folder and, if there,
-<proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief or
-drawing-graphics/standard.md: the number of views comes with --count and the tones with 'style' in --options.
+<proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief: the number
+of views comes with --count. The tones come from drawing-graphics/style.json; 'style' in --options overrides them.
 Needs shapely, pyproj, numpy and requests, and Chrome or Edge for the PNGs. Calls no image model.
 """
 import argparse
@@ -84,10 +84,8 @@ def main():
         scene.warn("Style keys the views don't use: " + ", ".join(unused) + ".")
     if style:
         scene.used.append("style from --options")
-    if not (scene.proposal / "drawing-graphics" / "standard.md").exists():
-        scene.absent.append("drawing-graphics/standard.md")
-    elif not style:
-        scene.warn("drawing-graphics/standard.md is there, but no style was passed: the views use the script's own tones.")
+    if not (scene.proposal / "drawing-graphics" / "style.json").exists():
+        scene.absent.append("drawing-graphics/style.json: the views use the script's own tones")
     if args.no_terrain:
         scene.warn("Terrain was switched off: the ground is drawn flat.")
     else:

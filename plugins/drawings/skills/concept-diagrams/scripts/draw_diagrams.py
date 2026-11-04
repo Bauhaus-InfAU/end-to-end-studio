@@ -16,7 +16,8 @@ from pyproj import Transformer
 from shapely.geometry import LineString, Point, Polygon, box as rect, shape
 from shapely.ops import linemerge, substring, unary_union
 
-# The look is not this script's to choose: every key can be set from the project's drawing standard (spec `style`).
+# The look is not this script's to choose: it comes from the drawing standard (drawing-graphics/style.json next to the
+# spec's folder, see from_standard), and any key can be set in the spec's `style`.
 # These values are only the studio's fallback when there is none: black lines on white, one accent colour.
 FALLBACK_STYLE = {
     "ink": "#000", "paper": "#fff", "accent": "#d0312d", "font": "Helvetica, Arial, sans-serif",
@@ -29,6 +30,18 @@ FALLBACK_STYLE = {
     "label_size": 11, "small_size": 9, "title_size": 16, "title_weight": "bold",
     "caption_size": 11.5, "footer_size": 8.5, "footer_style": "italic",
 }
+
+
+def from_standard(spec_path):
+    """The look of <proposal>/drawing-graphics/style.json, next to the spec's folder, mapped, never merged: its colours
+    and font by name, and its `diagram` keys this script has (px); its own `thin` or `line` are mm on a plan."""
+    try:
+        s = json.loads((spec_path.parent.parent / "drawing-graphics" / "style.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    d = s.get("diagram") if isinstance(s.get("diagram"), dict) else {}
+    return {**{k: s[k] for k in ("ink", "paper", "accent", "font") if isinstance(s.get(k), str)},
+            **{k: v for k, v in d.items() if k in FALLBACK_STYLE}}
 
 
 MM = 25.4 / 96  # mm per CSS px
@@ -378,7 +391,7 @@ def render(spec_path, out_dir):
     spec_path, out_dir = Path(os.path.abspath(spec_path)), Path(os.path.abspath(out_dir))
     sp = json.loads(spec_path.read_text(encoding="utf-8"))
     os.chdir(spec_path.parent)  # relative paths in the spec are relative to it
-    st = dict(FALLBACK_STYLE, **sp.get("style", {}))
+    st = {**FALLBACK_STYLE, **from_standard(spec_path), **sp.get("style", {})}   # the spec's `style` has the last word
     W, DH = sp.get("size", [600, 560])
     # the text under the drawing: title, one-line caption, a footer of up to two lines; it grows with the standard's sizes
     y1, y2, y3 = 0, 0, 0

@@ -46,6 +46,13 @@ def test_low_contrast_accent_fails(tmp_path):
     assert r.returncode != 0 and "accent" in r.stdout
 
 
+def test_new_keys_checked(tmp_path):
+    for key, bad in (("storey_labels", "latin"), ("render_style", ""), ("diagram", {"label_size": 9})):
+        s = base(); s[key] = bad
+        r = check(s, tmp_path)
+        assert r.returncode != 0 and key in r.stdout, (key, r.stdout)
+
+
 def test_skill_reads_narrative_then_references():
     t = (DG / "SKILL.md").read_text(encoding="utf-8")
     assert "Reads: brief-reader, narrative" in t
