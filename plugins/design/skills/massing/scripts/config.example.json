@@ -69,7 +69,7 @@
  },
  "homes_target_is_minimum": {
   "value": null,
-  "source": "optional: true when the brief's homes figure is a minimum, with its page"
+  "source": "optional: true when the brief's homes figure is a minimum, false when it is a maximum the homes must not exceed, with its page"
  },
  "figure": {
   "value": {
