@@ -15,6 +15,7 @@ FIX = Path(__file__).parent / "fixtures"
 MASSING = REPO / "plugins/design/skills/massing/scripts"
 NEW_SCRIPTS = [MASSING / "massing.py", MASSING / "draw.py"]
 NEW_SCRIPTS += [REPO / "plugins/drawings/skills/plans/scripts/plans.py", REPO / "plugins/studio/skills/competition-proposal/scripts/side_by_side.py"]
+NEW_SCRIPTS += [REPO / "plugins/studio/skills/competition-proposal/scripts/frames.py"]
 NEW_SCRIPTS += [REPO / "plugins/drawings/skills/site-section/scripts" / f for f in ("section.py", "terrain.py")]
 NEW_SCRIPTS += [REPO / "plugins/design/skills/mobility/scripts" / f for f in ("mobility.py", "config.example.json")]
 NEW_SCRIPTS += [REPO / "plugins/concept/skills/structure-plan/scripts" / f
