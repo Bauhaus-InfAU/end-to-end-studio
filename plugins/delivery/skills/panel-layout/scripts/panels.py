@@ -4,10 +4,13 @@
       Lists every summary, drawing, table and text in the proposal folder, with each
       drawing's print size, and writes panel-layout/inventory.json.
 
-  python panels.py render <proposal folder>/panel-layout/layout.json [--png-dpi 96]
+  python panels.py render <proposal folder>/panel-layout/layout.json [--png-dpi 96] [--check] [--plan]
       Places the items of layout.json on the panels, each drawing with a scale in its frame
       at a true scale, cropped by the frame's edge; renders panel-N.html/.pdf/.png with a
       headless Chrome or Edge, checks the result and writes panel-layout/report.md.
+      --check: only the check and report.md, no browser, no PDF or PNG.
+      The first render saves the planned drawings to panel-layout/plan.json, and every later
+      render names a planned drawing that is gone; --plan saves the plan again.
 
 Needs Python 3.11+ and Chrome, Edge or Chromium. Set BROWSER to its path if it isn't found.
 """
@@ -38,6 +41,7 @@ DEFAULTS = {
     "usual_scales": [200, 500, 1000, 2000, 2500, 3000, 5000, 10000, 15000, 20000, 25000],  # what "scale": "auto" picks from
     "max_enlarge": 1.5,  # "auto" never prints a drawing larger than this times its own size: its lines grow with it
     "max_crop": 0.5,     # a drawing whose frame hides more than this share of its area is flagged
+    "max_crop_required": 0.25,  # the same for a drawing the brief requires; over it, it doesn't count as on the panels
     "unscaled": ["perspective"],  # a drawing whose path holds one of these never gets a scale bar
     # a source that is a file of the proposal folder is printed as "<skill>, <its name> <what it is>";
     # a file name here is printed as its words alone, an extension not here as the skill's name alone
@@ -343,6 +347,7 @@ def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults
                                   f"ask its skill to draw it at 1:{sc:,}, never shrink it")
                 return
             if text_mm is not None and text_mm * factor < MIN_TEXT_MM - 0.01:
+                item["_small_px"] = text_mm * factor / PX_MM
                 notes.append(f"`{item['id']}`: its own smallest text is {text_mm * factor / PX_MM:.1f} px printed, under 12 px: ask its skill to enlarge it")
             dw, dh = size[0] * factor, size[1] * factor
             win = crop_window((dw, dh), (fr["w"], fr["h"]) if fr else (dw, dh), item.get("crop"))
@@ -581,7 +586,13 @@ def pdf_pages(path):
 
 # ---------- render ----------
 
-def render(layout_path, png_dpi):
+def planned(L):
+    """The drawings layout.json plans: what plan.json keeps, so a later render can name one that is gone."""
+    return [{"id": it.get("id"), "file": it.get("file"), "scale": it.get("scale"), "frame": it.get("frame"), "panel": n}
+            for n, p in enumerate(L.get("panels", []), 1) for it in p.get("items", []) if it.get("type") == "drawing"]
+
+
+def render(layout_path, png_dpi, check=False, plan=False):
     layout_path = Path(layout_path).resolve()
     out = layout_path.parent
     folder = out.parent
@@ -596,8 +607,13 @@ def render(layout_path, png_dpi):
     inv_by_file = {d["file"]: d for d in inv["drawings"]}
     panels = L["panels"]
     total = len(panels)
-    browser = find_browser()
+    browser = None if check else find_browser()
     notes, results = [], []
+    plan_path = out / "plan.json"
+    if plan or not plan_path.exists():
+        drawings = planned(L)
+        plan_path.write_text(json.dumps({"drawings": drawings}, indent=1, ensure_ascii=False), encoding="utf-8")
+        notes.append(f"plan.json saved: {len(drawings)} planned drawings, which every later render checks for")
 
     for i, panel in enumerate(panels, 1):
         placed, unplaced = place(panel, fmt, reserved, style, folder, inv_by_file, notes)
@@ -629,7 +645,7 @@ def render(layout_path, png_dpi):
     used = {it.get("file") for r in results for it, _ in r["placed"]}
     unused = [d for d in inv["drawings"] if d["file"] not in used]
     ids = {it["id"] for r in results for it, _ in r["placed"]}
-    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi)
+    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, check)
     print(report)
 
 
@@ -646,17 +662,137 @@ def paths_left(placed, folder):
     return out
 
 
-def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi):
+def plan_check(out, L):
+    """The drawings plan.json planned that layout.json lost, and lines on those it changed. Empty without a plan.json."""
+    p = Path(out) / "plan.json"
+    if not p.exists():
+        return [], []
+    now = {d["id"]: d for d in planned(L)}
+    dropped, changed = [], []
+    say = lambda v: "none" if v is None else f"{v.get('w'):g} x {v.get('h'):g} mm" if isinstance(v, dict) else v
+    for d in json.loads(p.read_text(encoding="utf-8")).get("drawings", []):
+        c = now.get(d["id"])
+        if c is None:
+            dropped.append(d)
+        else:
+            changed += [f"`{d['id']}`: {k} planned as {say(d.get(k))}, now {say(c.get(k))}"
+                        for k in ("file", "scale", "frame") if d.get(k) != c.get(k)]
+    return dropped, changed
+
+
+def figure_conflicts(results, L):
+    """Rows of `figures` boxes on the panels whose label is the same and whose value isn't. Only labelled
+    figures are compared, never running text. Returns (label, named in notes, [(panel, value, source)])."""
+    norm = lambda s: " ".join(str(s).lower().split()).rstrip(":")
+    seen = {}
+    for r in results:
+        for it, _ in r["placed"]:
+            for row in it.get("rows", []) if it.get("type") == "figures" else []:
+                if len(row) > 1 and norm(row[0]):
+                    value = re.sub(r"(?<=\d)[,   ](?=\d{3}(?!\d))", "", norm(row[1]))  # 1,200 = 1200
+                    seen.setdefault(norm(row[0]), {}).setdefault(value, []).append((r["n"], row[1], row[2] if len(row) > 2 else ""))
+    said = " ".join(L.get("notes", [])).lower()
+    return [(label, label in said, [x for v in values.values() for x in v])
+            for label, values in seen.items() if len(values) > 1]
+
+
+SEVERITY = ("high", "medium", "low")
+
+
+def skill_of(file, by=None):
+    """The skill responsible for a file: `by` from layout.json's `required` (taken from the studio's list of skills),
+    else the folder the file sits in, since every skill writes only into its own folder. Unknown when neither
+    says, or when the two disagree: never a guess."""
+    parts = Path(str(file)).parts if file else ()
+    folder = parts[0] if len(parts) > 1 and parts[0] != OWN else None
+    if by and folder and by != folder:
+        return f"unknown (`by` names {by}, the file is in {folder}/)"
+    return by or folder or "unknown"
+
+
+def whereabouts(skill, file, folder, inv):
+    """What the proposal folder shows about a drawing that isn't there."""
+    if skill.startswith("unknown"):
+        return "layout.json names no file and no skill for it"
+    if not (Path(folder) / skill).is_dir():
+        return f"no `{skill}/` folder in the proposal: the skill has not run"
+    said = ((inv.get("skills", {}).get(skill) or {}).get("summary") or "").strip()
+    return (f"`{skill}/` exists but has no {file}" if file else f"`{skill}/` exists; layout.json names no file") + \
+           (f"; its summary begins: \"{said.splitlines()[0]}\"" if said else "; it has no summary.md")
+
+
+def source_skills(sources, folder):
+    """The skills behind the sources of a figure: the folder a source starts with, unknown if it names none."""
+    out = set()
+    for s in sources:
+        head = re.split(r"[/,:\s]", str(s).strip(), maxsplit=1)[0]
+        out.add(head if head and head != OWN and (Path(folder) / head).is_dir() else "unknown")
+    return ", ".join(sorted(out))
+
+
+def missing_skill(text):
+    """The skill a line of the scan's missing inputs names: "x/summary.md", "checklist.md (brief-reader)", "narrative: ..."."""
+    m = re.match(r"([\w-]+)/", text) or re.search(r"\(([\w-]+)\)", text) or re.match(r"([\w-]+):", text)
+    return m.group(1) if m else "unknown"
+
+
+def write_issues(out, issues):
+    """issues.md: what other skills must fix, by skill, for the studio lead; then what panel-layout fixes itself."""
+    cell = lambda s: str(s).replace("|", "\\|").replace("\n", " ")
+    rank = lambda i: (SEVERITY.index(i["severity"]), i["issue"], i["affected"])
+    up = [i for i in issues if i["where"] == "upstream"]
+    here = [i for i in issues if i["where"] == "here"]
+    count = lambda xs: ", ".join(f"{sum(i['severity'] == s for i in xs)} {s}" for s in SEVERITY)
+    head = ["| Severity | Issue | Affected | Evidence | Recommended fix |", "|---|---|---|---|---|"]
+    row = lambda i: f"| {i['severity']} | {cell(i['issue'])} | {cell(i['affected'])} | {cell(i['evidence'])} | {cell(i['fix'])} |"
+    skills = sorted({i["skill"] for i in up}, key=lambda s: (s.startswith("unknown"), s))
+    lines = ["# Panel layout: issues", "",
+             "Written by every render, from the same checks as `report.md`. Nothing here was corrected, drawn or "
+             "made up by panel-layout. High: a required item is not on the panels as the brief asks. Medium: an item "
+             "is on the panels but wrong, or a non-required one is missing. Low: it reads less well.", "",
+             f"For the studio lead: {len(up)} ({count(up)}) for {len(skills)} skill(s). "
+             f"Fix in panel-layout: {len(here)} ({count(here)}).", "",
+             "## For the studio lead, by responsible skill", "",
+             "The skill is the one `required` names in `by`, else the folder its file is in (each skill writes only "
+             "into its own); unknown where neither says or the two disagree.", ""]
+    for skill in skills:
+        lines += [f"### {skill}", ""] + head + [row(i) for i in sorted((i for i in up if i["skill"] == skill), key=rank)] + [""]
+    if not up:
+        lines += ["- none", ""]
+    lines += ["## Fix in panel-layout", ""] + (head + [row(i) for i in sorted(here, key=rank)] if here else ["- none"])
+    text = "\n".join(lines) + "\n"
+    (Path(out) / "issues.md").write_text(text, encoding="utf-8")
+    return text
+
+
+def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, check=False):
+    out = Path(out)
+    folder = out.parent
     W, H = fmt["width_mm"], fmt["height_mm"]
     max_mb = fmt.get("max_mb")
     lines = [f"# Panel layout: report", "",
              f"Format: {W:g} x {H:g} mm, {len(results)} of {fmt.get('panels', len(results))} panels asked for "
-             f"({fmt.get('source', 'source not given')}). Style: {L.get('style', {}).get('source', 'no standard, black on white with one accent')}.", ""]
-    if not browser:
+             f"({fmt.get('source', 'source not given')}). Style: {L.get('style', {}).get('source', 'no standard, black on white with one accent')}.", "",
+             "Issues by responsible skill, for the studio lead: `issues.md`.", ""]
+    if check:
+        lines += ["**Check only (`--check`): no PDF or PNG written; text too long for its box shows only in a full render.**", ""]
+    elif not browser:
         lines += ["**No Chrome, Edge or Chromium found: only the HTML was written, no PDF or PNG.** Set BROWSER to its path.", ""]
-    problems, no_bar = 0, []
+    problems, no_bar, issues = 0, [], []
+    req = L.get("required", [])
+    req_ids = {q.get("id") for q in req if q.get("id")}
+    req_by = {q["id"]: q.get("by") for q in req if q.get("id")}
+    item_file = {it.get("id"): it.get("file") for p in L.get("panels", []) for it in p.get("items", [])}
+    crop_limit = fmt.get("max_crop_required", DEFAULTS["max_crop_required"])
+    over_crop = {}  # required id: share hidden, over the limit
+
+    def add(where, severity, issue, affected, evidence, fix, skill=OWN):
+        issues.append({"where": where, "severity": severity, "issue": issue, "affected": affected,
+                       "evidence": evidence, "fix": fix, "skill": skill})
+
     for r in results:
-        lines.append(f"## Panel {r['n']}")
+        n = r["n"]
+        lines.append(f"## Panel {n}")
         if r["story"]:
             lines.append(f"Story: {r['story']}")
         lines.append("")
@@ -668,18 +804,38 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
             lines.append(f"- PDF: {r['pages']} page(s), {sizes}, {r['mb']:.2f} MB"
                          f"{'' if ok else '  **WRONG SIZE OR PAGE COUNT**'}{'' if mb_ok else f'  **OVER {max_mb} MB**'}")
             lines.append(f"- PNG: {'written' if r.get('png') else '**missing**'} at {png_dpi} dpi")
+            if not ok:
+                add("here", "high", "PDF of the wrong size or page count", f"panel {n}", f"{r['pages']} page(s), {sizes}",
+                    f"set `format` to {W:g} x {H:g} mm as the brief asks and render again")
+            if not mb_ok:
+                add("here", "high", f"PDF over the brief's {max_mb} MB", f"panel {n}", f"{r['mb']:.1f} MB",
+                    "find the largest image on the panel; ask its skill for a lighter file")
         elif browser:
             problems += 1
             lines.append("- **PDF was not written**")
+            add("here", "high", "PDF not written", f"panel {n}", "the browser wrote no PDF", "render again; set BROWSER if it fails twice")
         area = sum(b["w"] * b["h"] for _, b in r["placed"]) / (W * H)
         lines.append(f"- covered by items: {100 * area:.0f} % of the panel" + ("  **mostly empty**" if area < 0.35 else ""))
+        if area < 0.35:
+            add("here", "low", "panel mostly empty", f"panel {n}", f"{100 * area:.0f} % covered",
+                "place the available drawings the storyline can use; where a drawing is missing upstream, leave its space")
         for it, b in r["placed"]:
-            held = ""
+            held, iid = "", it["id"]
+            sev = "high" if iid in req_ids else "medium"
+            what = f"`{iid}` on panel {n}" + (f" ({it['file']})" if it.get("file") else "")
+            skill = skill_of(it.get("file"), req_by.get(iid))
             if it.get("_empty"):
                 problems += 1
                 held = "  **empty frame: its drawing is not made yet**"
+                fr, sc_txt = it.get("frame") or {}, f" at {it['scale']}" if it.get("scale") else ""
+                frame_txt = f"a frame of {fr.get('w', 0):g} x {fr.get('h', 0):g} mm"
+                add("upstream", sev, "planned drawing not made", what,
+                    f"planned{sc_txt} in {frame_txt}; " + whereabouts(skill, it["file"], folder, inv),
+                    f"run `{skill}` to draw {it['file']}{sc_txt} to {frame_txt}"
+                    + (f", showing: {it['shows']}" if it.get("shows") else ""), skill)
             elif it.get("type") == "drawing" and it.get("_print_scale"):
                 sc, own, k = it["_print_scale"], it.get("_own"), it["_factor"]
+                frame_txt = f"its frame of {it['_img_w']:.0f} x {it['_img_h']:.0f} mm"
                 held = (f", 1:{sc:,} {'chosen' if it['_auto'] else 'held'}"
                         + (f", rescaled from 1:{own:,} (x{k:.2f})" if abs(k - 1) > 1e-6 else ", not rescaled")
                         + (f", frame {it['_img_w']:.0f} x {it['_img_h']:.0f} mm hides {100 * it['_hidden']:.0f} % of its area"
@@ -691,56 +847,173 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
                     held += ", scale bar added"
                 elif not it.get("_own_bar") and not unscaled(it["file"]):
                     no_bar.append(it)
-                if it["_hidden"] > DEFAULTS["max_crop"]:
+                if not it["_auto"] and own and own != sc:
+                    problems += 1
+                    held += (f"  **drawn at 1:{own:,}, printed at 1:{sc:,}, the scale layout.json fixes: "
+                             f"ask its skill to draw it at 1:{sc:,}**")
+                    add("upstream", "medium", "drawn at another scale than its frame", what,
+                        f"drawn at 1:{own:,} (its file name, summary or `drawn_at`), printed at 1:{sc:,}, the scale layout.json fixes",
+                        f"draw it at 1:{sc:,} to {frame_txt}", skill)
+                if it.get("_small_px"):
+                    add("upstream", "medium", "text in the drawing under 12 px", what,
+                        f"its smallest text is {it['_small_px']:.1f} px printed at 1:{sc:,}",
+                        f"enlarge its labels to 12 px or more at 1:{sc:,}", skill)
+                if iid in req_ids and it["_hidden"] > crop_limit:
+                    problems += 1
+                    over_crop[iid] = it["_hidden"]
+                    held += (f"  **cropped {100 * it['_hidden']:.0f} %, over the {100 * crop_limit:.0f} % limit for a required "
+                             "drawing: aim `crop` at what the brief asks to show, or give it a larger frame**")
+                    add("here", "high", "required drawing cropped over the limit", what,
+                        f"{frame_txt} hides {100 * it['_hidden']:.0f} % of it at 1:{sc:,} (limit {100 * crop_limit:.0f} %)",
+                        f"aim `crop.focus` at what the brief asks to show and give it a larger frame; if the panels have no room "
+                        f"at 1:{sc:,}, the lead asks `{skill}` for a tighter extent")
+                elif it["_hidden"] > DEFAULTS["max_crop"]:
                     problems += 1
                     held += f"  **cropped by more than {100 * DEFAULTS['max_crop']:.0f} %: check that what the brief asks to show is in the frame**"
+                    add("here", "low", f"drawing cropped over {100 * DEFAULTS['max_crop']:.0f} %", what,
+                        f"{frame_txt} hides {100 * it['_hidden']:.0f} %", "aim `crop.focus` at what it must show, or give it a larger frame")
             elif it.get("type") == "drawing" and it.get("scale"):
                 held = f", **{it['scale']} not held**"
-            lines.append(f"- placed `{it['id']}` at ({b['x']:.0f}, {b['y']:.0f}) mm, {b['w']:.0f} x {b['h']:.0f} mm{held}")
+                add("upstream", sev, "drawing without a print size in mm", what,
+                    f"{it['scale']} can't be held: the file gives no width and height in mm",
+                    "give the SVG its print width and height in mm at the scale it is drawn at", skill)
+            lines.append(f"- placed `{iid}` at ({b['x']:.0f}, {b['y']:.0f}) mm, {b['w']:.0f} x {b['h']:.0f} mm{held}")
         for p in r["paths"]:
             problems += 1
             lines.append(f"- **file path on the panel: {p}**: write what it is instead")
+            add("here", "low", "file path printed on the panel", f"panel {n}", p, "write what it is instead")
         for it, why in r["unplaced"]:
             problems += 1
             lines.append(f"- **did not fit: `{it['id']}`** ({it.get('file', it.get('type', 'text'))}): {why}")
+            iid = it["id"]
+            sev = "high" if iid in req_ids else "medium"
+            what = f"`{iid}` for panel {n}" + (f" ({it['file']})" if it.get("file") else "")
+            skill = skill_of(it.get("file"), req_by.get(iid))
+            if "_error" in it:
+                if iid not in req_ids:  # a required one is named under what the brief asks for
+                    add("upstream", "medium", "drawing in layout.json not in the proposal", what,
+                        whereabouts(skill, it.get("file"), folder, inv),
+                        f"run `{skill}` to make it, or plan a frame for it", skill)
+            elif "12 px" in why:
+                add("upstream", sev, "text in the drawing too small at the scale asked", what, why,
+                    "draw it at the printed scale with labels of 12 px or more", skill)
+            else:
+                add("here", sev, "item did not fit", what, why,
+                    "move or resize its neighbours, or give it a frame and a panel of its own; never shrink it")
         for c in r["checks"]:
             problems += 1
             extra = f" (needs {c['need_h_mm']} mm, has {c['has_h_mm']} mm)" if c.get("need_h_mm") else ""
             lines.append(f"- **{c['problem']}: `{c['id']}`**{extra}")
+            if c["problem"] == "overflow":
+                add("here", "medium", "text longer than its box", f"`{c['id']}` on panel {n}", extra.strip(" ()"),
+                    "give the box more height, or shorten narrative's words; never smaller text")
+            else:
+                f = item_file.get(c["id"])
+                add("upstream", "medium", c["problem"], f"`{c['id']}` on panel {n}" + (f" ({f})" if f else ""),
+                    "the browser could not show the file", "check that the file opens; ask its skill to write it again",
+                    skill_of(f, req_by.get(c["id"])))
         lines.append("")
-    req = L.get("required", [])
     empty = {it["id"] for r in results for it, _ in r["placed"] if it.get("_empty")}
     missing = [q for q in req if not q.get("id") or q["id"] not in ids or q["id"] in empty]
     refused = {it["id"] for r in results for it, _ in r["unplaced"] if "_error" not in it}  # a missing file is missing, not too big
+    available = []
     lines.append("## What the brief asks for")
     for q in req:
-        state = (f"on the panels, `{q['id']}`" if q not in missing else
+        f = q.get("file") or item_file.get(q.get("id"))
+        if q in missing and q.get("id") not in empty and q.get("id") not in refused and f and (folder / f).is_file():
+            available.append(q)
+        state = (f"**CROPPED {100 * over_crop[q['id']]:.0f} %: `{q['id']}` is placed, but its frame hides more than "
+                 f"{100 * crop_limit:.0f} %**" if q not in missing and q["id"] in over_crop else
+                 f"on the panels, `{q['id']}`" if q not in missing else
                  f"**EMPTY FRAME: `{q['id']}` is planned, its drawing is not made yet**" if q.get("id") in empty else
-                 f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else "**MISSING: no input**")
+                 f"**NOT PLACED: `{q['id']}` exists but did not fit**" if q.get("id") in refused else
+                 f"**AVAILABLE, NOT PLACED: {f} exists but is not on the panels**" if q in available else
+                 "**MISSING: no input**")
         lines.append(f"- {q['what']} ({q.get('source', '')}): {state}"
                      + (f". {q['note']}" if q.get("note") else ""))
+        what = q["what"] + (f" ({f})" if f else "")
+        if q in available:
+            add("here", "high", "required drawing available but not on the panels", what,
+                f"{f} is in the proposal folder; asked for by {q.get('source') or 'the brief'}",
+                "place it on the panel of its storyline step, at its scale, in a frame")
+        elif q in missing and q.get("id") not in empty and q.get("id") not in refused:
+            skill = skill_of(f, q.get("by"))
+            add("upstream", "high", "required item missing", what,
+                whereabouts(skill, f, folder, inv) + f"; asked for by {q.get('source') or 'the brief'}",
+                f"run `{skill}` to make it" if not skill.startswith("unknown")
+                else "name the skill that makes it (`by` in `required`), or the lead decides who does", skill)
     if not req:
         lines.append("- **No list of required items in layout.json: nothing was checked against the brief.**")
+        add("here", "high", "no list of required items", "layout.json", "`required` is empty",
+            "list every drawing and figure the brief and the storyline ask for in `required`")
     lines.append("")
     lines.append("## Drawings at a scale without a scale bar")
     lines.append("Tested on the SVG: no element named scale-bar, and no text \"0\" together with a text such as \"200 m\" "
                  "or \"1 km\"; a PNG or JPEG is not tested. `\"scale_bars\": \"all\"` in `format` adds one to each.")
     lines += [f"- **`{it['id']}`** ({it['file']}), 1:{it['_print_scale']:,}" for it in no_bar] or ["- none on the panels"]
     problems += len(no_bar)
+    for it in no_bar:
+        add("here", "low", "drawing at a scale without a scale bar", f"`{it['id']}` ({it['file']})",
+            f"printed at 1:{it['_print_scale']:,}, no scale bar of its own", "`\"scale_bars\": \"all\"` in `format`, or `scale_bar: true`")
+    lines.append("")
+    dropped, changed = plan_check(out, L)
+    if dropped or changed:
+        lines.append("## Planned drawings (plan.json)")
+        lines += [f"- **DROPPED: planned `{d['id']}` ({d.get('file')}) is no longer in layout.json**" for d in dropped]
+        lines += [f"- {c}" for c in changed]
+        lines.append("")
+    problems += len(dropped)
+    for d in dropped:
+        add("here", "high" if d["id"] in req_ids else "medium", "planned drawing dropped from layout.json",
+            f"`{d['id']}` ({d.get('file')}), planned on panel {d.get('panel')}", "in plan.json, not in layout.json",
+            "put it back in its planned frame; if it goes on purpose, say why in `notes` and render with --plan")
+    conflicts = figure_conflicts(results, L)
+    lines.append("## Numbers to check")
+    lines.append("Figures with the same label and different values; neither is corrected here.")
+    for label, named, values in conflicts:
+        problems += not named
+        shown = "; ".join(f"{v} (panel {n}{', ' + source_words(str(s), folder) if s else ''})" for n, v, s in values)
+        lines.append(f"- {'' if named else '**'}{label}: {shown}" + ("  (named in notes)" if named else "**"))
+        add("upstream", "medium", "figures that should agree don't", f"figure \"{label}\"", shown,
+            "the skills behind these sources agree on one value; the panels show both until then",
+            source_skills([s for _, _, s in values], folder))
+        if not named:
+            add("here", "medium", "disagreeing figures not named", f"figure \"{label}\"", shown,
+                "name the mismatch in `notes` and in summary.md; correct neither")
+    if not conflicts:
+        lines.append("- none")
     lines.append("")
     lines.append("## Drawings in the proposal folder not on the panels")
     lines += [f"- {d['file']}" for d in unused] or ["- none"]
+    req_files = {q.get("file") for q in available}
+    for d in unused:
+        if d["file"] not in req_files:
+            add("here", "low", "drawing available but not on the panels", d["file"], "in the proposal folder, not in layout.json",
+                "place it if the storyline can use it; leave it off if it is a working drawing its skill doesn't mean for the panels")
     lines.append("")
     lines.append("## Inputs missing")
     lines += [f"- {m}" for m in inv["missing"] + L.get("missing", [])] or ["- none"]
+    for m in inv["missing"]:
+        skill = missing_skill(m)
+        add("upstream", "medium", "input missing", m, "not in the proposal folder",
+            f"`{skill}` writes it" if skill != "unknown" else "the lead decides who writes it", skill)
+    for m in L.get("missing", []):
+        cited = re.search(r"([\w-]+)/[\w.-]+\.\w+", m)  # a file of a skill's folder it cites, such as plans/summary.md
+        skill = cited.group(1) if cited and cited.group(1) != OWN and (folder / cited.group(1)).is_dir() else "unknown"
+        add("upstream", "medium", "input missing or wrong", m,
+            "named in layout.json" + (f", citing {cited.group(0)}" if cited else ""),
+            f"ask `{skill}`, whose file it cites" if skill != "unknown" else "the lead decides who makes it", skill)
     notes = notes + L.get("notes", [])
     if notes:
         lines += ["", "## Notes"] + [f"- {n}" for n in notes]
     not_fit = sum(q.get("id") in refused for q in missing)
     lines += ["", f"Problems: {problems}. Required items missing: {len(missing)} of {len(req)} "
-                  f"({len(missing) - not_fit} without input, {not_fit} did not fit)."]
+                  f"({len(missing) - not_fit - len(available)} without input, {not_fit} did not fit, "
+                  f"{len(available)} available but not placed). "
+                  f"Required drawings cropped over {100 * crop_limit:.0f} %: {len(over_crop)}. Planned drawings dropped: {len(dropped)}."]
     text = "\n".join(lines) + "\n"
     (out / "report.md").write_text(text, encoding="utf-8")
+    write_issues(out, issues)
     return text
 
 
@@ -752,13 +1025,15 @@ def main():
     r = sub.add_parser("render")
     r.add_argument("layout")
     r.add_argument("--png-dpi", type=int, default=96)
+    r.add_argument("--check", action="store_true", help="check and report only: no browser, no PDF or PNG")
+    r.add_argument("--plan", action="store_true", help="save the planned drawings to plan.json again")
     a = ap.parse_args()
     if a.cmd == "scan":
         inv = scan(a.folder)
         print(json.dumps({k: v for k, v in inv.items() if k != "skills"}, indent=1, ensure_ascii=False))
         print("summaries:", ", ".join(k for k, v in inv["skills"].items() if v["summary"]) or "none")
     else:
-        render(a.layout, a.png_dpi)
+        render(a.layout, a.png_dpi, a.check, a.plan)
 
 
 if __name__ == "__main__":
