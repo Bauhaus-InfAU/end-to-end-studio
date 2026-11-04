@@ -38,7 +38,7 @@ Paths in `spec.json` are relative to it; coordinates are metres, x east and y no
   - `elevation` looks level from the south; `rotation` turns it (90 looks from the east).
   - Only a `plan` on site data gets a graphic scale; otherwise the footer says "not to scale". `focus: [x0, y0, x1, y1]` frames a close-up, with an inset locating it.
 - `size`: width and most height in px; the height shrinks to fit the site.
-- `style`: only what the drawing standard gives; without it, black on white with one accent (values at the top of the script). Colours: `ink`, `paper`, `accent`; `font`. Line weights in px: `outline` (site), `line` (base), `heavy`, `box` (block edges), `thin`, `hatch`, `rule`, `sign` (new arrow, rays), `sign_old`, `ghost` (removed outlines), `leader`, `tee` (bar of a stopped arrow), `halo` (behind labels). Patterns: `dash`, `ghost_dash` (SVG dash arrays), `tint_opacity`, `solid_opacity`; `min_width` (px, the narrowest a strip is drawn). Text in px: `label_size`, `small_size` (scale, north), `title_size`, `title_weight`, `caption_size`, `footer_size`, `footer_style`.
+- `style`: only what the drawing standard gives; without it, black on white with one accent (values at the top of the script). Colours: `ink`, `paper`, `accent`; `font`. Line weights in px: `outline` (site), `line` (base), `heavy`, `box` (block edges), `thin`, `hatch`, `rule`, `sign` (new arrow, rays), `sign_old`, `ghost` (removed outlines), `leader`, `tee` (bar of a stopped arrow), `halo` (behind labels). Patterns: `dash`, `ghost_dash` (SVG dash arrays), `tint_opacity`, `solid_opacity`; `min_width` (px, the narrowest a strip is drawn). Signs in px: `glyph` (their line), `figure` (a person's height), `icon` (its diameter), `vignette` (its radius). Text in px: `label_size`, `small_size` (scale, north), `title_size`, `title_weight`, `caption_size`, `footer_size`, `footer_style`.
 - `base`: site data in every frame, clipped to the site. `where` filters on properties: exact values, or a regular expression starting with `~`. Also `weight` (`heavy`), `dashed`, `label`, `only_in` (frame numbers), `margin` (metres beyond the site).
 - `field`: optional placeholder blocks for the moves to act on.
 - `frames`: 3 to 6. `file` names the drawing after what it shows; `highlight` lists base layers that are its subject.
@@ -59,6 +59,14 @@ Any element can carry `label` (only in its own frame; `label_at` and `label_z` s
 | `flow` | `coords`, `count`, `spread` | parallel arrows for a flow; only in its own frame |
 | `rays` | `at`, `z` | the place the story centres on |
 | `label` | `at`, `z`, `text`, `color` | a free label |
+| `tree` | `at`, `coords` (several), `along` (a base name or a line) with `spacing`, or `geojson` of points or lines; `crown`, `height` | trees: a crown with a trunk dot in plan, a trunk and a round crown in 3D, never smaller than a person reads |
+| `person` | `at`, or `coords` for several; `pose` | people, upright in any view and `figure` px tall: `person`, `walker`, `child`, `cheer` (arms up), `sitter`, `cyclist`, `people` (a group) |
+| `icon` | `at`, `sign` | a use or activity in a circle: a sign's name, or one or two letters |
+| `vignette` | `at`, `scene` (sign names), `label`, `offset` | what people do at a place: a small round scene set beside it where it covers least, with a leader; `offset` ([dx, dy] px) places it |
+| `layers` | `of` (frame numbers), `labels`, `sum` | the frame is a row: each of those frames' own move alone on the site, joined by +; `sum: true` or a label adds = and all of them together. Default: every earlier frame |
+| `metaphor` | `parts`: [{`draw`: sign names, `label`}], `join`: `arrow` or `plus` | the frame is the idea as an image, without the site: two or three scenes at one size, the last in the accent |
+
+**Signs** for `pose`, `sign`, `scene` and `draw`: `person`, `walker`, `child`, `cheer`, `sitter`, `cyclist`, `people`, `tree`, `conifer`, `bench`, `table`, `ball`, `house`, `block`, `tower`, `stall`, `bed`, `crop`, `water`, `sun`, `wind`, `heart`, `bus`; also `home`, `market`, `shop`, `garden`, `farm`, `walk`, `bike`, `sit`, `play`, `community`. People, icons and vignettes are only in their own frame (`only_here: false` keeps them); a frame with them, or a metaphor, says in its footer that they are illustrative. A `layers` or `metaphor` frame shows only itself.
 
 `holes` cut polygons out of `coords`, so courtyards read as one ring. `slope: [[x0, y0, h0], [x1, y1, h1]]` replaces `height`: the top rises evenly between the points, level beyond. `lift` (metres, on a volume or area) draws it higher with dashed lines down to its place: an exploded view, not a height.
 

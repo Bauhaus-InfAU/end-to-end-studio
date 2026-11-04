@@ -13,7 +13,8 @@ Turn the narrative's central idea into three to six pictograms, each showing one
 - a *plan*, cut where it happens: a figure, a layout, an opening in an edge, inside meeting public space;
 - a *section* through everything the relationship links: a void, light from above, an insertion, levels joined by a stair, ramp or lift; an *elevation* when there's no inside;
 - an *axonometric* for mass, an *exploded* one for layers of one whole;
-- an *abstract pictogram* (points and arrows) for a relationship without a place.
+- an *abstract pictogram* (points and arrows), or a *metaphor* of figures and things, for a relationship without a place;
+- *layers*, each move alone on the site joined by plus signs, for moves that add up to one whole. On any of them, people, trees, icons and *vignettes* (small round scenes) may show what a place is for.
 
 Share a viewpoint only when comparing frames is the point. Moves acting in turn on one thing are a *sequence*: earlier moves in ink, the new one in the accent, what it removes dashed where it was; draw first any move a later one depends on, and say so. Separate strategies are *separate* pictograms on one base. What exists before any move is never in the accent.
 
