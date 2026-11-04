@@ -167,3 +167,46 @@ def test_section_pitched_roof_and_flat_top(tmp_path):
     section(site_dir, out, "--line", f"{a[0]},{a[1]}", f"{b[0]},{b[1]}", env={"SECTION_NO_NETWORK": "1"})
     roofs_ = cut(out)["roofs"]
     assert roofs_["cut"] == {"from_model": 1, "pitched": 1, "flat_no_model": 1}, roofs_
+
+
+def test_section_story_strip(tmp_path):
+    """On a made-up flat site, the design pass in the panels' frame: the structure plan's areas as bands, the narrative's
+    principles as notes on the line (one at its zone, one spread and illustrative), the drawing the frame's size."""
+    site_dir, out = tmp_path / "site", tmp_path / "proposals" / "2026-01-01_t"
+    for d in ("structure-plan", "massing", "narrative", "panel-layout", "site-section"):
+        (out / d).mkdir(parents=True)
+    site_dir.mkdir()
+    to_ll = pyproj.Transformer.from_crs(32632, 4326, always_xy=True).transform
+    X0, Y0 = 500000.0, 5500000.0
+    ring = lambda pts: [list(to_ll(X0 + x, Y0 + y)) for x, y in list(pts) + [pts[0]]]
+    fc = lambda feats: json.dumps({"type": "FeatureCollection", "features": feats})
+    poly = lambda pts, **p: {"type": "Feature", "properties": p, "geometry": {"type": "Polygon", "coordinates": [ring(pts)]}}
+    rect = lambda x0, x1: [(x0, -50), (x1, -50), (x1, 50), (x0, 50)]
+    (site_dir / "site.geojson").write_text(fc([poly(rect(0, 600))]))
+    (site_dir / "buildings.geojson").write_text(fc([]))
+    (out / "structure-plan/structure-plan.geojson").write_text(fc([
+        poly(rect(0, 300), kind="neighbourhood", name="Low Rows"), poly(rect(300, 600), kind="green", name="Long Field", field=True)]))
+    (out / "massing/massing.geojson").write_text(fc([poly([(100, -10), (140, -10), (140, 10), (100, 10)], kind="building", floors=5)]))
+    (out / "narrative/narrative.md").write_text("# N\n\n## Principles\n\n1. **The field stays open:** all of it.\n"
+                                                "2. **Short ways:** everyone walks.\n\n## Storyline\n\n- not a note\n", encoding="utf-8")
+    (out / "panel-layout/layout-plan.json").write_text(json.dumps({"panels": [{"items": [
+        {"file": "site-section/site-section_design_1-3000.svg", "frame": {"w": 300, "h": 30}}]}]}))
+    (out / "site-section/notes.json").write_text(json.dumps([{"text": "The field stays open", "zone": "Long Field"},
+                                                             {"text": "Short ways"}]))
+    a, b = to_ll(X0 - 50, Y0), to_ll(X0 + 650, Y0)
+    line = ("--massing", "--line", f"{a[0]},{a[1]}", f"{b[0]},{b[1]}")
+    section(site_dir, out, *line, "--notes", out / "site-section/notes.json", env={"SECTION_NO_NETWORK": "1"})
+    c = cut(out)
+    assert c["frame_mm"]["whole"] == [300, 30] and [z[2] for z in c["zones"]] == ["Low Rows", "Long Field"], c
+    assert [n[1:] for n in c["notes"]] == [["The field stays open", "at its zone"], ["Short ways", "illustrative"]], c["notes"]
+    assert abs(c["notes"][0][0] - (450 + c["beyond_m"])) < 0.2   # in the middle of its zone
+    svg = out / "site-section/site-section_design_1-3000.svg"
+    s = svg.read_text(encoding="utf-8")
+    assert 'width="300.0mm" height="30.0mm"' in s and "Key plan" not in s
+    assert s.count('class="zone"') == 2 and s.count('class="note"') == 2 and 'class="idea-line"' in s
+    assert "Low Rows" in s and "The field stays open" in s
+    ok, why = text_sizes_ok(svg)
+    assert ok, why
+    # by default the notes are the narrative's principles, each placed by the drawing
+    section(site_dir, out, *line, env={"SECTION_NO_NETWORK": "1"})
+    assert [n[1:] for n in cut(out)["notes"]] == [["The field stays open", "illustrative"], ["Short ways", "illustrative"]]
