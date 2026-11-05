@@ -9,7 +9,7 @@ phase's neighbourhoods. Writes massing.geojson, areas.csv, stats.json and assump
 """
 import argparse, json, math, sys, csv, os
 from shapely.geometry import shape, mapping, Polygon, LineString, Point, box, MultiPolygon
-from shapely.ops import transform, unary_union
+from shapely.ops import transform, unary_union, nearest_points
 from shapely import affinity, prepare
 import pyproj
 
@@ -108,13 +108,14 @@ def mix_of(F):
 
 
 def pick(F, shares, done, count, col, row):
-    """the typologies of the block at col, row, the first to build first: a list's in turn along each row and column;
-    else the one furthest below its share, counted a block further if it is that of the block before it in its row
-    or column. The others follow, for a block where the first doesn't fit."""
+    """the typologies of the block at col, row among `shares` (those of its row's depth), the first to build first:
+    a list's in turn along each row and column; else the one furthest below its share, counted a block further if it
+    is that of the block before it in its row or column. The others follow, for a block where the first doesn't fit."""
     k, near = sum(count.values()) + 1, {done.get((col - 1, row)), done.get((col, row - 1))}
     order = sorted(shares, key=lambda ty: shares[ty] * k - count[ty] - (ty in near), reverse=True)
     if isinstance(F.get('mix'), list):
-        first = F['mix'][(col + row) % len(F['mix'])]; order = [first] + [ty for ty in order if ty != first]
+        lst = [ty for ty in F['mix'] if ty in shares]
+        first = lst[(col + row) % len(lst)]; order = [first] + [ty for ty in order if ty != first]
     return order
 
 
@@ -235,7 +236,7 @@ def block_buildings(T, col=0, row=0):
     elif form == 'U':   # one long side and both short sides joined, open on the far long side
         P(box(0, 0, L, d)); P(box(0, d, d, D), 'wing'); P(box(L - d, d, L, D), 'wing')
     elif form == 'ensemble':   # an open courtyard of an L, a bar and a point, their lengths varying from block to block
-        a, b, s = [(0.6, 1.0, 0.0), (0.45, 0.6, 0.3), (0.75, 0.8, 0.15)][(col + row) % 3]
+        a, b, s = [(0.6, 1.0, 0.0), (0.45, 0.6, 0.3), (0.75, 0.8, 0.15)][(2 * col + row) % 3]   # not col + row: a mix list of 3 takes turns by that
         P(*ell(a * L, b * D))
         P(box(d + g if b * D > D - d - g else 0, D - d, L - s * L, D))
         if a * L + g <= L - d - 4: P(box(L - d - 4, 0, L, d + 4), 'point')
@@ -288,63 +289,99 @@ def setback(t):
     return max(0.0, max(CONFIG['setback_min_m'], CONFIG['setback_h_factor'] * H) - CONFIG['sec_street_w'] / 2)
 
 
+def route_angle(piece):
+    """the angle from east of the main or local route a piece of land lies along (the longest stretch within a
+    secondary street of its edge, else the nearest route): the mean direction of that stretch, by length"""
+    near = piece.buffer(CONFIG['street_w'] / 2 + CONFIG['sec_street_w'])
+    g = max((g for _, g in street_routes), key=lambda g: (g.intersection(near).length, -g.distance(piece)))
+    s = g.intersection(near) if g.intersects(near) else g.intersection(nearest_points(g, piece)[0].buffer(25))
+    v = [0.0, 0.0]
+    for ln in getattr(s, 'geoms', [s]):
+        cs = list(ln.coords) if ln.geom_type == 'LineString' else []
+        for (ax, ay), (bx, by) in zip(cs, cs[1:]):   # doubled angles, so a line and its reverse count alike
+            a, l = 2 * math.atan2(by - ay, bx - ax), math.hypot(bx - ax, by - ay)
+            v[0] += l * math.cos(a); v[1] += l * math.sin(a)
+    return math.degrees(math.atan2(v[1], v[0]) / 2)
+
+
+def grid(piece, ang, L, DEP, CLS, strips, sw):
+    """blocks L long on a piece of land turned by -ang, in rows from the bottom that take the depths DEP in turn by
+    the shares CLS (strips: the rows of each depth built so far), sw apart: the offset, in 10 m steps, that places
+    the most blocks at least a third complete. Returns the blocks (x, y, row of seq), the rows' depths and the land."""
+    loc = affinity.rotate(piece, -ang, origin=piece.centroid); x0, y0, x1, y1 = loc.bounds
+    seq, c = [], dict(strips)
+    while sum(D + sw for D in seq) < y1 - y0 + DEP[-1] + sw:
+        k = sum(c.values()) + 1
+        seq.append(max(DEP, key=lambda D: (sum(CLS[D].values()) * k - c[D], D))); c[seq[-1]] += 1
+    best = []
+    for ox in range(0, int(L + sw), 10):
+        for oy in range(0, int(seq[0] + sw), 10):
+            bl, x = [], x0 - ox
+            while x < x1:
+                y = y0 - oy
+                for r, D in enumerate(seq):
+                    if y >= y1: break
+                    rect = box(x, y, x + L, y + D)
+                    if loc.intersection(rect).area >= rect.area / 3:
+                        bl.append((x, y, r))
+                    y += D + sw
+                x += L + sw
+            if len(bl) > len(best): best = bl
+    return best, seq, loc
+
+
 buildings, courts, sec_streets, figures, n_block = [], [], [], {}, 0
 GRID = {}   # neighbourhood name: (area, bearing) of its largest piece, for the buildings on its centres
 for p, g in nbh:
     if p['action'] == 'keep' or p['name'] not in CONFIG['density']:
         continue
     t = CONFIG['density'][p['name']]; F = figure_for(p['name']); MIX = mix_of(F); count = dict.fromkeys(MIX, 0)
-    TS = {ty: type_for(p['name'], ty) for ty in MIX}   # the grid's block is the largest of the mix
-    T = dict(next(iter(TS.values())), L=max(x['L'] for x in TS.values()), D=max(x['D'] for x in TS.values()))
+    TS = {ty: type_for(p['name'], ty) for ty in MIX}   # a row of blocks takes one depth of the mix, a block its own
+    L_, DEP = max(x['L'] for x in TS.values()), sorted({x['D'] for x in TS.values()})
+    CLS = {D: {ty: s for ty, s in MIX.items() if TS[ty]['D'] == D} for D in DEP}; strips = dict.fromkeys(DEP, 0)
     figures[p['name']] = dict(typology=' + '.join('%s %d %%' % (ty, round(100 * s)) for ty, s in MIX.items())
                               if len(MIX) > 1 else F.get('typology') or 'by density (%s)' % t,
-                              orientation=F.get('orientation', 'long side'),
+                              orientation=F.get('orientation', 'route'),
                               row_gap=float(F.get('row_gap', CONFIG['row_gap'])))
     land = g.intersection(site).difference(excl)
+    sb = setback(t); sw = CONFIG['sec_street_w'] + 2 * sb
+    # a main or local route that ends inside the land goes on straight to the land's edge as a secondary street,
+    # so it splits its piece of land, as the routes that cross it do
+    for _, r_ in street_routes:
+        for ln in getattr(r_, 'geoms', [r_]):
+            cs = list(ln.coords)
+            for e, q in ((cs[0], cs[1]), (cs[-1], cs[-2])):
+                n = math.dist(e, q) or 1; hit =LineString([e, (e[0] + (e[0] - q[0]) / n * 2e3, e[1] + (e[1] - q[1]) / n * 2e3)]).intersection(land)
+                s = [s for s in getattr(hit, 'geoms', [hit]) if s.geom_type == 'LineString' and Point(e).distance(s) < 1 and s.length > 20]
+                if s:
+                    s = LineString([e, max(s[0].coords, key=lambda c: math.dist(c, e))])
+                    sec_streets.append(s); land = land.difference(s.buffer(sw / 2, cap_style=2))
     pieces = [land] if land.geom_type == 'Polygon' else list(getattr(land, 'geoms', []))
     for piece in pieces:
-        if piece.geom_type != 'Polygon' or piece.area < T['L'] * T['D'] / 3:
+        if piece.geom_type != 'Polygon' or piece.area < L_ * DEP[0] / 3:
             continue
         r = piece.minimum_rotated_rectangle
         c = list(r.exterior.coords)
         e = max([(c[i], c[i + 1]) for i in range(4)], key=lambda s: math.dist(*s))
         ang = math.degrees(math.atan2(e[1][1] - e[0][1], e[1][0] - e[0][0]))
-        ori = F.get('orientation', 'long side')
+        lng, ori = ang, F.get('orientation', 'route')
         if isinstance(ori, (int, float)):            # a bearing from north, clockwise; long sides run along it
             ang = 90.0 - float(ori)
-        elif ori == 'route' and street_routes:       # along the nearest main or local route of the structure plan
-            ln = min((g for _, g in street_routes), key=lambda g: g.distance(piece.centroid))
-            ln = ln if ln.geom_type == 'LineString' else max(ln.geoms, key=lambda q: q.length)
-            tt = ln.project(piece.centroid); a_, b_ = ln.interpolate(max(tt - 5, 0)), ln.interpolate(min(tt + 5, ln.length))
-            ang = math.degrees(math.atan2(b_.y - a_.y, b_.x - a_.x))
-        elif ori != 'long side':
+        elif ori == 'route' and street_routes:       # along the main or local route of the structure plan it lies on
+            ang = route_angle(piece)
+        elif ori not in ('long side', 'route'):      # route without routes: the long side
             sys.exit('figure.%s.orientation must be "long side", "route" or a bearing in degrees' % p['name'])
-        GRID[p['name']] = max(GRID.get(p['name'], (0.0, 0.0)), (piece.area, ang))
-        o = piece.centroid
-        loc = affinity.rotate(piece, -ang, origin=o)
+        o = piece.centroid   # route: the long side instead where it holds more blocks
+        ang, (bl, seq, loc) = max(((a, grid(piece, a, L_, DEP, CLS, strips, sw)) for a in
+                                   dict.fromkeys([ang, lng] if ori == 'route' else [ang])), key=lambda t: len(t[1][0]))
         x0, y0, x1, y1 = loc.bounds
-        sb = setback(t)
-        pitchx, pitchy = T['L'] + CONFIG['sec_street_w'] + 2 * sb, T['D'] + CONFIG['sec_street_w'] + 2 * sb
-        best = None
-        for ox in range(0, int(pitchx), 10):
-            for oy in range(0, int(pitchy), 10):
-                bl = []
-                x = x0 - ox
-                while x < x1:
-                    y = y0 - oy
-                    while y < y1:
-                        rect = box(x, y, x + T['L'], y + T['D'])
-                        if loc.intersection(rect).area >= rect.area / 3:
-                            bl.append((x, y))
-                        y += pitchy
-                    x += pitchx
-                if best is None or len(bl) > len(best[0]):
-                    best = (bl, ox, oy)
-        bl, ox, oy = best
-        xs = sorted({x for x, _ in bl}); ys = sorted({y for _, y in bl}); done = {}
-        for x, y in bl:
-            for ty in pick(F, MIX, done, count, xs.index(x), ys.index(y)):   # the next typology where one builds nothing
-                Tb = dict(TS[ty], L=T['L'], D=T['D']); blds, court = block_buildings(Tb, xs.index(x), ys.index(y))
+        GRID[p['name']] = max(GRID.get(p['name'], (0.0, 0.0)), (piece.area, ang))
+        xs = sorted({x for x, _, _ in bl}); ys = sorted({y for _, y, _ in bl}); done = {}
+        for r in {r for _, _, r in bl}: strips[seq[r]] += 1
+        for x, y, r in bl:
+            col, row = xs.index(x), ys.index(y)   # the next typology where one builds nothing: of its row's depth, or shallower
+            for ty in pick(F, CLS[seq[r]], done, count, col, row) + [ty for ty in MIX if TS[ty]['D'] < seq[r]]:
+                Tb = dict(TS[ty], L=L_); blds, court = block_buildings(Tb, col, row)
                 got = []
                 for b, part, kw in blds:
                     cl = clip(affinity.translate(b, x, y), loc)
@@ -356,12 +393,12 @@ for p, g in nbh:
                 if got: break
             if not got:
                 continue
-            n_block += 1; done[(xs.index(x), ys.index(y))] = ty; count[ty] += 1
+            n_block += 1; done[(col, row)] = ty; count[ty] += 1
             for cl, part, kw in got:
                 buildings.append(dict(geom=affinity.rotate(cl, ang, origin=o), t=t, nb=p['name'],
                                       phase=1 if p['name'] in CONFIG['phase1'] else None,
                                       type=Tb['type'], use0=kw.get('use', Tb['use']), fl0=Tb['fl'] + kw.get('fl_add', 0),
-                                      col=xs.index(x), row=ys.index(y), block=n_block, part=part,
+                                      col=col, row=row, block=n_block, part=part,
                                       roof=kw.get('roof', Tb['roof']), pmax=Tb.get('pmax', CAP)))
                 if 'floors' in kw:   # a part of fixed floors and its own use, such as a garage: not scaled to the programme
                     buildings[-1].update(fixed=True, floors=kw['floors'], use=kw['use'], gf=kw.get('ground_floor'))
@@ -799,6 +836,14 @@ for _ in range(40):
 f_com = min([lo, hi], key=lambda f: (apply(com_grp, f), abs(sum(commerce_m2(b) for b in buildings) - CONFIG['commerce_target']))[1]); apply(com_grp, f_com)
 for b in day:  # enough floors for the daycare
     b['floors'] = max(b['floors'], b['daycare_floors'] + 1)
+# homes_target_is_minimum false: the target is the brief's maximum. Above it, one floor off the home building with
+# the most floors (the smallest first), never a landmark nor below its floors_min or its daycare, until homes are within it
+TRIM = 0
+while 'homes_target_is_minimum' in _values and not CONFIG['homes_target_is_minimum'] and sum(homes_m2(b) for b in buildings) > res_target:
+    cand = [b for b in home_grp if not b.get('landmark') and b['floors'] > max(b.get('fmin', 1), b.get('daycare_floors', 0) + 1)]
+    if not cand:
+        WARN.append('homes stay above the maximum of %d: no home building can lose a floor' % CONFIG['homes_target']); break
+    b = max(cand, key=lambda b: (b['floors'], -b['geom'].area)); b['floors'] -= 1; TRIM += 1
 
 # a shop the brief asks for (config `food_market`, a note), in the ground floor of the mixed building nearest the centre
 if CONFIG.get('food_market') and any(b['use'] == 'mixed' for b in buildings):
@@ -931,6 +976,7 @@ stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
 stats['assumed_sizes'] = ASSUMED
+stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
 stats['warnings'] = WARN
 json.dump(stats, open(OUT + 'stats.json', 'w'), indent=1)
 print(json.dumps(stats, indent=1))
@@ -954,6 +1000,9 @@ with open(OUT + 'assumptions.md', 'w', encoding='utf8') as fh:
     for n in CONFIG['density']:
         F = figure_for(n)
         fh.write('- %s: profile %s, floors %d to %d\n' % (n, F.get('heights', 'flat'), int(F.get('floors_min', 1)), int(F.get('floors_max', CAP))))
+    if TRIM:
+        fh.write('- %d floors taken off the home buildings with the most floors, so the homes (%d) stay within the '
+                 'maximum of %d (homes_target, %s)\n' % (TRIM, stats['homes'], CONFIG['homes_target'], SOURCE.get('homes_target_is_minimum', '')))
     if stats['at_cap_share'] > 0.5:
         fh.write('- %d of %d home buildings stand at the cap of %d floors: the programme barely fits or does not fit '
                  'under the height limit. More land in the structure plan, a lower m2 per home, or a higher limit would be needed.\n'
