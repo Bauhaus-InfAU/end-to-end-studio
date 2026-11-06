@@ -40,6 +40,8 @@ DEFAULTS = {
     "max_enlarge": 1.5,  # "auto" never prints a drawing larger than this times its own size: its lines grow with it
     "max_crop": 0.5,     # a drawing whose frame hides more than this share of its area is flagged
     "max_crop_required": 0.25,  # the same for a drawing the brief requires; over it, it doesn't count as on the panels
+    "blank_min_side_mm": 60,  # a blank block at least this wide and high and this large is named even when no drawing fits in it:
+    "blank_min_cm2": 150,     # about a quarter of an A4 page; thinner strips are gutters and margins
     "unscaled": ["perspective"],  # a drawing whose path holds one of these never gets a scale bar
     # a source that is a file of the proposal folder is printed as "<skill>, <its name> <what it is>";
     # a file name here is printed as its words alone, an extension not here as the skill's name alone
@@ -236,6 +238,130 @@ def scan(folder):
 
 def overlaps(a, b):
     return a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"] and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"]
+
+
+def area_of(a, b):
+    """The area two boxes share, in mm²."""
+    return max(0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])) * \
+        max(0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
+
+
+def largest_blank(boxes, fmt, reserved=()):
+    """The largest empty rectangle (x, y, w, h) between the margins and below the reserved boxes, where no box is."""
+    W, H = fmt["width_mm"], fmt["height_mm"]
+    m, g = fmt.get("margin_mm", 15), fmt.get("gutter_mm", 8)
+    top = fmt.get("content_top_mm", max([r["y"] + r["h"] for r in reserved] + [m]) + g)
+    taken = list(boxes) + list(reserved)
+    xs = sorted({m, W - m} | {min(max(v, m), W - m) for b in taken for v in (b["x"], b["x"] + b["w"])})
+    ys = sorted({top, H - m} | {min(max(v, top), H - m) for b in taken for v in (b["y"], b["y"] + b["h"])})
+    free = [[not any(b["x"] < (xs[i] + xs[i + 1]) / 2 < b["x"] + b["w"] and b["y"] < (ys[j] + ys[j + 1]) / 2 < b["y"] + b["h"]
+                     for b in taken) for j in range(len(ys) - 1)] for i in range(len(xs) - 1)]
+    best = (0, 0, 0, 0)
+    for i in range(len(xs) - 1):          # every run of columns, and in it every run of free rows
+        rows = [True] * (len(ys) - 1)
+        for k in range(i, len(xs) - 1):
+            rows = [a and b for a, b in zip(rows, free[k])]
+            j = 0
+            while j < len(rows):
+                if not rows[j]:
+                    j += 1
+                    continue
+                j0 = j
+                while j < len(rows) and rows[j]:
+                    j += 1
+                w, h = xs[k + 1] - xs[i], ys[j] - ys[j0]
+                if w * h > best[2] * best[3]:
+                    best = (xs[i], ys[j0], w, h)
+    return best
+
+
+def png_rows(path):
+    """Width, height and the rows (RGB bytes) of an 8-bit RGB or RGBA PNG, without a library."""
+    import zlib
+    data = Path(path).read_bytes()
+    w, h, depth, ctype = struct.unpack(">IIBB", data[16:26])
+    if depth != 8 or ctype not in (2, 6):
+        raise ValueError(f"{path}: only 8-bit RGB or RGBA PNGs are read")
+    bpp, pos, raw = (3 if ctype == 2 else 4), 8, b""
+    while pos < len(data):
+        n, kind = struct.unpack(">I4s", data[pos:pos + 8])
+        if kind == b"IDAT":
+            raw += data[pos + 8:pos + 8 + n]
+        pos += 12 + n
+    raw, stride, prev, rows = zlib.decompress(raw), w * bpp, bytearray(w * bpp), []
+    for y in range(h):
+        f, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a, b = line[i - bpp] if i >= bpp else 0, prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + (a + b) // 2) & 255
+            elif f == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append(bytes(line[i] for i in range(stride) if i % bpp < 3))
+        prev = line
+    return w, h, rows
+
+
+def largest_blank_seen(png, fmt, reserved=(), background="#fff"):
+    """The largest rectangle (x, y, w, h in mm) of the rendered panel between the margins that is all paper:
+    the empty part of a frame or a text box counts, as on the print. Reserved boxes don't."""
+    w, h, rows = png_rows(png)
+    W, H = fmt["width_mm"], fmt["height_mm"]
+    m, g = fmt.get("margin_mm", 15), fmt.get("gutter_mm", 8)
+    top = fmt.get("content_top_mm", max([r["y"] + r["h"] for r in reserved] + [m]) + g)
+    sx, sy = W / w, H / h
+    bg = bytes(int(background.lstrip("#")[i:i + 2] if len(background) == 7 else background.lstrip("#")[i // 2] * 2, 16)
+               for i in (0, 2, 4))
+    x0, x1, y0, y1 = int(m / sx + 0.999), int((W - m) / sx), int(top / sy + 0.999), int((H - m) / sy)
+    heights, best = [0] * w, (0, 0, 0, 0)
+    for y in range(y0, y1):
+        row = rows[y]
+        for x in range(x0, x1):
+            px, mx, my = row[3 * x:3 * x + 3], (x + 0.5) * sx, (y + 0.5) * sy
+            paper = all(abs(px[k] - bg[k]) <= 10 for k in range(3)) and not any(
+                r["x"] <= mx <= r["x"] + r["w"] and r["y"] <= my <= r["y"] + r["h"] for r in reserved)
+            heights[x] = heights[x] + 1 if paper else 0
+        stack = []                       # the largest rectangle under this row's histogram
+        for x in range(x0, x1 + 1):
+            hx, start = (heights[x] if x < x1 else 0), x
+            while stack and stack[-1][1] >= hx:
+                start, hs = stack.pop()
+                if (x - start) * hs * sx * sy > best[2] * best[3]:
+                    best = (start * sx, (y + 1 - hs) * sy, (x - start) * sx, hs * sy)
+            stack.append((start, hx))
+    return best
+
+
+def caption_repeats_title(it, folder):
+    """The drawing's own text that the caption repeats, where the frame shows it; else None."""
+    cap, f = (it.get("caption") or "").split("·")[0].split(",")[0].strip().lower(), it.get("file", "")
+    if len(cap) < 4 or not f.lower().endswith(".svg") or not (folder / f).exists():
+        return None
+    try:
+        root = ET.parse(folder / f).getroot()
+    except ET.ParseError:
+        return None
+    vb = (root.get("viewBox") or "").replace(",", " ").split()
+    k = it.get("_draw_h", 0) / float(vb[3]) if len(vb) == 4 and float(vb[3]) else 0
+    for t in root.iter():
+        if t.tag.rsplit("}", 1)[-1] != "text":
+            continue
+        words = " ".join("".join(t.itertext()).split())
+        try:
+            y = float(re.match(r"[\d.\-]+", t.get("y", "") or "x").group()) * k
+        except (AttributeError, ValueError):
+            y = None
+        shown = y is None or not k or it.get("_oy", 0) <= y <= it.get("_oy", 0) + it.get("_img_h", 1e9)
+        if shown and words.lower().startswith(cap):
+            return words
+    return None
 
 
 def scale_number(scale):
@@ -630,6 +756,15 @@ def render(layout_path, png_dpi, check=False):
                                   "--virtual-time-budget=10000", f"--screenshot={png}", uri])
             res["pdf"] = pdf if pdf.exists() else None
             res["png"] = png if png.exists() else None
+            with tempfile.TemporaryDirectory() as tmp:  # a small copy, about 2 mm a pixel, to find the paper left blank
+                small = Path(tmp) / "check.png"
+                run_browser(browser, [f"--window-size={wpx},{hpx}", f"--force-device-scale-factor={PX_MM / 2:.4f}",
+                                      "--virtual-time-budget=10000", f"--screenshot={small}", uri])
+                if small.exists():
+                    try:
+                        res["blank_seen"] = largest_blank_seen(small, fmt, reserved, style["background"])
+                    except (ValueError, OSError):
+                        pass
             if res["pdf"]:
                 res["pages"], res["sizes"] = pdf_pages(pdf)
                 res["mb"] = pdf.stat().st_size / 1e6
@@ -796,6 +931,37 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
         if area < 0.35:
             add("here", "low", "panel mostly empty", f"panel {n}", f"{100 * area:.0f} % covered",
                 "place the available drawings the storyline can use; where a drawing is missing upstream, leave its space")
+        seen = r.get("blank_seen")  # on the rendered panel, frames and text boxes included; else between the boxes
+        bx, by, bw, bh = seen or largest_blank([b for _, b in r["placed"]], fmt, L.get("reserved", []))
+        blank = {"x": bx, "y": by, "w": bw, "h": bh}
+        inside = max(r["placed"], key=lambda p: area_of(p[1], blank), default=None)
+        where = (f"inside `{inside[0]['id']}`" if inside and area_of(inside[1], blank) > 0.5 * bw * bh else "between the items")
+        fits = sorted(((it, b) for it, b in r["placed"] if it.get("type") == "drawing" and b["w"] <= bw and b["h"] <= bh),
+                      key=lambda p: p[1]["w"] * p[1]["h"])
+        side = fmt.get("blank_min_side_mm", DEFAULTS["blank_min_side_mm"])
+        large = min(bw, bh) >= side and bw * bh >= 100 * fmt.get("blank_min_cm2", DEFAULTS["blank_min_cm2"])
+        lines.append(f"- largest blank block{' seen' if seen else ''}: {bw:.0f} x {bh:.0f} mm at ({bx:.0f}, {by:.0f}) mm, "
+                     f"{bw * bh / 100:.0f} cm², {where}"
+                     + (f"  **a drawing of this panel would fit in it (`{fits[0][0]['id']}`, {fits[0][1]['w']:.0f} x "
+                        f"{fits[0][1]['h']:.0f} mm): fill it, shrink the frame or the text box, or move the items together**"
+                        if fits else "  **a large blank: fill it, shrink the frame or the text box, or move the items together**"
+                        if large else ""))
+        if fits or large:  # a planned drawing that didn't fit, whose frame the blank mostly covers, is its skill's to fix
+            slots = [(it, {"x": it["x"], "y": it["y"], **(it.get("frame") or {"w": 0, "h": 0})}) for it, _ in r["unplaced"]
+                     if it.get("type") == "drawing" and "x" in it and "y" in it]
+            held_by = [it for it, box in slots if area_of(box, blank) > 0.3 * min(bw * bh, box["w"] * box["h"] or 1)]
+            evidence = (f"{bw:.0f} x {bh:.0f} mm of paper at ({bx:.0f}, {by:.0f}) mm, {where}; "
+                        + (f"`{fits[0][0]['id']}` would fit in it" if fits else
+                           f"at least {side:g} mm each way and {fmt.get('blank_min_cm2', DEFAULTS['blank_min_cm2']):g} cm²"))
+            sev = "medium" if fits else "low"
+            if held_by:
+                for it in held_by:
+                    sk = skill_of(it.get("file"), req_by.get(it["id"]))
+                    add("upstream", sev, "blank space left where a planned drawing didn't fit", f"`{it['id']}` on panel {n} ({it.get('file')})",
+                        evidence, f"draw {it.get('file')} at {it.get('scale', 'its planned scale')} to its frame", sk)
+            else:
+                add("here", sev, "blank space where a drawing would fit" if fits else "large blank space", f"panel {n}", evidence,
+                    "fill it with a drawing from the folder the storyline can use, shrink the frame or text box, or move the items together")
         for it, b in r["placed"]:
             held, iid = "", it["id"]
             sev = "high" if iid in req_ids else "medium"
@@ -859,6 +1025,15 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
                 held = "  **a number without its source**"
                 add("here", "medium", "a number without its source", what, "a `number` item with no `source`",
                     "give the table or summary it comes from")
+            elif it.get("type") == "figures" and iid not in req_ids:  # like "panel mostly empty": for issues.md, not the count
+                held = "  **a table the brief doesn't ask for: show its key numbers as `number` items**"
+                add("here", "low", "a table the brief doesn't ask for", what, "a `figures` box that no `required` item points to",
+                    "show its key numbers as `number` items, each with its source, or leave it out")
+            twice = it.get("type") == "drawing" and not it.get("_empty") and caption_repeats_title(it, out.parent)
+            if twice:
+                held += f"  **its caption repeats the drawing's own title (\"{twice[:40]}\"): leave the caption out, or crop the title out of the frame**"
+                add("here", "low", "caption repeats the drawing's own title", what, f"the drawing prints \"{twice[:60]}\"",
+                    "leave the caption out, or crop the title out of the frame")
             lines.append(f"- placed `{iid}` at ({b['x']:.0f}, {b['y']:.0f}) mm, {b['w']:.0f} x {b['h']:.0f} mm{held}")
         for p in r["paths"]:
             problems += 1
