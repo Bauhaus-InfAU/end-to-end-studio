@@ -24,6 +24,20 @@ def test_no_font_below_12_px():
     assert not re.search(r"font-size:\s*\.\d+em", h)          # relative sizes get a 12 px floor too
 
 
+def test_big_number_with_its_source_in_one_line(tmp_path):
+    """A key number is big type with its source in one line; its fonts keep the 12 px floor; no source is a problem."""
+    num = {"id": "n", "type": "number", "value": "1,000", "text": "homes", "source": "massing, summary", "pt": 5}
+    h = page([num])
+    sizes = [float(v) for v in re.findall(r"font-size:\s*([\d.]+)pt", h)]
+    assert min(sizes) >= 9 and 'class="big"' in h and "1,000" in h and "massing, summary" in h
+    assert re.search(r"\.box\.number \.src \{[^}]*white-space:\s*nowrap", h)
+    bare = {"id": "m", "type": "number", "value": "1/3", "text": "sealed"}
+    results = [{"n": 1, "placed": [(num, {"x": 15, "y": 15, "w": 90, "h": 30}), (bare, {"x": 15, "y": 50, "w": 90, "h": 30})],
+                "unplaced": [], "checks": [], "story": "", "paths": []}]
+    text = panels.write_report(tmp_path, {}, {"width_mm": 594, "height_mm": 841}, results, [], {"n", "m"}, [], {"missing": []}, None, 96)
+    assert text.count("a number without its source") == 1 and "Problems: 1." in text
+
+
 def test_wide_text_in_columns():
     h = page([{"id": "t", "type": "text", "text": "a"}])
     assert re.search(r"\.box\.text > div \{[^}]*column-width:\s*\d+em", h)
@@ -123,6 +137,24 @@ def test_planned_frame_without_its_drawing_is_an_empty_frame(tmp_path):
     text = panels.write_report(tmp_path, {"required": [{"what": "site plan", "id": "p"}]}, {"width_mm": 594, "height_mm": 841},
                                results, [], {"p"}, [], {"missing": []}, None, 96)
     assert "EMPTY FRAME" in text and "Required items missing: 1 of 1" in text
+
+
+def test_planned_item_left_out_is_named(tmp_path):
+    """The second run keeps the first run's plan: a planned drawing it left out, or that didn't fit, is a problem."""
+    it = {"id": "plan", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "_img_w": 100, "_img_h": 100}
+    big = {"id": "iso", "type": "drawing", "file": "isometric/iso_1-1000.svg"}
+    results = [{"n": 1, "placed": [(it, {"x": 15, "y": 15, "w": 100, "h": 100})], "unplaced": [(big, "would cover plan")],
+                "checks": [], "story": "", "paths": []}]
+    plan = {"panels": [{"items": [{"id": "plan", "type": "drawing", "file": it["file"]},
+                                  {"id": "section", "type": "drawing", "file": "site-section/section_1-3000.svg"},
+                                  {"id": "iso", "type": "drawing", "file": "isometric/iso_1-5000.svg"}]}]}
+    report = lambda plan: panels.write_report(tmp_path, {}, {"width_mm": 594, "height_mm": 841}, results, [], {"plan"}, [],
+                                              {"missing": []}, None, 96, plan)
+    text = report(plan)
+    assert "`section`** (site-section/section_1-3000.svg): left out of layout.json" in text
+    assert "`iso`** (isometric/iso_1-5000.svg): not placed, would cover plan" in text and "`plan`**" not in text
+    assert "Problems: 2." in text                                     # the one that did not fit is counted once
+    assert "Planned items not on the panels" not in report(None)
 
 
 def test_drawing_smaller_than_its_frame_is_named(tmp_path):

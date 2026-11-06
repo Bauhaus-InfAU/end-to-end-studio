@@ -5,8 +5,8 @@
                           [--floor-height M] [--no-terrain] [--options FILE] [--views FILE]
 
 Reads <proposal>/massing/massing.geojson, the project's site folder and, if there,
-<proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief or
-drawing-graphics/standard.md: the number of views comes with --count and the tones with 'style' in --options.
+<proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief: the number
+of views comes with --count. The tones come from drawing-graphics/style.json; 'style' in --options overrides them.
 Needs shapely, pyproj, numpy and requests, and Chrome or Edge for the PNGs. Calls no image model.
 """
 import argparse
@@ -48,7 +48,7 @@ def write_assumptions(scene, path, views, count_source):
               f"- Number of views: {len(views)}, {count_source}.",
               f"- Floor height: {scene.floor_height or 'none'} m ({scene.floor_height_source or 'not documented'}).",
               f"- Standing land cover, height in m: {a['tall_cover']}.",
-              f"- New trees: {a['tree_height']} m tall, crown radius {a['tree_crown_radius']} m, unless the massing gives a height.",
+              f"- New trees: {a['tree_height']} m tall, crown radius {a['tree_crown_radius']} m, unless the massing or open-space gives a height.",
               f"- Existing street widths by road class: {a['street_width']}; {a['lane_width']} m a lane where lanes are given.",
               f"- Railway strip: {a['rail_width']} m wide.",
               f"- Ground: {'from terrain data' if scene.terrain else 'flat, no terrain data'}.",
@@ -84,10 +84,8 @@ def main():
         scene.warn("Style keys the views don't use: " + ", ".join(unused) + ".")
     if style:
         scene.used.append("style from --options")
-    if not (scene.proposal / "drawing-graphics" / "standard.md").exists():
-        scene.absent.append("drawing-graphics/standard.md")
-    elif not style:
-        scene.warn("drawing-graphics/standard.md is there, but no style was passed: the views use the script's own tones.")
+    if not (scene.proposal / "drawing-graphics" / "style.json").exists():
+        scene.absent.append("drawing-graphics/style.json: the views use the script's own tones")
     if args.no_terrain:
         scene.warn("Terrain was switched off: the ground is drawn flat.")
     else:

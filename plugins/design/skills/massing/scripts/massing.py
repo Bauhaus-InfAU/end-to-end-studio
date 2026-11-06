@@ -9,7 +9,7 @@ phase's neighbourhoods. Writes massing.geojson, areas.csv, stats.json and assump
 """
 import argparse, json, math, sys, csv, os
 from shapely.geometry import shape, mapping, Polygon, LineString, Point, box, MultiPolygon
-from shapely.ops import transform, unary_union
+from shapely.ops import transform, unary_union, nearest_points
 from shapely import affinity, prepare
 import pyproj
 
@@ -49,12 +49,13 @@ OPTIONAL = {'school_gfa': 0, 'school_yard': 0, 'school_sports': 0, 'pool_gfa': 0
             'daycare_gfa': 0, 'daycares': 0, 'food_market': '', 'figure': {}, 'homes_target_is_minimum': False,
             'community_buildings': []}
 DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.0, 'keep_buffer': 4.0,
-            'tree_step': 12.0, 'tree_off': 4.0, 'square': 30.0, 'route_bonus_m': 40.0,
+            'tree_step': 12.0, 'tree_off': 4.0, 'square_main_m': 60.0, 'square_local_m': 30.0, 'route_bonus_m': 40.0,
             'centre_bonus_m': 150.0, 'green_minus_m': 15.0, 'epsg': None,
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
-            'path_reach_m': 150.0}    # how far a path may carry a street end across the green to the next street
+            'path_reach_m': 150.0,
+            'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
 CONFIG = {**OPTIONAL, **DEFAULTS, **_values}
 _c = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry']).centroid
@@ -62,37 +63,69 @@ EPSG = CONFIG['epsg'] or utm_epsg(_c.x, _c.y)
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
 TO_LL = pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True).transform
 
-# skill defaults per density: block length, block depth, building depth, base floors, use, type
+# skill defaults per density: block length, block depth, building depth, base floors, use, type, the part and roof
+# of its buildings
 TYPES = {
-    'low':        dict(L=90, D=40, d=10, fl=3, use='housing', type='row houses', gap=6, short=0),
-    'medium':     dict(L=90, D=70, d=13, fl=4, use='housing', type='open courtyard block', gap=6, short=1),
-    'high':       dict(L=100, D=80, d=14, fl=5, use='mixed', type='courtyard block', gap=6, short=2),
-    'urban':      dict(L=100, D=80, d=14, fl=6, use='mixed', type='courtyard block', gap=6, short=2),
-    'commercial': dict(L=100, D=60, d=25, fl=3, use='commerce', type='hall', gap=7, short=0),
+    'low':        dict(L=90, D=40, d=10, fl=3, use='housing', type='row houses', gap=6, short=0, part='row', roof='gable'),
+    'medium':     dict(L=90, D=70, d=13, fl=4, use='housing', type='open courtyard block', gap=6, short=1, part='side', roof='green'),
+    'high':       dict(L=100, D=80, d=14, fl=5, use='mixed', type='courtyard block', gap=6, short=2, part='side', roof='green'),
+    'urban':      dict(L=100, D=80, d=14, fl=6, use='mixed', type='courtyard block', gap=6, short=2, part='side', roof='green'),
+    'commercial': dict(L=100, D=60, d=25, fl=3, use='commerce', type='hall', gap=7, short=0, part='hall', roof='pv'),
 }
-# a typology changes the block of a density; the figure comes from the narrative through config `figure`
+# a typology changes the block of a density; the figure comes from the narrative through config `figure`.
+# `form` names the parts block_buildings() makes; without it the buildings stand along the block's sides
 TYPOLOGY = {
-    'rows':           dict(short=0, rows=True, type='rows'),
-    'open courtyard': dict(short=1, type='open courtyard block'),
-    'courtyard':      dict(short=2, type='courtyard block'),
-    'points':         dict(short=0, rows=True, points=True, type='point buildings'),
-    'halls':          dict(short=0, d=25, gap=7, use='commerce', type='hall'),
+    'rows':           dict(short=0, rows=True, type='rows', part='row'),
+    'open courtyard': dict(short=1, type='open courtyard block', part='side'),
+    'courtyard':      dict(short=2, type='courtyard block', part='side'),
+    'points':         dict(short=0, rows=True, points=True, type='point buildings', part='point'),
+    'halls':          dict(short=0, d=25, gap=7, use='commerce', type='hall', part='hall', roof='pv'),
+    'perimeter':      dict(form='perimeter', type='perimeter block'),
+    'L':              dict(form='L', type='L blocks'),
+    'U':              dict(form='U', type='U block'),
+    'ensemble':       dict(form='ensemble', type='courtyard ensemble'),
+    'town houses':    dict(form='houses', rows=True, d=11, fl=3, pmax=3, plot=6.5, houses_max=8, use='housing',
+                           type='town houses', part='town house', roof='gable'),
+    'tower':          dict(form='tower', type='block with tower', tower=20),
+    'hub':            dict(form='hub', type='mobility hub', use='mixed', tower=20, garage_d=32, garage_fl=4),
 }
 FIGURE = CONFIG.get('figure') or {}
 
 
 def figure_for(name):
-    """config `figure`: {"*": {...}, "<neighbourhood>": {...}}; the named entry overrides "*"."""
-    return {**FIGURE.get('*', {}), **FIGURE.get(name, {})}
+    """config `figure`: {"*": {...}, "<neighbourhood>": {...}}; the named entry overrides "*", its typology a mix of "*"."""
+    F, own = {**FIGURE.get('*', {}), **FIGURE.get(name, {})}, FIGURE.get(name, {})
+    if 'typology' in own and 'mix' not in own: F.pop('mix', None)
+    return F
 
 
-def type_for(name):
-    """the block of a neighbourhood: its density's TYPES entry, changed by its figure"""
-    T = dict(TYPES[CONFIG['density'][name]]); F = figure_for(name)
-    if F.get('typology'):
-        if F['typology'] not in TYPOLOGY:
-            sys.exit('figure.%s.typology "%s" is not one of %s' % (name, F['typology'], ', '.join(TYPOLOGY)))
-        T.update(TYPOLOGY[F['typology']])
+def mix_of(F):
+    """figure `mix`: {typology: share}, or a list the blocks take in turn; without it the one typology. As shares
+    that add up to 1."""
+    mx = F.get('mix') or [F.get('typology')]
+    mx = dict(mx) if isinstance(mx, dict) else {ty: mx.count(ty) for ty in mx}
+    return {ty: v / sum(mx.values()) for ty, v in mx.items()}
+
+
+def pick(F, shares, done, count, col, row):
+    """the typologies of the block at col, row among `shares` (those of its row's depth), the first to build first:
+    a list's in turn along each row and column; else the one furthest below its share, counted a block further if it
+    is that of the block before it in its row or column. The others follow, for a block where the first doesn't fit."""
+    k, near = sum(count.values()) + 1, {done.get((col - 1, row)), done.get((col, row - 1))}
+    order = sorted(shares, key=lambda ty: shares[ty] * k - count[ty] - (ty in near), reverse=True)
+    if isinstance(F.get('mix'), list):
+        lst = [ty for ty in F['mix'] if ty in shares]
+        first = lst[(col + row) % len(lst)]; order = [first] + [ty for ty in order if ty != first]
+    return order
+
+
+def type_for(name, typology=None):
+    """the block of a neighbourhood: its density's TYPES entry, changed by its figure or by one typology of its mix"""
+    T = dict(TYPES[CONFIG['density'][name]]); F = figure_for(name); ty = typology or F.get('typology')
+    if ty:
+        if ty not in TYPOLOGY:
+            sys.exit('figure.%s typology "%s" is not one of %s' % (name, ty, ', '.join(TYPOLOGY)))
+        T.update(TYPOLOGY[ty])
     T.update(F.get('block') or {})
     if T.get('rows'):
         T['D'] = 2 * T['d'] + float(F.get('row_gap', CONFIG['row_gap']))
@@ -171,19 +204,82 @@ def squares(S, d, gap):
     return [(i * step, i * step + d) for i in range(n)]
 
 
-def block_buildings(T):
+def block_buildings(T, col=0, row=0):
+    """the parts of one block of L x D in its own frame, as (footprint, part, own keys: fl_add floors over the
+    block's, use, roof, floors fixed, ground_floor), and its courtyard. Blocks in odd cols and rows are mirrored,
+    so the open sides of L, U, ensemble, tower and hub blocks alternate."""
     L, D, d, g = T['L'], T['D'], T['d'], T['gap']
-    out = []
-    # points: square buildings d x d along the long sides; otherwise 30 to 50 m long
-    for a, b in (squares(L, d, g) if T.get('points') else segs(L, g)):
-        out.append(box(a, 0, b, d)); out.append(box(a, D - d, b, D))
-    inner = D - 2 * d - 2 * g
-    if T['short'] and inner >= 30:
-        out.append(box(0, d + g, d, D - d - g))
-        if T['short'] == 2:
-            out.append(box(L - d, d + g, L, D - d - g))
-    court = box(d, d, L - d, D - d) if T['short'] else box(0, d, L, D - d)
-    return out, court
+    form, G, out = T.get('form'), 2 * g, []
+    def P(q, part=T['part'], arms=None, **kw): out.append((q, part, {**kw, 'arms': [q] if arms is None else arms}))
+    def ell(lx, ly, s=(1, 1)):   # an L of arms lx along x and ly along y from the corner (0, 0), mirrored by s; and its arms
+        arms = [affinity.scale(a, *s, origin=(L / 2, D / 2)) for a in (box(0, 0, lx, d), box(0, d, d, ly))]
+        return unary_union(arms), 'corner', arms
+    if form is None:   # along the sides; points: square buildings d x d along the long sides; otherwise 30 to 50 m long
+        for a, b in (squares(L, d, g) if T.get('points') else segs(L, g)):
+            P(box(a, 0, b, d)); P(box(a, D - d, b, D))
+        inner = D - 2 * d - 2 * g
+        if T['short'] and inner >= 30:
+            P(box(0, d + g, d, D - d - g), 'end')
+            if T['short'] == 2:
+                P(box(L - d, d + g, L, D - d - g), 'end')
+        return out, (box(d, d, L - d, D - d) if T['short'] else box(0, d, L, D - d))
+    if form == 'perimeter':   # closed corners a floor higher, a gap in the middle of each short side, the long sides between
+        cx, cy = max(d + 8, L / 4), (D - g) / 2
+        if L - 2 * cx - 2 * g < 30: cx = (L - g) / 2
+        for s in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            P(*ell(cx, cy, s), fl_add=1)
+        for a, b in (segs(L - 2 * cx - 2 * g, g) if L - 2 * cx - 2 * g >= 30 else []):
+            P(box(cx + g + a, 0, cx + g + b, d)); P(box(cx + g + a, D - d, cx + g + b, D))
+    elif form == 'L':   # two L-shaped buildings facing each other, the courtyard open at the other two corners
+        for s in (1, -1):
+            P(*ell(L - d - G, D - d - G, (s, s)))
+    elif form == 'U':   # one long side and both short sides joined, open on the far long side
+        P(box(0, 0, L, d)); P(box(0, d, d, D), 'wing'); P(box(L - d, d, L, D), 'wing')
+    elif form == 'ensemble':   # an open courtyard of an L, a bar and a point, their lengths varying from block to block
+        a, b, s = [(0.6, 1.0, 0.0), (0.45, 0.6, 0.3), (0.75, 0.8, 0.15)][(2 * col + row) % 3]   # not col + row: a mix list of 3 takes turns by that
+        P(*ell(a * L, b * D))
+        P(box(d + g if b * D > D - d - g else 0, D - d, L - s * L, D))
+        if a * L + g <= L - d - 4: P(box(L - d - 4, 0, L, d + 4), 'point')
+    elif form == 'houses':   # narrow houses on their own plots, in terraces of 3 to houses_max along both long sides
+        w = T['plot']
+        for a, b in segs(L, g, 3 * w, T['houses_max'] * w):
+            n = max(1, round((b - a) / w)); s = (b - a) / n
+            for i in range(n):
+                P(box(a + i * s, 0, a + i * s + s, d)); P(box(a + i * s, D - d, a + i * s + s, D))
+    elif form == 'tower':   # an L along one long and one short side, a tower on the free corner, a bar between
+        P(*ell(L, D - d - G))
+        P(box(L - T['tower'], D - T['tower'], L, D), 'tower', fl_add=2, roof='flat')
+        if L - T['tower'] - 2 * G - d >= 15: P(box(d + G, D - d, L - T['tower'] - G, D))
+    elif form == 'hub':   # a garage with mobility on its ground floor and a PV roof, a tower beside it, a bar on the far side
+        gd = T['garage_d']
+        P(box(0, 0, min(L - T['tower'] - G, 60), gd), 'garage', use='parking', floors=int(T['garage_fl']), roof='pv',
+          ground_floor='mobility', arms=[])   # a garage that doesn't fit is left out, not made into homes
+        P(box(L - T['tower'], 0, L, T['tower']), 'tower', fl_add=2, roof='flat')
+        if D - d - gd >= g: P(box(0, D - d, L, D))
+    else:
+        sys.exit('typology form "%s" is not one of perimeter, L, U, ensemble, houses, tower, hub' % form)
+    keep = []   # a part that would overlap one before it (block sizes from the config) is left out
+    for q, part, kw in out:
+        if all(q.intersection(k[0]).area < 1 for k in keep): keep.append((q, part, kw))
+    m_ = lambda q: affinity.scale(q, -1 if col % 2 else 1, -1 if row % 2 else 1, origin=(L / 2, D / 2))
+    return ([(m_(q), part, {**kw, 'arms': [m_(a) for a in kw['arms']]}) for q, part, kw in keep],
+            m_(box(d, d, L - d, D - d) if form != 'houses' else box(0, d, L, D - d)))
+
+
+def clip(q, land):
+    """a part cut to its land: the largest piece, if it keeps 60 % of the part and 150 m2 (90 % of a smaller part)"""
+    cl = q.intersection(land)
+    if cl.geom_type == 'MultiPolygon':
+        cl = max(cl.geoms, key=lambda r: r.area)
+    return cl if cl.geom_type == 'Polygon' and cl.area >= 0.6 * q.area and cl.area >= min(150, 0.9 * q.area) else None
+
+
+def bars(q, g):
+    """an arm (a box along the block's axes) longer than 50 m as bars of 30 to 50 m with gaps g, else the arm itself"""
+    x0, y0, x1, y1 = q.bounds
+    if max(x1 - x0, y1 - y0) <= 50: return [q]
+    if x1 - x0 >= y1 - y0: return [box(x0 + a, y0, x0 + b, y1) for a, b in segs(x1 - x0, g)]
+    return [box(x0, y0 + a, x1, y0 + b) for a, b in segs(y1 - y0, g)]
 
 
 def setback(t):
@@ -193,76 +289,122 @@ def setback(t):
     return max(0.0, max(CONFIG['setback_min_m'], CONFIG['setback_h_factor'] * H) - CONFIG['sec_street_w'] / 2)
 
 
-buildings, courts, sec_streets, figures = [], [], [], {}
+def route_angle(piece):
+    """the angle from east of the main or local route a piece of land lies along (the longest stretch within a
+    secondary street of its edge, else the nearest route): the mean direction of that stretch, by length"""
+    near = piece.buffer(CONFIG['street_w'] / 2 + CONFIG['sec_street_w'])
+    g = max((g for _, g in street_routes), key=lambda g: (g.intersection(near).length, -g.distance(piece)))
+    s = g.intersection(near) if g.intersects(near) else g.intersection(nearest_points(g, piece)[0].buffer(25))
+    v = [0.0, 0.0]
+    for ln in getattr(s, 'geoms', [s]):
+        cs = list(ln.coords) if ln.geom_type == 'LineString' else []
+        for (ax, ay), (bx, by) in zip(cs, cs[1:]):   # doubled angles, so a line and its reverse count alike
+            a, l = 2 * math.atan2(by - ay, bx - ax), math.hypot(bx - ax, by - ay)
+            v[0] += l * math.cos(a); v[1] += l * math.sin(a)
+    return math.degrees(math.atan2(v[1], v[0]) / 2)
+
+
+def grid(piece, ang, L, DEP, CLS, strips, sw):
+    """blocks L long on a piece of land turned by -ang, in rows from the bottom that take the depths DEP in turn by
+    the shares CLS (strips: the rows of each depth built so far), sw apart: the offset, in 10 m steps, that places
+    the most blocks at least a third complete. Returns the blocks (x, y, row of seq), the rows' depths and the land."""
+    loc = affinity.rotate(piece, -ang, origin=piece.centroid); x0, y0, x1, y1 = loc.bounds
+    seq, c = [], dict(strips)
+    while sum(D + sw for D in seq) < y1 - y0 + DEP[-1] + sw:
+        k = sum(c.values()) + 1
+        seq.append(max(DEP, key=lambda D: (sum(CLS[D].values()) * k - c[D], D))); c[seq[-1]] += 1
+    best = []
+    for ox in range(0, int(L + sw), 10):
+        for oy in range(0, int(seq[0] + sw), 10):
+            bl, x = [], x0 - ox
+            while x < x1:
+                y = y0 - oy
+                for r, D in enumerate(seq):
+                    if y >= y1: break
+                    rect = box(x, y, x + L, y + D)
+                    if loc.intersection(rect).area >= rect.area / 3:
+                        bl.append((x, y, r))
+                    y += D + sw
+                x += L + sw
+            if len(bl) > len(best): best = bl
+    return best, seq, loc
+
+
+buildings, courts, sec_streets, figures, n_block = [], [], [], {}, 0
 GRID = {}   # neighbourhood name: (area, bearing) of its largest piece, for the buildings on its centres
 for p, g in nbh:
     if p['action'] == 'keep' or p['name'] not in CONFIG['density']:
         continue
-    t = CONFIG['density'][p['name']]; T = type_for(p['name']); F = figure_for(p['name'])
-    figures[p['name']] = dict(typology=F.get('typology') or 'by density (%s)' % t,
-                              orientation=F.get('orientation', 'long side'),
+    t = CONFIG['density'][p['name']]; F = figure_for(p['name']); MIX = mix_of(F); count = dict.fromkeys(MIX, 0)
+    TS = {ty: type_for(p['name'], ty) for ty in MIX}   # a row of blocks takes one depth of the mix, a block its own
+    L_, DEP = max(x['L'] for x in TS.values()), sorted({x['D'] for x in TS.values()})
+    CLS = {D: {ty: s for ty, s in MIX.items() if TS[ty]['D'] == D} for D in DEP}; strips = dict.fromkeys(DEP, 0)
+    figures[p['name']] = dict(typology=' + '.join('%s %d %%' % (ty, round(100 * s)) for ty, s in MIX.items())
+                              if len(MIX) > 1 else F.get('typology') or 'by density (%s)' % t,
+                              orientation=F.get('orientation', 'route'),
                               row_gap=float(F.get('row_gap', CONFIG['row_gap'])))
     land = g.intersection(site).difference(excl)
+    sb = setback(t); sw = CONFIG['sec_street_w'] + 2 * sb
+    # a main or local route that ends inside the land goes on straight to the land's edge as a secondary street,
+    # so it splits its piece of land, as the routes that cross it do
+    for _, r_ in street_routes:
+        for ln in getattr(r_, 'geoms', [r_]):
+            cs = list(ln.coords)
+            for e, q in ((cs[0], cs[1]), (cs[-1], cs[-2])):
+                n = math.dist(e, q) or 1; hit =LineString([e, (e[0] + (e[0] - q[0]) / n * 2e3, e[1] + (e[1] - q[1]) / n * 2e3)]).intersection(land)
+                s = [s for s in getattr(hit, 'geoms', [hit]) if s.geom_type == 'LineString' and Point(e).distance(s) < 1 and s.length > 20]
+                if s:
+                    s = LineString([e, max(s[0].coords, key=lambda c: math.dist(c, e))])
+                    sec_streets.append(s); land = land.difference(s.buffer(sw / 2, cap_style=2))
     pieces = [land] if land.geom_type == 'Polygon' else list(getattr(land, 'geoms', []))
     for piece in pieces:
-        if piece.geom_type != 'Polygon' or piece.area < T['L'] * T['D'] / 3:
+        if piece.geom_type != 'Polygon' or piece.area < L_ * DEP[0] / 3:
             continue
         r = piece.minimum_rotated_rectangle
         c = list(r.exterior.coords)
         e = max([(c[i], c[i + 1]) for i in range(4)], key=lambda s: math.dist(*s))
         ang = math.degrees(math.atan2(e[1][1] - e[0][1], e[1][0] - e[0][0]))
-        ori = F.get('orientation', 'long side')
+        lng, ori = ang, F.get('orientation', 'route')
         if isinstance(ori, (int, float)):            # a bearing from north, clockwise; long sides run along it
             ang = 90.0 - float(ori)
-        elif ori == 'route' and street_routes:       # along the nearest main or local route of the structure plan
-            ln = min((g for _, g in street_routes), key=lambda g: g.distance(piece.centroid))
-            ln = ln if ln.geom_type == 'LineString' else max(ln.geoms, key=lambda q: q.length)
-            tt = ln.project(piece.centroid); a_, b_ = ln.interpolate(max(tt - 5, 0)), ln.interpolate(min(tt + 5, ln.length))
-            ang = math.degrees(math.atan2(b_.y - a_.y, b_.x - a_.x))
-        elif ori != 'long side':
+        elif ori == 'route' and street_routes:       # along the main or local route of the structure plan it lies on
+            ang = route_angle(piece)
+        elif ori not in ('long side', 'route'):      # route without routes: the long side
             sys.exit('figure.%s.orientation must be "long side", "route" or a bearing in degrees' % p['name'])
-        GRID[p['name']] = max(GRID.get(p['name'], (0.0, 0.0)), (piece.area, ang))
-        o = piece.centroid
-        loc = affinity.rotate(piece, -ang, origin=o)
+        o = piece.centroid   # route: the long side instead where it holds more blocks
+        ang, (bl, seq, loc) = max(((a, grid(piece, a, L_, DEP, CLS, strips, sw)) for a in
+                                   dict.fromkeys([ang, lng] if ori == 'route' else [ang])), key=lambda t: len(t[1][0]))
         x0, y0, x1, y1 = loc.bounds
-        sb = setback(t)
-        pitchx, pitchy = T['L'] + CONFIG['sec_street_w'] + 2 * sb, T['D'] + CONFIG['sec_street_w'] + 2 * sb
-        best = None
-        for ox in range(0, int(pitchx), 10):
-            for oy in range(0, int(pitchy), 10):
-                bl = []
-                x = x0 - ox
-                while x < x1:
-                    y = y0 - oy
-                    while y < y1:
-                        rect = box(x, y, x + T['L'], y + T['D'])
-                        if loc.intersection(rect).area >= rect.area / 3:
-                            bl.append((x, y))
-                        y += pitchy
-                    x += pitchx
-                if best is None or len(bl) > len(best[0]):
-                    best = (bl, ox, oy)
-        bl, ox, oy = best
-        xs = sorted({x for x, _ in bl}); ys = sorted({y for _, y in bl})
-        for x, y in bl:
-            blds, court = block_buildings(T)
-            got = []
-            for b in blds:
-                bb = affinity.translate(b, x, y)
-                cl = bb.intersection(loc)
-                if cl.geom_type == 'MultiPolygon':
-                    cl = max(cl.geoms, key=lambda q: q.area)
-                if cl.geom_type == 'Polygon' and cl.area >= 0.6 * bb.area and cl.area >= 150:
-                    got.append(cl)
+        GRID[p['name']] = max(GRID.get(p['name'], (0.0, 0.0)), (piece.area, ang))
+        xs = sorted({x for x, _, _ in bl}); ys = sorted({y for _, y, _ in bl}); done = {}
+        for r in {r for _, _, r in bl}: strips[seq[r]] += 1
+        for x, y, r in bl:
+            col, row = xs.index(x), ys.index(y)   # the next typology where one builds nothing: of its row's depth, or shallower
+            for ty in pick(F, CLS[seq[r]], done, count, col, row) + [ty for ty in MIX if TS[ty]['D'] < seq[r]]:
+                Tb = dict(TS[ty], L=L_); blds, court = block_buildings(Tb, col, row)
+                got = []
+                for b, part, kw in blds:
+                    cl = clip(affinity.translate(b, x, y), loc)
+                    if cl is not None:
+                        got.append((cl, part, kw)); continue
+                    # a part that does not fit falls back to its arms, and an arm longer than 50 m to bars
+                    got += [(c, 'side', {}) for a in kw['arms'] for q in bars(a, Tb['gap'])
+                            for c in [clip(affinity.translate(q, x, y), loc)] if c is not None]
+                if got: break
             if not got:
                 continue
-            for cl in got:
+            n_block += 1; done[(col, row)] = ty; count[ty] += 1
+            for cl, part, kw in got:
                 buildings.append(dict(geom=affinity.rotate(cl, ang, origin=o), t=t, nb=p['name'],
                                       phase=1 if p['name'] in CONFIG['phase1'] else None,
-                                      type=T['type'], use0=T['use'], fl0=T['fl'], col=xs.index(x), row=ys.index(y)))
+                                      type=Tb['type'], use0=kw.get('use', Tb['use']), fl0=Tb['fl'] + kw.get('fl_add', 0),
+                                      col=col, row=row, block=n_block, part=part,
+                                      roof=kw.get('roof', Tb['roof']), pmax=Tb.get('pmax', CAP)))
+                if 'floors' in kw:   # a part of fixed floors and its own use, such as a garage: not scaled to the programme
+                    buildings[-1].update(fixed=True, floors=kw['floors'], use=kw['use'], gf=kw.get('ground_floor'))
             cc = affinity.translate(court, x, y).intersection(loc)
             if cc.area > 200:
-                courts.append(affinity.rotate(cc, ang, origin=o).difference(unary_union([affinity.rotate(q, ang, origin=o) for q in got])))
+                courts.append(affinity.rotate(cc, ang, origin=o).difference(unary_union([affinity.rotate(q, ang, origin=o) for q, _, _ in got])))
         # secondary streets: grid lines between kept blocks
         lines = []
         for x in xs[1:]:
@@ -382,6 +524,24 @@ def centre_for(word):
     return c
 
 
+def centre_square(p, g):
+    """the square of a centre: square_main_m on the main centre, square_local_m on a local one, kept inside the
+    centre and to the land left once what it holds (community buildings, school, pool) has taken its share"""
+    need = 0.0
+    for e in CONFIG['community_buildings'] or []:
+        m_ = _match(e.get('at') or e.get('use') or '')
+        if m_ is not None and m_[0] is p:
+            need += max(e.get('ground_m2') or 0, (e.get('gfa') or 0) / max(1, int(e.get('floors') or 1)))
+    for key, share in (('school', CONFIG['school_gfa'] / 3 + CONFIG['school_yard'] + CONFIG['school_sports']), ('pool', CONFIG['pool_plot'])):
+        m_ = _match(key) if share > 0 else None
+        if m_ is not None and m_[0] is p: need += share
+    side = CONFIG['square_main_m'] if p.get('level') == 'main' else CONFIG['square_local_m']
+    side = min(side, math.sqrt(0.4 * g.area), math.sqrt(max(g.area - need, 0.0)))
+    q = g.representative_point()
+    while side > 10 and not box(q.x - side / 2, q.y - side / 2, q.x + side / 2, q.y + side / 2).within(g.buffer(1)): side -= 5
+    return box(q.x - side / 2, q.y - side / 2, q.x + side / 2, q.y + side / 2)
+
+
 def _bearing(c):
     """the grid bearing of the built neighbourhood the centre lies in, else 0"""
     q = c.representative_point()
@@ -391,10 +551,9 @@ def _bearing(c):
     return 0.0
 
 
-def _centre_land(c):
+def _centre_land(p, c):
     """a centre minus its square, the streets, the kept buildings and what community buildings already took; and its square"""
-    q = c.representative_point(); h = CONFIG['square'] / 2
-    sq = box(q.x - h, q.y - h, q.x + h, q.y + h)
+    sq = centre_square(p, c)
     used = unary_union([Polygon()] + [g for _, _, g in community] + [b['geom'].buffer(2) for b in buildings if b.get('fixed')])
     return c.difference(sq).difference(street_area).difference(
         unary_union([Polygon()] + [g.buffer(CONFIG['keep_buffer']) for _, g in kept])).difference(used), sq
@@ -439,13 +598,16 @@ def _grow(R, core, target):
         r_ += 2.0
 
 
+ASSUMED = []   # sizes the brief did not give, named in assumptions.md and stats.json
 CB = []   # (config entry, its building or None)
 for e in CONFIG['community_buildings'] or []:
     use = e.get('use') or 'community building'
     if not e.get('gfa'):
-        WARN.append('%s has no floor area in config.json: not built' % use); CB.append((e, None)); continue
+        e = {**e, 'gfa': CONFIG['community_gfa_m2'], 'assumed': True}
+        ASSUMED.append('%s has no floor area in the brief: built at an assumed %d m2 (community_gfa_m2, %s)'
+                       % (use, e['gfa'], SOURCE.get('community_gfa_m2') or 'skill default'))
     cp, cg = centre_for(e.get('at') or use)
-    R, sq = _centre_land(cg); fl = int(e.get('floors') or 1)
+    R, sq = _centre_land(cp, cg); fl = int(e.get('floors') or 1)
     g, s = _fit(R, e['gfa'] / fl, float(e.get('depth') or 14), sq, _bearing(cg))
     if g is None:
         WARN.append('no room for %s on %s' % (use, cp.get('name'))); CB.append((e, None)); continue
@@ -464,7 +626,7 @@ if CONFIG['school_gfa'] > 0:
     if sc is None:
         WARN.append('no centre holds a school: it takes the courtyard block nearest the main centre')
     else:
-        R, sq = _centre_land(sc[1]); sfl = 3   # own assumption, as on a courtyard block
+        R, sq = _centre_land(*sc); sfl = 3   # own assumption, as on a courtyard block
         sg, s = _fit(R, CONFIG['school_gfa'] / sfl, TYPES['high']['d'], sq, _bearing(sc[1]))
         if sg is None:
             WARN.append('no room for the school on %s: it takes the courtyard block nearest the main centre' % sc[0].get('name'))
@@ -493,7 +655,7 @@ if CONFIG['pool_gfa'] > 0:
     if pc_ is None:
         WARN.append('no centre holds a pool: it takes the courtyard block nearest the main centre')
     else:
-        R, sq = _centre_land(pc_[1])
+        R, sq = _centre_land(*pc_)
         hall, s = _fit(R, CONFIG['pool_gfa'] / 2, 30.0, sq, _bearing(pc_[1]))   # own: two storeys of hall height, 30 m deep
         if hall is None:
             WARN.append('no room for the indoor pool on %s: it takes the courtyard block nearest the main centre' % pc_[0].get('name'))
@@ -594,10 +756,12 @@ for name in {b['nb'] for b in buildings if not b.get('fixed')}:
             if b.get('row', 0) % 2: b['base'] -= 1
     for b in grp:
         b['base'] = max(1, b['base'])
-        b['fmin'] = int(F.get('floors_min', 1)); b['fmax'] = int(F.get('floors_max', CAP))
+        b['fmin'] = int(F.get('floors_min', 1)); b['fmax'] = min(int(F.get('floors_max', CAP)), b.get('pmax', CAP))
 
 free =[b for b in buildings if not b.get('fixed')]
-landmarks = sorted([b for b in free if b['use'] == 'mixed'], key=lambda b: b['geom'].distance(main_centre))[:2]
+# the landmarks: the two towers nearest the main centre, else the two mixed buildings nearest it
+landmarks = sorted([b for b in free if b['use'] == 'mixed' or b.get('part') == 'tower'],
+                   key=lambda b: (b.get('part') != 'tower', b['geom'].distance(main_centre)))[:2]
 for b in landmarks: b['landmark'] = True
 
 
@@ -628,11 +792,14 @@ apply(com_grp, 1.0)
 res_target = CONFIG['homes_target'] * CONFIG['m2_per_home']
 f_res = solve(home_grp, res_gfa, res_target)
 # daycares: housing building nearest the centre, then those furthest from each other (in quiet-ish, not loud land)
-dc_cand = [b for b in home_grp if not b['geom'].intersects(loud)]
+dc_cand = [b for b in home_grp if not b['geom'].intersects(loud)
+           and CONFIG['daycare_gfa'] / b['geom'].area < b.get('fmax', CAP)]   # a building that holds it under its cap
 day = []
+if len(dc_cand) < CONFIG['daycares']:
+    WARN.append('only %d of the %d daycares find a building that holds them under its cap' % (len(dc_cand), CONFIG['daycares']))
 if dc_cand and CONFIG['daycares'] > 0:
     day.append(min(dc_cand, key=lambda b: b['geom'].distance(main_centre)))
-    while len(day) < CONFIG['daycares']:
+    while len(day) < min(CONFIG['daycares'], len(dc_cand)):
         day.append(max([b for b in dc_cand if b not in day], key=lambda b: min(b['geom'].distance(d['geom']) for d in day)))
 for b in day:
     b['daycare_floors'] = math.ceil(CONFIG['daycare_gfa'] / b['geom'].area)
@@ -669,6 +836,14 @@ for _ in range(40):
 f_com = min([lo, hi], key=lambda f: (apply(com_grp, f), abs(sum(commerce_m2(b) for b in buildings) - CONFIG['commerce_target']))[1]); apply(com_grp, f_com)
 for b in day:  # enough floors for the daycare
     b['floors'] = max(b['floors'], b['daycare_floors'] + 1)
+# homes_target_is_minimum false: the target is the brief's maximum. Above it, one floor off the home building with
+# the most floors (the smallest first), never a landmark nor below its floors_min or its daycare, until homes are within it
+TRIM = 0
+while 'homes_target_is_minimum' in _values and not CONFIG['homes_target_is_minimum'] and sum(homes_m2(b) for b in buildings) > res_target:
+    cand = [b for b in home_grp if not b.get('landmark') and b['floors'] > max(b.get('fmin', 1), b.get('daycare_floors', 0) + 1)]
+    if not cand:
+        WARN.append('homes stay above the maximum of %d: no home building can lose a floor' % CONFIG['homes_target']); break
+    b = max(cand, key=lambda b: (b['floors'], -b['geom'].area)); b['floors'] -= 1; TRIM += 1
 
 # a shop the brief asks for (config `food_market`, a note), in the ground floor of the mixed building nearest the centre
 if CONFIG.get('food_market') and any(b['use'] == 'mixed' for b in buildings):
@@ -685,8 +860,12 @@ def add(kind, geom, **props):
 
 
 for b in buildings:
+    if 'block' not in b: n_block += 1; b['block'] = n_block   # a community building is a block of its own
+    u = b['use']   # the ground floor: a part's own (a garage's mobility), the shops of a mixed building, a daycare, else the use
+    gf = b.get('gf') or ('commerce' if u.startswith('mixed') else 'daycare' if 'daycare' in u else u)
     pr = dict(floors=b['floors'], height_m=round(b['floors'] * FH, 1), use=b['use'], type=b['type'], existing=False,
-              footprint_m2=round(b['geom'].area), gfa_m2=round(gfa(b)), neighbourhood=b['nb'])
+              footprint_m2=round(b['geom'].area), gfa_m2=round(gfa(b)), neighbourhood=b['nb'], block=b['block'],
+              part=b.get('part', 'building'), roof=b.get('roof', 'flat'), ground_floor=gf)
     if b.get('phase'): pr['phase'] = b['phase']
     if b.get('landmark'): pr['landmark'] = True
     if b.get('daycare_floors'): pr['daycare_floors'] = b['daycare_floors']
@@ -712,8 +891,7 @@ for w in water:
     add('open-space', w, use='water')
 sq_all = []
 for p, g in centres:
-    c = g.representative_point()
-    sq = box(c.x - CONFIG['square'] / 2, c.y - CONFIG['square'] / 2, c.x + CONFIG['square'] / 2, c.y + CONFIG['square'] / 2)
+    sq = centre_square(p, g)
     sq_all.append(sq)
     add('open-space', sq, use='square', name=p['name'])
     rest = g.difference(sq).difference(COMMUNITY_LAND)
@@ -770,7 +948,7 @@ rows = [
     ('school sports (land)', round(CONFIG['school_sports']), round(spt), SOURCE.get('school_sports', 'not in the brief')),
     ('indoor pool floor area', round(CONFIG['pool_gfa']), round(poolg), SOURCE.get('pool_gfa', 'not in the brief')),
     *[((e.get('use') or 'community building') + ' floor area', round(e.get('gfa') or 0), round(gfa(b)) if b else 0,
-       SOURCE.get('community_buildings', '')) for e, b in CB],
+       ('assumed size: ' + (SOURCE.get('community_gfa_m2') or 'skill default') if e.get('assumed') else SOURCE.get('community_buildings', ''))) for e, b in CB],
     ('public green (land)', round(CONFIG['green_target']), round(green_land), SOURCE.get('green_target', 'not in the brief') + '; structure plan greens inside the site plus centre grounds, courtyards not counted'),
 ]
 with open(OUT + 'areas.csv', 'w', newline='', encoding='utf8') as fh:
@@ -786,13 +964,19 @@ stats = dict(n_new=len(new), n_kept=len(kept), total_gfa=round(total), far_site=
              green_ha=round(green_land / 1e4, 2), cap=CAP, school_court=school_court is not None, pool=pool is not None,
              loud_commerce=sum(1 for b in new if b['use'] == 'commerce' and b['t'] != 'commercial'))
 stats['far_new'] = round(total / (stats['new_land_ha'] * 1e4), 2)
-stats['figure'] = {n: {'typology': f['typology'], 'orientation': f['orientation']} for n, f in figures.items()}
+def mixed(n):   # the blocks of each type a neighbourhood's grid kept, once the community buildings took theirs
+    G = [b for b in new if b['nb'] == n and 'row' in b]
+    return {t: len({b['block'] for b in G if b['type'] == t}) for t in sorted({b['type'] for b in G})}
+stats['figure'] = {n: {'typology': f['typology'], 'orientation': f['orientation'], 'blocks': mixed(n)} for n, f in figures.items()}
+stats['blocks'] = {t: len({b['block'] for b in new if b['type'] == t}) for t in sorted({b['type'] for b in new})}
 stats['at_cap_share'] = round(stats['at_cap'] / max(1, stats['n_home']), 2)
 stats['profiles'] = {name: figure_for(name).get('heights', 'flat') for name in CONFIG['density']}
 stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k in sorted({kind for kind, _ in street_ends})}
 stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
+stats['assumed_sizes'] = ASSUMED
+stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
 stats['warnings'] = WARN
 json.dump(stats, open(OUT + 'stats.json', 'w'), indent=1)
 print(json.dumps(stats, indent=1))
@@ -809,12 +993,16 @@ with open(OUT + 'assumptions.md', 'w', encoding='utf8') as fh:
     for n, f in figures.items():
         o = f['orientation']
         src = (SOURCE.get('figure') or 'no source given') if 'figure' in _values else 'skill default'
-        fh.write('- %s: %s, orientation %s, row gap %g m (%s)\n'
-                 % (n, f['typology'], '%g deg' % o if isinstance(o, (int, float)) else o, f['row_gap'], src))
+        fh.write('- %s: %s (blocks: %s), orientation %s, row gap %g m (%s)\n'
+                 % (n, f['typology'], ', '.join('%d %s' % (v, k) for k, v in mixed(n).items()),
+                    '%g deg' % o if isinstance(o, (int, float)) else o, f['row_gap'], src))
     fh.write('\n## Heights\n\n')
     for n in CONFIG['density']:
         F = figure_for(n)
         fh.write('- %s: profile %s, floors %d to %d\n' % (n, F.get('heights', 'flat'), int(F.get('floors_min', 1)), int(F.get('floors_max', CAP))))
+    if TRIM:
+        fh.write('- %d floors taken off the home buildings with the most floors, so the homes (%d) stay within the '
+                 'maximum of %d (homes_target, %s)\n' % (TRIM, stats['homes'], CONFIG['homes_target'], SOURCE.get('homes_target_is_minimum', '')))
     if stats['at_cap_share'] > 0.5:
         fh.write('- %d of %d home buildings stand at the cap of %d floors: the programme barely fits or does not fit '
                  'under the height limit. More land in the structure plan, a lower m2 per home, or a higher limit would be needed.\n'

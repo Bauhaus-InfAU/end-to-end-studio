@@ -1,0 +1,3 @@
+Mobility plan 1:3,000 for run-7 with the Wutzlhofen stop as the main stop and hub: buses on the bus-only lane from Chamer Straße (a bus link, not a street) and through Sandgasse, car access only from Chamer Straße, Sandgasse and Glashüttenstraße, no car link between Chamer Straße and Sandgasse (check: 0 violations), 5 main bike routes (4 to named places beyond the site), underpasses walkers and cyclists only.
+23 % of the new housing floor area lies within 400 m of the main stop and 76 % within 800 m by the street and path network (limits assumed: 5 and 10 minutes), 0 % unreached.
+Files in mobility/: mobility.md, mobility.geojson, mobility_1-3000.svg and png, walk.json, stats.json, config.json; the hub and stop labels overlap at the station in the PNG.

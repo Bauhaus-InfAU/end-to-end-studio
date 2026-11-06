@@ -1,0 +1,3 @@
+- The design, isometric at 1:5000, seen from the north-east, 437 × 158 mm in print. At the site plan scale 1:3000 it would be 728 mm wide, wider than the 594 mm panel, so the next usual scale.
+- 152 new buildings; 609 existing buildings, 255 of them at default heights from the site data.
+- Unsure: street widths assumed by class (footway 2.5 m, living_street 7 m, path 2 m, pedestrian 6 m, primary 18 m, residential 10 m, service 5 m, steps 2 m, tertiary 13 m, tertiary_link 8 m, track 3.5 m); colours from the drawing standard; PNG from headless Chrome or Edge.

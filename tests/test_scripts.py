@@ -14,9 +14,12 @@ SITE = REPO / "competition/site"
 FIX = Path(__file__).parent / "fixtures"
 MASSING = REPO / "plugins/design/skills/massing/scripts"
 NEW_SCRIPTS = [MASSING / "massing.py", MASSING / "draw.py"]
-NEW_SCRIPTS += [REPO / "plugins/drawings/skills/plans/scripts/plans.py"]
+NEW_SCRIPTS += [REPO / "plugins/drawings/skills/plans/scripts/plans.py", REPO / "plugins/studio/skills/competition-proposal/scripts/side_by_side.py"]
+NEW_SCRIPTS += [REPO / "plugins/studio/skills/competition-proposal/scripts/frames.py"]
 NEW_SCRIPTS += [REPO / "plugins/drawings/skills/site-section/scripts" / f for f in ("section.py", "terrain.py")]
 NEW_SCRIPTS += [REPO / "plugins/design/skills/mobility/scripts" / f for f in ("mobility.py", "config.example.json")]
+NEW_SCRIPTS += [REPO / "plugins/design/skills/phasing/scripts" / f for f in ("phases.py", "config.example.json")]
+NEW_SCRIPTS += [REPO / "plugins/design/skills/ground-floor/scripts" / f for f in ("ground_floor.py", "config.example.json")]
 NEW_SCRIPTS += [REPO / "plugins/concept/skills/structure-plan/scripts" / f
                 for f in ("frame.py", "build.py", "check.py", "georef.py", "design.example.py")]
 FORBIDDEN = re.compile(r"Regensburg|Europan|Pilsenallee|Chamer|Brandlberg|Haslbach|Wutzlhofen|run-3|25832"
@@ -180,7 +183,7 @@ def test_massing_figure_rows_bearing(tmp_path):
     assert r.returncode == 0, r.stderr[-1500:]
     B, _ = new_buildings_m(out)
     assert len(B) >= 4
-    for p, g in B:
+    for p, g in housing(B):   # the school now fits on its centre, as the square gives way to what the centre holds
         assert p["type"] == "rows"
         brg = sides(g)[2]
         assert min(abs(brg - 30), 180 - abs(brg - 30)) <= 3, brg
@@ -201,13 +204,112 @@ def test_massing_figure_unknown_stops(tmp_path):
     assert r.returncode != 0 and "towers" in r.stderr
 
 
+# ---------- block types made of parts ----------
+PART_OF = {"perimeter": "corner", "L": "corner", "U": "wing", "ensemble": "point", "town houses": "town house",
+           "tower": "tower", "hub": "garage"}
+
+
+@pytest.mark.parametrize("typology", list(PART_OF))
+def test_massing_block_types(tmp_path, typology):
+    out, r = synthetic_run(tmp_path, {"*": {"typology": typology}})
+    assert r.returncode == 0, r.stderr[-1500:]
+    B, _ = new_buildings_m(out)
+    for i in range(len(B)):
+        for j in range(i + 1, len(B)):
+            assert B[i][1].intersection(B[j][1]).area < 1, (i, j)
+    assert all({"block", "part", "roof", "ground_floor"} <= set(p) for p, _ in B)
+    G = housing(B)
+    assert len({p["block"] for p, _ in G}) < len(G)   # a block is made of several parts
+    mine = [p for p, _ in G if p["part"] == PART_OF[typology]]
+    assert mine, {p["part"] for p, _ in G}
+    if typology == "town houses":
+        assert all(p["floors"] <= 3 and p["roof"] == "gable" for p in mine)
+    if typology == "tower":
+        assert any(p.get("landmark") for p in mine)
+    if typology == "hub":
+        assert all(p["use"] == "parking" and p["ground_floor"] == "mobility" for p in mine)
+
+
+# ---------- a mix of block types per neighbourhood ----------
+@pytest.mark.parametrize("mix", [["perimeter", "town houses"], {"L": 2, "U": 1}, ["L", "U"]])
+def test_massing_mix(tmp_path, mix):
+    out, r = synthetic_run(tmp_path, {"*": {"mix": mix}})
+    assert r.returncode == 0, r.stderr[-1500:]
+    gx = synthetic_layers(out)[3].centroid.x   # col and row count per piece of land: the green splits the field in two
+    blocks = {p["block"]: (p["type"], p["col"], p["row"], g.centroid.x < gx) for p, g in housing(new_buildings_m(out)[0])}
+    name = {"perimeter": "perimeter block", "town houses": "town houses", "L": "L blocks", "U": "U block"}
+    types = [t for t, _, _, _ in blocks.values()]
+    assert set(types) == {name[t] for t in mix}, types   # every type of the mix is built, and no other
+    if isinstance(mix, dict):   # two L's for each U, give or take a block
+        assert abs(types.count("L blocks") - 2 * types.count("U block")) <= 2, types
+    at = {(s, c, r): t for t, c, r, s in blocks.values()}
+    nxt = [(t, at.get((s, c + 1, r)), at.get((s, c, r + 1))) for (s, c, r), t in at.items()]
+    if mix == ["L", "U"]:   # of one depth: neighbours differ
+        assert all(t not in (a, b) for t, a, b in nxt), at
+    if mix == ["perimeter", "town houses"]:   # of two depths: a row of blocks takes one, the next row the other
+        assert all(a in (None, t) and b != t for t, a, b in nxt), at
+    stats = json.loads((out / "massing/stats.json").read_text(encoding="utf-8"))
+    assert sum(stats["figure"]["Field"]["blocks"].values()) == len(blocks)
+
+
+def test_massing_mix_unknown_stops(tmp_path):
+    out, r = synthetic_run(tmp_path, {"*": {"mix": ["perimeter", "towers"]}})
+    assert r.returncode != 0 and "towers" in r.stderr
+
+
+# ---------- placement: blocks follow the structure plan's routes ----------
+def route_run(tmp_path, change):
+    """the synthetic run with its structure plan changed by change(features, field bounds, to WGS84) in metres"""
+    out = make_proposal(tmp_path / "with space")
+    sp = out / "structure-plan/structure-plan.geojson"; fc = json.loads(sp.read_text(encoding="utf-8"))
+    c = shape(fc["features"][0]["geometry"]).centroid
+    T = pyproj.Transformer.from_crs(4326, (32600 if c.y >= 0 else 32700) + int((c.x + 180) // 6) + 1, always_xy=True)
+    to_ll = lambda *a: T.transform(*a, direction="INVERSE")
+    change(fc["features"], transform(T.transform, shape(fc["features"][0]["geometry"])).bounds, to_ll)
+    sp.write_text(json.dumps(fc), encoding="utf-8")
+    r = run(MASSING / "massing.py", "--proposal", out, "--site", out.parent.parent / "site",
+            "--config", out / "massing/config.json", check=False)
+    assert r.returncode == 0, r.stderr[-1500:]
+    return out, to_ll
+
+
+def test_massing_follows_the_route_by_default(tmp_path):
+    from shapely.geometry import LineString, mapping
+    def slant(F, b, to_ll):   # the main road at about 10 degrees to the field's long side
+        road = next(f for f in F if f["properties"]["name"] == "Main road")
+        road["geometry"] = mapping(transform(to_ll, LineString([(b[0], b[1]), (b[2], b[1] + 80)])))
+    out, _ = route_run(tmp_path, slant)
+    B, to_m = new_buildings_m(out)
+    sp = json.loads((out / "structure-plan/structure-plan.geojson").read_text(encoding="utf-8"))["features"]
+    rb = sides(transform(to_m, shape(next(f for f in sp if f["properties"]["name"] == "Main road")["geometry"])).buffer(1))[2]
+    brg = [sides(g)[2] for p, g in housing(B) if sides(g)[0] > 1.5 * sides(g)[1]]
+    assert brg and all(min((b - rb) % 90, 90 - (b - rb) % 90) <= 3 for b in brg), (rb, brg)   # along the road or across
+
+
+def test_massing_route_ending_in_the_land_goes_on(tmp_path):
+    from shapely.geometry import LineString, Point, mapping
+    at = {}
+    def lane(F, b, to_ll):   # a local route from the main road that stops in the field
+        at["end"] = transform(to_ll, Point(b[0] + 60, b[1] + 120))
+        F.append({"type": "Feature", "properties": {"kind": "route", "name": "Lane", "action": "new", "level": "local"},
+                  "geometry": mapping(transform(to_ll, LineString([(b[0] + 60, b[1]), (b[0] + 60, b[1] + 120)])))})
+    out, _ = route_run(tmp_path, lane)
+    F = synthetic_layers(out)[0]   # in the projection the script measured in
+    end = transform(new_buildings_m(out)[1], at["end"])
+    on = [g for p, g in F if p["kind"] == "street" and p.get("level") == "secondary" and end.distance(g) < 1 and g.length > 40]
+    assert on, "no secondary street goes on from the route's end"
+    assert all(g.intersection(on[0].buffer(5, cap_style=2)).area < 1 for p, g in F if p["kind"] == "building")
+
+
 # ---------- heights: a profile per neighbourhood ----------
-def heights_run(tmp_path, figure=None, homes=1000):
+def heights_run(tmp_path, figure=None, homes=1000, minimum=None):
     """the synthetic run with a figure and a home count; 1000 homes leave room under the cap, so a profile shows"""
     out = make_proposal(tmp_path / "with space")
     cfg = json.loads((out / "massing/config.json").read_text(encoding="utf-8"))
     if figure is not None:
         cfg["figure"] = {"value": figure, "source": "test"}
+    if minimum is not None:   # homes_target a minimum (True) or the brief's maximum (False)
+        cfg["homes_target_is_minimum"] = {"value": minimum, "source": "test"}
     cfg["homes_target"]["value"] = homes
     (out / "massing/config.json").write_text(json.dumps(cfg), encoding="utf-8")
     r = run(MASSING / "massing.py", "--proposal", out, "--site", out.parent.parent / "site",
@@ -261,6 +363,20 @@ def test_massing_heights_alternate(tmp_path):
 def test_massing_heights_unknown_stops(tmp_path):
     out, r = heights_run(tmp_path, {"*": {"heights": "wavy"}})
     assert r.returncode != 0 and "wavy" in r.stderr
+
+
+def test_massing_homes_stay_within_the_maximum(tmp_path):
+    out, r = heights_run(tmp_path / "min", minimum=True)   # as a minimum the solver ends at or above the target
+    assert r.returncode == 0, r.stderr[-1500:]
+    s = json.loads((out / "massing/stats.json").read_text(encoding="utf-8"))
+    m2 = json.loads((out / "massing/config.json").read_text(encoding="utf-8"))["m2_per_home"]["value"]
+    assert s["floors_off_for_max"] == 0
+    top = int(s["H_m2"] / m2)   # a maximum just under that: the nearest the floors reach is above it
+    out, r = heights_run(tmp_path / "max", homes=top, minimum=False)
+    assert r.returncode == 0, r.stderr[-1500:]
+    s = json.loads((out / "massing/stats.json").read_text(encoding="utf-8"))
+    assert s["H_m2"] <= top * m2 and s["homes"] <= top and s["floors_off_for_max"] > 0, (top, s["H_m2"], s["floors_off_for_max"])
+    assert "stay within the maximum" in (out / "massing/assumptions.md").read_text(encoding="utf-8")
 
 
 def test_massing_assumptions_name_the_cap(tmp_path):

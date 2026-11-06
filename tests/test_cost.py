@@ -1,4 +1,4 @@
-import csv, subprocess, sys
+import csv, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 from conftest import REPO
@@ -34,6 +34,21 @@ def test_writes_cost_csv(tmp_path):
     assert rows[0]["model"] == "opus" and rows[0]["run"] == "1"
     assert float(rows[0]["usd"]) == pytest.approx(5.0, abs=0.01)   # 1M 5-minute cache write on Opus
     assert "total $" in out.stdout
+
+
+def test_rerun_counts_as_a_second_run_and_the_ceiling(tmp_path):
+    projects = tmp_path / "projects"
+    shutil.copytree(FIX / "projects", projects)
+    sub = projects / "s1" / "subagents"
+    shutil.copy(sub / "agent-b.jsonl", sub / "agent-d.jsonl")
+    (sub / "agent-d.meta.json").write_text('{"description":"plans x rerun"}', encoding="utf-8")
+    version = tmp_path / "2026-01-01_x"
+    out = run_cli(["--version", str(version), "--projects", str(projects)])
+    rows = read_csv(version / "cost.csv")
+    assert [(r["skill"], r["run"]) for r in rows[:-2]] == [("massing", "1"), ("plans", "2")]
+    assert "under its ceiling of $30.00" in out.stdout    # about $5 against the default
+    out = run_cli(["--version", str(version), "--projects", str(projects), "--ceiling", "4"])
+    assert "past its ceiling of $4.00" in out.stdout
 
 
 @pytest.mark.skipif(not (RUN3.exists() and TRANSCRIPTS.exists()), reason="run-3 not on this computer")

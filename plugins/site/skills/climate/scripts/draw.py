@@ -1,10 +1,13 @@
 """Draw the climate layers as maps: SVG with a PNG next to each, with legend, north arrow, scale bar and sources.
 The look comes from a style JSON made from drawing-graphics/standard.md; without one, black on white with one accent.
 
-python draw.py --site SITE_DIR --out CLIMATE_DIR [--style style.json] [--scale 5000] [--margin 300]
+python draw.py --site SITE_DIR --out CLIMATE_DIR [--style style.json] [--scale 5000] [--margin 300] [--frame W H] [--centre LON LAT]
 
 style.json keys (all optional): paper, ink, accent, context, water, font, thin, mid, thick (mm), text, title (mm),
-ramp (list of colours, light to dark).
+ramp (list of colours, light to dark); its `diagram` line weights and text sizes (px) replace thin, mid, thick, text, title.
+A frame of a climate map in the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json; else --frame)
+gives every map its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills the frame, its
+title, short legend, north arrow and scale bar in a box inside it.
 """
 import argparse
 import csv
@@ -80,7 +83,7 @@ def nice(x):
 class Map:
     SIDE, PAD, HEAD, FOOT = 78, 10, 16, 24
 
-    def __init__(self, S, st, extent, scale, title, subtitle):
+    def __init__(self, S, st, extent, scale, title, subtitle, framed=False):
         self.S, self.st, self.scale = S, st, scale
         self.x0, self.y0, self.x1, self.y1 = extent.bounds
         self.k = 1000 / scale
@@ -92,6 +95,9 @@ class Map:
         self.body, self.defs, self.legend = [], [], []
         self.compact = None  # the legend in short, for the sheet: {"bar": [...], "low", "high", "unit", "rows": [[fill, opacity, label]]}
         self.extent = extent
+        self.framed = framed
+        if framed:  # the map is the whole frame
+            self.W, self.H, self.ox, self.oy = self.mw, self.mh, 0, 0
 
     def P(self, x, y):
         return self.ox + (x - self.x0) * self.k, self.oy + (self.y1 - y) * self.k
@@ -142,8 +148,8 @@ class Map:
             self.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["context"], stroke="none")
 
     def site(self):
-        self.add(self.S.poly, fill="none", stroke=self.st["ink"], stroke_width=self.st["thick"], stroke_dasharray="3 1.2")
-        self.legend.append(("line", self.st["ink"], "Project site", dict(dash="3 1.2", w=self.st["thick"])))
+        self.add(self.S.poly, fill="none", stroke=self.st["ink"], stroke_width=self.st["mid"], stroke_dasharray="3 1.5")
+        self.legend.append(("line", self.st["ink"], "Project site", dict(dash="3 1.5", w=self.st["mid"])))
 
     def key(self, kind, color, label, **o):
         self.legend.append((kind, color, label, o))
@@ -160,8 +166,14 @@ class Map:
              f'<marker id="arrow" viewBox="0 0 6 6" refX="5" refY="3" markerUnits="userSpaceOnUse" markerWidth="2.4" markerHeight="2.4" orient="auto">'
              f'<path d="M0 0L6 3L0 6z" fill="{st["ink"]}"/></marker></defs>',
              f'<rect width="100%" height="100%" fill="{st["paper"]}"/>',
-             f'<g clip-path="url(#frame)">{"".join(self.body)}</g>',
-             f'<rect x="{self.ox}" y="{self.oy}" width="{self.mw:.2f}" height="{self.mh:.2f}" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>',
+             f'<g clip-path="url(#frame)">{"".join(self.body)}</g>']
+        if self.framed:
+            o += self.boxed() + ["</svg>"]
+            path.write_text("\n".join(o), encoding="utf-8")
+            png(path, self.W, self.H)
+            frame(path, self.W, self.H, (0, 0, self.mw, self.mh), self.title, compact=self.compact, defs="".join(self.defs), hide=self.box)
+            return path.name
+        o += [f'<rect x="{self.ox}" y="{self.oy}" width="{self.mw:.2f}" height="{self.mh:.2f}" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>',
              self.text(self.ox, self.PAD + st["title"], self.title, st["title"], "bold"),
              self.text(self.ox, self.PAD + st["title"] + 5, self.subtitle)]
         # legend
@@ -213,6 +225,51 @@ class Map:
         frame(path, self.W, self.H, (self.ox, self.oy, self.mw, self.mh), self.title, compact=self.compact, defs="".join(self.defs))
         return path.name
 
+    def boxed(self, bw=70):
+        """A framed map's title, short legend (its compact one), scale bar and north arrow, in a box in the corner where it
+        hides least of the site; the full sources are in climate.md."""
+        st, c = self.st, self.compact or {}
+        tx = max(st["text"], MIN_TEXT)
+        lh, wrap = tx * 1.3, int((bw - 16) / (tx * 0.5))
+        heads = textwrap.wrap(f"{self.title}, 1:{self.scale:,}", int((bw - 8) / (st["title"] * 0.55)))
+        e = [self.text(4, 3 + st["title"] * 1.2 * (i + 1), ln, st["title"], "bold") for i, ln in enumerate(heads)]
+        y = 5 + st["title"] * 1.2 * len(heads)
+        if c.get("bar"):
+            n = len(c["bar"])
+            e += [f'<rect x="{4 + i * 20 / n:.2f}" y="{y:.2f}" width="{20 / n + 0.05:.2f}" height="3.2" fill="{col}" fill-opacity="{c.get("opacity", 1)}"/>'
+                  for i, col in enumerate(c["bar"])]
+            e += [f'<rect x="4" y="{y:.2f}" width="20" height="3.2" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>',
+                  self.text(26, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip())]
+            y += lh + 0.8
+        for fill, op, label in c.get("rows", []):
+            word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon or bracket
+            lines = textwrap.wrap(f"{word}: {re.split(r': | [(]', rest)[0]}" if rest else label, wrap) or [""]
+            e.append(f'<line x1="4" y1="{y + 1.6:.2f}" x2="10" y2="{y + 1.6:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}" marker-end="url(#arrow)"/>'
+                     if fill == "arrow" else f'<rect x="4" y="{y:.2f}" width="6" height="3.2" fill="{fill}" fill-opacity="{op}" '
+                                             f'stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+            e += [self.text(12, y + 2.8 + j * lh, ln) for j, ln in enumerate(lines)]
+            y += len(lines) * lh + 0.8
+        # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
+        L = nice(30 / self.k)
+        n, by = (4 if f"{L:g}"[0] == "2" else 5), y + 3
+        s = L * self.k / n
+        e.append(f'<path d="{"".join(f"M{4 + i * s:.2f},{by + 1.6 * (i % 2):.2f}h{s:.2f}" for i in range(n))}'
+                 f'{"".join(f"M{4 + i * s:.2f},{by:.2f}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+        e += [self.text(4, by + 6, "0", anchor="middle"), self.text(4 + L * self.k, by + 6, f"{L:g} m", anchor="middle")]
+        nx = 4 + L * self.k + 12
+        e.append(f'<circle cx="{nx:.2f}" cy="{by + 1:.2f}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
+                 f'<line x1="{nx:.2f}" y1="{by + 1:.2f}" x2="{nx:.2f}" y2="{by - 2:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
+        y = by + 6
+        for ln in textwrap.wrap("Sources: climate.md; base map: the site folder (its SOURCES.md).", int((bw - 8) / (tx * 0.5))):
+            y += lh
+            e.append(self.text(4, y, ln))
+        bh = y + 2.5
+        site = shapely.affinity.affine_transform(self.S.poly, [self.k, 0, 0, -self.k, -self.x0 * self.k, self.y1 * self.k])
+        bx, by = min(((x, y_) for y_ in (self.mh - bh, 0) for x in (0, self.mw - bw)),
+                     key=lambda q: box(q[0], q[1], q[0] + bw, q[1] + bh).intersection(site).area)
+        self.box = [round(bx, 2), round(by, 2), bw, round(bh, 2)]  # the sheet covers it: its own legend is under the map
+        return [f'<g transform="translate({bx:.2f},{by:.2f})"><rect width="{bw}" height="{bh:.2f}" fill="{st["paper"]}"/>', *e, "</g>"]
+
 
 KEYS = {"paper": ("paper", "background"), "ink": ("ink", "line", "lines", "text colour", "text color"), "accent": ("accent", "highlight", "new"),
         "context": ("context", "existing", "grey", "gray"), "water": ("water",), "cool": ("cool", "green", "vegetation")}
@@ -251,13 +308,22 @@ def short_rule(label):
     return f"{word}: {first}" if text else label
 
 
-def frame(path, W, H, box, title, bare=None, compact=None, defs=""):
+def frame(path, W, H, box, title, bare=None, compact=None, defs="", hide=None):
     """Note in frames.json where the map sits in its drawing, so the sheet can show the map alone with its title."""
     f = path.parent / "frames.json"
     d = read(f) if f.exists() else {}
     d[path.name] = dict(W=round(W, 2), H=round(H, 2), frame=[round(v, 2) for v in box], title=title, compact=compact, defs=defs,
-                        **({"bare": bare} if bare else {}))
+                        **({"bare": bare} if bare else {}), **({"hide": hide} if hide else {}))
     f.write_text(json.dumps(d, indent=1), encoding="utf-8")
+
+
+def plan_frame(proposal):
+    """(w, h mm, centre [lon, lat] or None, scale or None) of the first climate map's frame in the panels' plan, else None."""
+    p = next((q for q in (proposal / "panel-layout" / n for n in ("layout-plan.json", "layout.json")) if q.exists()), None)
+    for it in [it for q in (read(p).get("panels", []) if p else []) for it in q.get("items", [])]:
+        fr, m = it.get("frame") or {}, re.search(r"1\s*:\s*([\d,. ]+)", str(it.get("scale") or ""))
+        if str(it.get("file") or "").replace("\\", "/").startswith("climate/") and fr.get("w") and fr.get("h"):
+            return float(fr["w"]), float(fr["h"]), fr.get("centre"), int(re.sub(r"\D", "", m.group(1))) if m else None
 
 
 def meta(out, name):
@@ -273,22 +339,32 @@ def main():
     ap.add_argument("--scale", type=int)
     ap.add_argument("--margin", type=float, default=300)
     ap.add_argument("--buildings")
+    ap.add_argument("--frame", nargs=2, type=float, metavar=("W", "H"), help="without a frame in the panels' plan: the maps' frame, mm")
+    ap.add_argument("--centre", nargs=2, type=float, metavar=("LON", "LAT"), help="the frame's centre (default: the site's)")
     ap.add_argument("--sheet", action="store_true", help="only remake climate_sheet from the drawings made, e.g. after writing summary.md")
     a = ap.parse_args()
     S, out = Site(a.site, a.buildings), Path(a.out)
     found, look = standard(out, a.style)
     st = dict(FALLBACK, **found)
+    dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # a thematic plan's weights and text sizes, px
+    st.update({k: dg[d] * 25.4 / 96 for k, d in (("thin", "line"), ("mid", "outline"), ("thick", "heavy"),
+                                                 ("text", "label_size"), ("title", "title_size")) if d in dg})
     if a.sheet:  # only the sheet, from the drawings already made
         lines = (out / "drawings.txt").read_text(encoding="utf-8").splitlines()[1:]
         print(sheet(out, st, [n for n in lines if n and n != "climate_sheet.svg"]))
         return
+    fr = plan_frame(out.resolve().parent) or ((*a.frame, a.centre, None) if a.frame else None)
     ext = box(*S.poly.buffer(a.margin).bounds)
     w, h = ext.bounds[2] - ext.bounds[0], ext.bounds[3] - ext.bounds[1]
-    scale = a.scale or next((s for s in SCALES if w * 1000 / s <= 280 and h * 1000 / s <= 300), SCALES[-1])
+    fw, fh = fr[:2] if fr else (280, 300)
+    scale = (fr and fr[3]) or a.scale or next((s for s in SCALES if w * 1000 / s <= fw and h * 1000 / s <= fh), SCALES[-1])
+    if fr:  # every map fills the one frame at its scale, around its centre, else the site's
+        c = S.to_m(shapely.Point(fr[2])) if fr[2] else ext.centroid
+        ext = box(c.x - fw * scale / 2000, c.y - fh * scale / 2000, c.x + fw * scale / 2000, c.y + fh * scale / 2000)
     made = []
 
     def new(title, sub):
-        return Map(S, st, ext, scale, title, sub)
+        return Map(S, st, ext, scale, title, sub, bool(fr))
 
     if (out / "fresh-air.geojson").exists():
         m = new("Fresh air", "Air corridors and flow as they are today")
@@ -536,6 +612,8 @@ def sheet(out, st, names, W=420, H=297):
         c = f.get("compact") or {}
         fx, fy, fw, fh = f["frame"]
         img = f'<image x="0" y="0" width="{f["W"]}" height="{f["H"]}" href="{n.replace(".svg", ".png")}"/>'
+        if f.get("hide"):  # a framed map's own legend box, too small here
+            img += f'<rect x="{f["hide"][0]}" y="{f["hide"][1]}" width="{f["hide"][2]}" height="{f["hide"][3]}" fill="{st["paper"]}"/>'
         if isinstance(f.get("bare"), list):  # the wind roses, two by two, the speed colours in the fourth place
             q = min((cw - 4) / 2, (bottom - top) / 2)
             d = q - lh - 2

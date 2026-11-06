@@ -1,0 +1,3 @@
+Redrawn on the second run (drawing standard and panel frames now exist, no recalculation): all maps and `climate_sheet` in the entry's colours at 1:10,000, with `climate.json`, `climate.md` and the rules unchanged.
+Key number: 16 % of the site is at 65 dB(A) or more by day (no homes; 11.9 % to 17.6 % across the traffic range) and another 61 % at 55 to 65 (homes only behind a shielding edge); the cold-air corridor along Pilsen-Allee takes 4 %.
+Least sure: noise, as the brief (p. 24) gives only 10,000 to 20,000 vehicles, so speeds are ASSUMED, the railway is left out (no train data), limits and RLS-90 are German defaults; the climate map has no legend and fits the streets to about 70 m.

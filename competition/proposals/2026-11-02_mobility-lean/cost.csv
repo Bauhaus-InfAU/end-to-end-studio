@@ -1,0 +1,4 @@
+skill,run,model,steps,input,cache_write,cache_read,output,usd
+mobility,1,sonnet,21,42,67157,893682,28249,0.63
+lead,1,sonnet,2,4,9210,37362,1001,0.05
+total,,,23,46,76367,931044,29250,0.68

@@ -1,0 +1,3 @@
+Existing streets came from the cadastre's street areas (street-land.geojson); 223 centrelines carry a default width; new streets run 1,616 m along existing ones (not drawn twice), 11.7 ha new, 0.2 ha of existing land gave way under new buildings; check plan streets_1-3000.svg/.png.
+Streets cover 23.6 % of the site (59.2 ha existing, 11.7 ha new, over the site and its edge); ends: 6 future links, 12 turning heads, 32 square ends; no main route ends nowhere.
+Unsure: 10 buildings in the massing stand under new streets, so the massing should shift or drop them (file left unchanged); the 12 turning heads and 32 square ends in the dense north-east block are worth a look; default widths are not from the brief.

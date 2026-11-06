@@ -42,11 +42,11 @@ Every version of a proposal is a folder `<YYYY-MM-DD>_<label>/` in the project's
 
 Drawings are SVG with a PNG next to each, images PNG, tables CSV, geometry GeoJSON in WGS84.
 
-`competition-proposal` makes a new version, a variant of an earlier one ("redo the massing of run-1"), or compares two. `proposals/` is never committed. To test your skill, tell it to work in `competition/proposals/test/`; the brief and the site are in `competition/` already. If it reads a skill that doesn't exist yet, ask your agent for a rough stand-in in that skill's folder, in the shape its `TOPIC.md` gives.
+`competition-proposal` makes a new version, a variant of an earlier one ("redo the massing of run-1"), or compares two. Of each run in `proposals/` only the log, cost, notes, summaries, jury report and panel PNGs are committed, for others to study; `test/` is never committed. To test your skill, tell it to work in `competition/proposals/test/`; the brief and the site are in `competition/` already. If it reads a skill that doesn't exist yet, ask your agent for a rough stand-in in that skill's folder, in the shape its `TOPIC.md` gives.
 
 ## The order
 
-Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist; a skill that reads it starts after its first run, unless it writes `<skill> (end)`, as in `Reads: panel-layout (end)`. `everything` means every skill that doesn't wait for this one (a skill that waits only for its first run still counts); `every analysis` means every skill of that topic that doesn't wait for this one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead never adds a round. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
+Near its top every skill has a line `Reads:` with the skills whose output it needs, such as `Reads: narrative, programme`. A skill that works twice adds `Reads (end): ...` and runs again once those exist; a skill that reads it starts after its first run, unless it writes `<skill> (end)`, as in `Reads: panel-layout (end)`. `everything` means every skill that doesn't wait for this one (a skill that waits only for its first run still counts); `every analysis` means every skill of that topic that doesn't wait for this one, and `every drawings (end)` waits for the second run of those that have one. The lead starts each skill as soon as its inputs exist, side by side, so nobody keeps an order up to date. A skill that needs judgment more than craft adds `Model: opus` below its `Reads:` line; every other skill runs on Sonnet, which costs half as much. Each skill runs as its own helper, `studio:studio-helper`, that carries only that skill and the tools to read, write and run code. A skill runs a second time only when its own `Reads (end):` line says so; the lead adds one round only: before `panel-layout (end)`, the skills that `art-direction` or the frame check name redraw once, unless the run is past its cost ceiling. The flow, round by round, is on [the studio's page](https://bauhaus-infau.github.io/end-to-end-studio/).
 
 ## The tools
 
@@ -60,7 +60,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 
 ## Shared rules
 
-- Never invent data. Every number has its source or its assumption next to it.
+- Never invent data. Every number has its source or its assumption next to it. Design intent is not data: a drawing may show what a design layer or a line of the narrative proposes (planting, people, use labels, furniture), marked as illustrative and named in `summary.md`; a skill never adds a fact, a number or a use that neither gives.
 - The look comes from `drawing-graphics`: a best-practice base, fitted to the entry's narrative, then to the project's reference images if there are any (here `competition/references/`). It writes `drawing-graphics/standard.md` and `style.json`. Drawing skills decide what a drawing shows, never its colours, line weights or fonts.
 - Scale comes from the brief. A drawing skill says what to show when the drawing is large and when it is small.
 - Read the brief's checklist first, and the brief itself only at the pages it names. Every line an agent reads is paid for again at each later step.
@@ -85,6 +85,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |
 | | `open-space` | Parks, squares, gardens, and the blue-green network with rain retention | `basak-unver` |
 | | `streets` | One clean street surface at real widths, existing and new, for every drawing | `YegorGaidukov` |
+| | `ground-floor` | The ground floors by rules: doors on the street side, bike stands, play in the courtyards, the uses and their areas at the centres, a hub's bus bays and bike parking | open |
 | drawings | `drawing-graphics` | The studio's drawing standard: a best-practice base, fitted to the narrative, then to the reference images. Example | `YegorGaidukov` |
 | | `figure-ground` | The figure-ground plan of the district in its city | open |
 | | `plans` | Every plan the brief asks for, at its scales: the overall plan and the detail areas | open |
@@ -94,6 +95,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | | `concept-diagrams` | Three to six pictograms that tell the idea | `nouranmoustafa` |
 | | `perspective` | Eye-level views with people, from a view in the massing | `Isabelacano` |
 | delivery | `panel-layout` | The panels the brief asks for, along the storyline | `bengunur` |
+| | `art-direction` | Puts each drawing beside the references of its kind and gives each drawing skill at most three fixes for one redraw | open |
 | | `jury` | Reads the entry as the competition's jury would, against the brief and its own storyline: what convinces, what's weak, a verdict | `nandimateo` |
 | studio | `competition-proposal` | The lead: runs the others, keeps the versions | `YegorGaidukov` |
 

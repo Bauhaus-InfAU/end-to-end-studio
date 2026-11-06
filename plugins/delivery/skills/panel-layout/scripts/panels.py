@@ -476,6 +476,10 @@ def item_html(it, box, style, folder):
             for r in it.get("rows", []))
         head = f"<h2>{html.escape(source_words(it['heading'], folder))}</h2>" if it.get("heading") else ""
         inner = f"{head}<table>{rows}</table>"
+    elif kind == "number":  # one key figure as big type, what it counts under it, its source in one line
+        inner = (f'<div class="big" style="font-size:{pt_(it.get("pt", 2 * style["heading_pt"]))}pt">{html.escape(str(it.get("value", "")))}</div>'
+                 f'<div class="what">{html.escape(it.get("text", ""))}</div>'
+                 f'<div class="src">{html.escape(source_words(it.get("source", ""), folder))}</div>')
     else:
         head = f"<h2>{html.escape(source_words(it['heading'], folder))}</h2>" if it.get("heading") else ""
         pt = it.get("pt")
@@ -536,6 +540,8 @@ html, body {{ width: {W}mm; height: {H}mm; overflow: hidden; background: {style[
 .box td {{ border-top: {style['line_mm']}mm solid {style['text']}; padding: 1.2mm 2mm 1.2mm 0; vertical-align: top; }}
 .box td.v {{ font-weight: 700; color: {style['accent']}; white-space: nowrap; }}
 .box td.src {{ opacity: .6; font-size: max(.8em, 12px); }}
+.box .big {{ font-weight: 700; line-height: 1; color: {style['accent']}; }}
+.box.number .src {{ opacity: .6; font-size: {pt_(style['body_pt'] * 0.8)}pt; white-space: nowrap; }}
 .box.text > div {{ column-width: {COLUMN_EM}em; column-gap: 6mm; }}
 .box.text > div p {{ break-inside: avoid-column; }}
 </style></head><body>
@@ -629,7 +635,9 @@ def render(layout_path, png_dpi):
     used = {it.get("file") for r in results for it, _ in r["placed"]}
     unused = [d for d in inv["drawings"] if d["file"] not in used]
     ids = {it["id"] for r in results for it, _ in r["placed"]}
-    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi)
+    plan = out / "layout-plan.json"  # the first run's plan, which the second run keeps
+    plan = json.loads(plan.read_text(encoding="utf-8")) if plan.exists() and plan != layout_path else None
+    report = write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan)
     print(report)
 
 
@@ -637,7 +645,7 @@ def paths_left(placed, folder):
     """Headings, captions and sources that still show a file path once paths of the proposal folder are words."""
     out = []
     for it, _ in placed:
-        texts = [("heading", it.get("heading")), ("caption", it.get("caption"))]
+        texts = [("heading", it.get("heading")), ("caption", it.get("caption")), ("source", it.get("source"))]
         texts += [("source", r[2]) for r in it.get("rows", []) if len(r) > 2]
         for where, t in texts:
             m = PATH_RE.search(source_words(str(t), folder)) if t else None
@@ -646,7 +654,7 @@ def paths_left(placed, folder):
     return out
 
 
-def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi):
+def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan=None):
     W, H = fmt["width_mm"], fmt["height_mm"]
     max_mb = fmt.get("max_mb")
     lines = [f"# Panel layout: report", "",
@@ -696,6 +704,9 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
                     held += f"  **cropped by more than {100 * DEFAULTS['max_crop']:.0f} %: check that what the brief asks to show is in the frame**"
             elif it.get("type") == "drawing" and it.get("scale"):
                 held = f", **{it['scale']} not held**"
+            elif it.get("type") == "number" and not it.get("source"):
+                problems += 1
+                held = "  **a number without its source**"
             lines.append(f"- placed `{it['id']}` at ({b['x']:.0f}, {b['y']:.0f}) mm, {b['w']:.0f} x {b['h']:.0f} mm{held}")
         for p in r["paths"]:
             problems += 1
@@ -722,6 +733,18 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
     if not req:
         lines.append("- **No list of required items in layout.json: nothing was checked against the brief.**")
     lines.append("")
+    if plan is not None:  # every item of the first run's plan is on the panels, by its id or its file
+        files = {it.get("file") for r in results for it, _ in r["placed"]}
+        why = {it.get("id"): w for r in results for it, w in r["unplaced"]}
+        dropped = [it for p in plan.get("panels", []) for it in p.get("items", [])
+                   if it.get("id") not in ids and not (it.get("file") and it["file"] in files)]
+        problems += sum(it.get("id") not in why for it in dropped)  # one that did not fit is counted on its panel
+        lines.append("## Planned items not on the panels")
+        lines.append("In `layout-plan.json`, the first run's plan, and not placed now. Never drop a planned drawing.")
+        lines += [f"- **`{it.get('id', '?')}`** ({it.get('file', it.get('type', 'text'))}): "
+                  + (f"not placed, {why[it.get('id')]}" if it.get("id") in why else "left out of layout.json")
+                  for it in dropped] or ["- none"]
+        lines.append("")
     lines.append("## Drawings at a scale without a scale bar")
     lines.append("Tested on the SVG: no element named scale-bar, and no text \"0\" together with a text such as \"200 m\" "
                  "or \"1 km\"; a PNG or JPEG is not tested. `\"scale_bars\": \"all\"` in `format` adds one to each.")

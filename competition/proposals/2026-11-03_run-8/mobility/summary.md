@@ -1,0 +1,3 @@
+Mobility plan at 1:3,000 (`mobility_1-3000.png/.svg`) with `mobility.geojson`, `walk.json`, `stats.json`, `mobility.md`: rail stop and bus station as the hub, cars only at the brief's gateways, no car link Chamer Strasse to Sandgasse (0 violations), 4 main bike routes to named places.
+Share of new housing within walking distance of the main stop: 0 % within 400 m, 9 % within 800 m (by street network); the stop sits at the southern tip, far from most homes.
+Assumptions: walk limits, bike destinations and the bus-only south stop street are assumed; no 1:1,000 detail plan of detail area 1 was made (the skill draws only 1:3,000); the crop to the new buildings omits the site's far edges.

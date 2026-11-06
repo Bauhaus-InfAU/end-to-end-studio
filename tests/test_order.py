@@ -1,7 +1,7 @@
 import re
 from conftest import REPO
 
-OPUS = {"narrative", "structure-plan", "massing", "jury", "panel-layout"}
+OPUS = {"narrative", "structure-plan", "massing", "jury", "panel-layout", "art-direction"}
 SKILLS = {p.parent.name: p for p in REPO.glob("plugins/*/skills/*/SKILL.md")}
 
 
@@ -22,6 +22,18 @@ def test_model_lines():
 
 def test_massing_reads_narrative():
     assert "narrative" in reads_of("massing")
+
+
+def test_panels_planned_after_the_structure_plan_and_checked():
+    assert "structure-plan" in reads_of("panel-layout")
+    lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
+    assert "frames.py" in lead and "layout-plan.json" in SKILLS["panel-layout"].read_text(encoding="utf-8")
+
+
+def test_one_revision_round_after_the_drawings():
+    assert reads_of("art-direction") == ["every drawings (end)"]
+    lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
+    assert "art-direction/fixes.json" in lead and "rerun" in lead and "past its ceiling" in lead
 
 
 def test_no_cycles():

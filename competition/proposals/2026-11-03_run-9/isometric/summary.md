@@ -1,0 +1,3 @@
+- The design, isometric at 1:5000, seen from the north-west, 209 × 264 mm in print.
+- 152 new buildings; 231 existing buildings, 4 of them at default heights from the site data.
+- Unsure: streets from streets/streets.geojson; colours from the drawing standard; PNG from headless Chrome or Edge.

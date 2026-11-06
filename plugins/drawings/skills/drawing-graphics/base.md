@@ -13,7 +13,7 @@ How a competition entry's drawings and panels look when nothing else is decided.
 ## Colour
 
 - White paper, near-black ink. Context in light greys: existing buildings, streets, the city around.
-- One accent for what the entry is about, usually the new buildings or the idea's layer. Nothing else in that colour.
+- One accent for what the entry is about, usually the public ground (squares and shared streets, in its pale tone `public`) or the idea's layer. Nothing else in that colour. New buildings are white (`new`) with an ink outline and a cast shadow (`shadow`, `shadow_len` metres per floor).
 - Nature in muted tones: greens for parks, meadows and trees, a pale blue for water. Never saturated.
 - A ramp from light to dark for values (heat, noise, density), the same ramp in every drawing that shows one.
 - At most five colours in one drawing besides the greys, and every colour in the legend.
@@ -44,7 +44,7 @@ How a competition entry's drawings and panels look when nothing else is decided.
 
 - Margins of 15 mm, a grid of columns with 6 mm gutters, every box aligned to it.
 - The storyline runs from the top left. Each panel has one main drawing, large.
-- Captions sit under their drawings. Empty space is allowed; filling it with enlarged diagrams is not.
+- Captions sit under their drawings. Never fill space with enlarged diagrams.
 - The panel title and the entry's title stay at the same place and size on every panel.
 
 ## Renders and perspectives

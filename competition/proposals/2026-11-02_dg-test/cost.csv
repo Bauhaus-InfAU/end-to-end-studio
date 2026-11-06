@@ -1,0 +1,4 @@
+skill,run,model,steps,input,cache_write,cache_read,output,usd
+drawing-graphics,1,sonnet,6,12,20402,81723,2264,0.09
+lead,1,sonnet,2,4,9065,37482,635,0.05
+total,,,8,16,29467,119205,2899,0.14

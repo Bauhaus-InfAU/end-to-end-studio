@@ -3,15 +3,20 @@
     python section.py --site <site folder> --proposal <proposal folder> --scale <site plan scale>
                       --detail-scale <largest scale> [--massing] [--line lon,lat lon,lat]
                       [--look north|south|east|west] [--at lon,lat] [--style style.json]
+                      [--frame W,H] [--notes notes.json]
 
 Reads <site>/site.geojson and its layers (buildings, plots, streets, street-land, rail, water), the site's
 terrain (terrain.py: the site folder's GeoTIFF, else terrain.csv, else a free elevation service, else flat),
-its 3D building models if there are some (buildings-3d.geojson: roofs cut along the line, roofs.py), and with --massing <proposal>/massing/massing.geojson. Without --line it chooses the line itself; with
---massing and no --line it keeps the line of the earlier pass (cut.json). Writes into <proposal>/site-section/:
+its 3D building models if there are some (buildings-3d.geojson: roofs cut along the line, roofs.py), and with --massing <proposal>/massing/massing.geojson,
+the structure plan's and open space's areas as bands under the ground, and the narrative's principles (or --notes) as
+notes on the line. Without --line it chooses the line itself; with
+--massing and no --line it keeps the line of the earlier pass (cut.json). A frame (--frame, else the panels' plan,
+panel-layout/layout-plan.json or layout.json) sets the drawing's size in mm: the line runs as far past the site as the
+frame is long, and the caption, scale bar and key plan are left to the panel. Writes into <proposal>/site-section/:
 site-section[_design]_1-<scale>.svg/.png, site-section[_design]_excerpt_1-<detail>.svg/.png, profile.csv,
 cut.json and assumptions.md. The helper writes summary.md.
 """
-import argparse, csv, html, json, math, os, subprocess, sys
+import argparse, csv, html, json, math, os, re, subprocess, sys, textwrap
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +36,8 @@ DEFAULTS = {
     'ground_behind_m': [20, 40, 60, 80],   # the ground behind the cut, drawn along lines this far back, so buildings behind stand on it
     'landscape_m': [300, 600, 1000],       # on the whole cut, the landscape further back: ground lines this far behind, palest farthest
     'tree_h': {'forest': 16, 'wood': 16, 'park': 10, 'scrub': 4},   # assumed tree heights by land use, m
+    'tree_new': [10, 6],        # height and crown diameter of a design tree without height_m or crown_m, m
+    'tree_band_m': 10,          # with --massing, the design's trees whose crown reaches the line or stand this far behind it
     'person_h': 1.75,           # height of a person for scale, m
     'floor_h': 3.0,             # storey height, only for existing buildings without a height
     'default_floors': 2,        # storeys of an existing building with neither height nor storeys
@@ -52,6 +59,8 @@ DEFAULTS = {
     'main_roads': ['motorway', 'trunk', 'primary', 'secondary'],   # highway classes that count as main streets
     'at_m': 100,                # the line counts as passing the given place within this distance
     'person_gap_m': 25,         # people on open ground every this many metres in the excerpt
+    'person_gap_whole_m': 60,   # and on the whole cut, at their true size
+    'note_chars': 40,           # a note on the line wraps after this many characters, at most 3 lines
     'png_dpi': 150,             # resolution of the PNGs
     'models_file': 'buildings-3d.geojson',   # the site folder's 3D building models, one surface per feature
     'model_overlap': 0.3,       # a model belongs to a footprint it covers by this share of the smaller of the two
@@ -59,9 +68,10 @@ DEFAULTS = {
 C = DEFAULTS
 
 # fallback look: black on white, greys, one accent. A standard overrides it through --style.
-STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#c8442b', 'new': '#c8442b', 'existing': '#cfcfcf',
+STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#c8442b', 'new': '#ffffff', 'existing': '#cfcfcf',
          'context': '#e4e4e4', 'building': '#9a9a9a', 'street': '#f2f2f2', 'path': '#bcbcbc', 'park': '#c9dcbc',
-         'grove': '#8f8f8f', 'lawn': '#dddddd', 'water': '#9ec5d8', 'font': 'Arial, Helvetica, sans-serif',
+         'grove': '#8f8f8f', 'lawn': '#dddddd', 'water': '#9ec5d8', 'public': '#e9b4aa', 'meadow': '#e6e6e6',
+         'font': 'Arial, Helvetica, sans-serif',
          'thin': 0.13, 'mid': 0.25, 'thick': 0.5, 'text': 3.2, 'title': 5.6}
 
 ap = argparse.ArgumentParser(description='A long section through a site on its real ground.')
@@ -74,6 +84,8 @@ ap.add_argument('--line', nargs=2, metavar='LON,LAT', help='the line through two
 ap.add_argument('--look', choices=['north', 'south', 'east', 'west'])
 ap.add_argument('--at', metavar='LON,LAT', help='a centre or detail area the line should pass and the excerpt show')
 ap.add_argument('--style')
+ap.add_argument('--frame', metavar='W,H', help="the whole cut's frame in mm, instead of the panels' plan")
+ap.add_argument('--notes', help='a JSON list of {"text", "zone" or "at": "lon,lat"} instead of the narrative\'s principles')
 ARGS = ap.parse_args()
 
 SITE = Path(ARGS.site)
@@ -81,13 +93,32 @@ OUT = Path(ARGS.proposal) / 'site-section'
 OUT.mkdir(parents=True, exist_ok=True)
 style_path = ARGS.style or Path(ARGS.proposal) / 'drawing-graphics' / 'style.json'
 USED_STYLE = bool(style_path) and os.path.exists(style_path)
-if USED_STYLE:
-    STYLE.update(json.load(open(style_path, encoding='utf-8')))
+if USED_STYLE:   # the standard's keys this drawing has, by name, never merged: its other keys (a `tree`, `diagram`) aren't the section's
+    STD = json.load(open(style_path, encoding='utf-8'))
+    STYLE.update({k: STD[k] for k in STYLE if k in STD})
 S = STYLE
 FS = max(3.2, float(S.get('text', 3.2)))                 # text height in mm, never below 3.2
 FT = max(FS, float(S.get('title', FS * 1.6)))
 THIN, MID, THICK = (float(S.get(k, d)) for k, d in (('thin', 0.13), ('mid', 0.25), ('thick', 0.5)))
 NOTES, MISSING = [], []
+TAG = '_design' if ARGS.massing else ''
+WHOLE, PART = f'site-section{TAG}_1-{ARGS.scale}', f'site-section{TAG}_excerpt_1-{ARGS.detail_scale}'
+GUT = len('0000') * FS * 0.56 + 6   # room for the heights at the left, mm
+
+
+def frame_of(name):
+    """(w, h) in mm of this drawing's frame: --frame for the whole cut, else the panels' plan, by file, else by kind."""
+    if ARGS.frame and 'excerpt' not in name:
+        return tuple(float(v) for v in ARGS.frame.split(','))
+    plan = next((q for q in (Path(ARGS.proposal) / 'panel-layout' / n for n in ('layout-plan.json', 'layout.json')) if q.exists()), None)
+    its = [it for pn in (json.load(open(plan, encoding='utf-8')).get('panels', []) if plan else []) for it in pn.get('items', [])]
+    its = [(Path(str(it.get('file') or '').replace('\\', '/')), it.get('frame') or {}) for it in its]
+    its = [(f.stem, (float(fr['w']), float(fr['h']))) for f, fr in its
+           if f.parent.name == 'site-section' and fr.get('w') and fr.get('h') and ('excerpt' in f.stem) == ('excerpt' in name)]
+    return next((fr for s, fr in its if s == name), its[0][1] if its else None)
+
+
+FRAME_W, FRAME_E = frame_of(WHOLE), frame_of(PART)
 
 
 def utm_epsg(lon, lat):
@@ -179,6 +210,12 @@ if ARGS.massing:
         B = keep
 B += NEW
 BTREE = STRtree([b['g'] for b in B]) if B else None
+TREES = []   # with --massing, the design's trees, the massing's and open-space's: (point, height, crown, assumed)
+for f in (mf or []) + (read_fc(Path(ARGS.proposal) / 'open-space' / 'open-space.geojson') or []) if ARGS.massing else []:
+    p = f.get('properties') or {}
+    if p.get('kind') == 'tree' and (f.get('geometry') or {}).get('type') == 'Point':
+        TREES.append((transform(TO_M, shape(f['geometry'])), float(p.get('height_m') or C['tree_new'][0]),
+                      float(p.get('crown_m') or C['tree_new'][1]), not (p.get('height_m') and p.get('crown_m'))))
 
 STREETS = layer('streets')
 RAIL = layer('rail')
@@ -270,8 +307,12 @@ if np.dot(np.array([-e[1], e[0]]), want) < 0:   # A on the left: the look is the
     e = -e
     sp = (-sp[1], -sp[0])
 V = np.array([-e[1], e[0]])
-A = origin + e * (sp[0] - C['beyond_m'])
-A2 = origin + e * (sp[1] + C['beyond_m'])
+BEYOND = C['beyond_m']
+if FRAME_W:   # as far past the site as the frame is long, so the band is filled
+    ROOM_M = (FRAME_W[0] - GUT - 2) * ARGS.scale / 1000
+    BEYOND = max(0.0, (ROOM_M - (sp[1] - sp[0])) / 2)
+A = origin + e * (sp[0] - BEYOND)
+A2 = origin + e * (sp[1] + BEYOND)
 L = float(np.linalg.norm(A2 - A))
 CUT = LineString([A, A2])
 look_bearing = math.degrees(math.atan2(V[0], V[1])) % 360
@@ -285,6 +326,14 @@ def tu(x, y):
 
 def tpos(p):   # position along A-A' of a point
     return float((np.asarray(p) - A) @ e)
+
+
+DTREES = [(t, h, cr) for (t, u), h, cr in ((tu(g.x, g.y), h, cr) for g, h, cr, _ in TREES)
+          if -cr / 2 <= u <= C['tree_band_m'] and 0 <= t <= L]   # (t, height, crown) of the design's trees on the line
+if ARGS.massing:
+    NOTES.append(f'{len(DTREES)} of the design\'s {len(TREES)} trees reach the line or stand up to {C["tree_band_m"]} m behind it, '
+                 f'drawn at their height and crown; {sum(a_ for *_, a_ in TREES)} of the {len(TREES)} have an assumed '
+                 f'{C["tree_new"][0]} m height or {C["tree_new"][1]} m crown.')
 
 
 # ---------------------------------------------------------------- buildings cut and behind
@@ -512,9 +561,9 @@ else:
         tc, why = edge['t0'], 'where a new building meets open ground'
     else:
         tc, why = (SITE_TS[0] + SITE_TS[-1]) / 2 if SITE_TS else L / 2, "around the site's centre"
-half = C['excerpt_m'] / 2
-E0 = min(max(0.0, tc - half), max(0.0, L - C['excerpt_m']))
-E1 = min(L, E0 + C['excerpt_m'])
+EX_M = (FRAME_E[0] - GUT - 2) * ARGS.detail_scale / 1000 if FRAME_E else C['excerpt_m']
+E0 = min(max(0.0, tc - EX_M / 2), max(0.0, L - EX_M))
+E1 = min(L, E0 + EX_M)
 
 
 # ---------------------------------------------------------------- drawing
@@ -559,10 +608,15 @@ def scale_bar(x, y, scale):
     return o, total * k
 
 
-def tree(x, yg, h_mm):
-    r = h_mm * 0.28
-    return (f'<line x1="{x:.2f}" y1="{yg:.2f}" x2="{x:.2f}" y2="{yg - h_mm + r:.2f}" stroke="{S["grove"]}" stroke-width="{THIN}"/>'
-            f'<circle cx="{x:.2f}" cy="{yg - h_mm + r:.2f}" r="{r:.2f}" fill="{S["grove"]}" fill-opacity="0.85"/>')
+def tree(x, yg, h_mm, r=None, seed=0):
+    """A tree: its trunk and a crown of four overlapping lobes, mirrored from one tree to the next."""
+    r = r or h_mm * 0.28
+    cy, s = yg - h_mm + r, 1 if seed % 2 else -1
+    out = f'<line x1="{x:.2f}" y1="{yg:.2f}" x2="{x:.2f}" y2="{cy:.2f}" stroke="{S["grove"]}" stroke-width="{THIN}"/>'
+    for dx, dy, f in ((0, 0.12, 0.72), (-0.42 * s, 0.24, 0.52), (0.44 * s, 0.2, 0.5), (0.1 * s, -0.36, 0.52)):
+        out += (f'<circle cx="{x + dx * r:.2f}" cy="{cy + dy * r:.2f}" r="{f * r:.2f}" fill="{mix(S["grove"], S["paper"], 0.2)}" '
+                f'stroke="{mix(S["grove"], S["ink"], 0.3)}" stroke-width="{THIN}"/>')
+    return out
 
 
 def person(x, yg, h):
@@ -613,23 +667,100 @@ def key_plan(x, y):
     return o, kw, kh + FS * 1.6
 
 
-def draw(w0, w1, scale, detail, name):
+# ---------------------------------------------------------------- with --massing: the design's zones under the ground, its ideas on the line
+ZONES = []   # (t0, t1, area, properties): the structure plan's and open space's areas the line crosses
+for src, kinds in ((('structure-plan/structure-plan.geojson', ('neighbourhood', 'centre', 'green')),
+                    ('open-space/open-space.geojson', ('open-space',))) if ARGS.massing else ()):
+    fc = read_fc(Path(ARGS.proposal) / src)
+    if fc is None:
+        MISSING.append(src)
+    for f in fc or []:
+        p = f.get('properties') or {}
+        if p.get('kind') in kinds and str((f.get('geometry') or {}).get('type')).endswith('Polygon'):
+            g = transform(TO_M, shape(f['geometry'])).buffer(0)
+            for q in parts(g.intersection(CUT)):
+                if q.geom_type == 'LineString' and q.length > 1:
+                    ts = sorted(tpos(c) for c in q.coords)
+                    ZONES.append((ts[0], ts[-1], g.area, p))
+
+
+def zone_fill(p):
+    """A band's colour: centres and squares in the public tone, neighbourhoods paler (work less pale), fields meadow."""
+    if p.get('kind') == 'centre' or p.get('use') == 'square':
+        return S['public']
+    if p.get('kind') == 'neighbourhood':
+        return mix(S['public'], S['paper'], 0.3 if p.get('use') == 'commerce' else 0.6)
+    if p.get('use') == 'water':
+        return S['water']
+    return S['meadow'] if p.get('field') or p.get('public') is False else S['park']
+
+
+RUNS = []   # [t0, t1, label, properties]: one band each, the smallest area's colour, the smallest named area's name
+bp = sorted({0.0, L, *(t for z in ZONES for t in z[:2])})
+for a, b in zip(bp, bp[1:]):
+    hit = sorted((z for z in ZONES if z[0] <= (a + b) / 2 <= z[1]), key=lambda z: z[2])
+    if hit and b - a >= 0.5:
+        lab = next((str(z[3]['name']) for z in hit if z[3].get('name')), str(hit[0][3].get('use') or hit[0][3]['kind']))
+        if RUNS and RUNS[-1][1] >= a - 1 and RUNS[-1][2] == lab and zone_fill(RUNS[-1][3]) == zone_fill(hit[0][3]):
+            RUNS[-1][1] = b
+        else:
+            RUNS.append([a, b, lab, hit[0][3]])
+
+
+def principles(path):
+    """The narrative's principles: each item under a heading that names them, cut to its bold lead or first clause."""
+    out, on = [], False
+    for ln in (path.read_text(encoding='utf-8').splitlines() if path.exists() else []):
+        m = re.match(r'\s*(?:\d+[.)]|[-*])\s+(.+)', ln)
+        if ln.startswith('#'):
+            on = 'principle' in ln.lower()
+        elif on and m:
+            b = re.match(r'\*\*(.+?)\*\*', m.group(1))
+            out.append((b.group(1) if b else re.split(r'[:;.]\s', m.group(1))[0]).strip(' *:.'))
+    return out
+
+
+NOTE_ITEMS = []   # the ideas on the line: text, lines, t, illustrative (placed by this drawing, not by a zone)
+if ARGS.massing:
+    given = (json.load(open(ARGS.notes, encoding='utf-8')) if ARGS.notes else
+             [{'text': s} for s in principles(Path(ARGS.proposal) / 'narrative' / 'narrative.md')])
+    if not given:
+        NOTES.append('No notes on the line: no --notes and no principles in narrative/narrative.md.')
+    free = []
+    for n in given:
+        runs = [r for r in RUNS if n.get('zone') and r[2].lower() == str(n['zone']).lower()]
+        t = (lambda r: (r[0] + r[1]) / 2)(max(runs, key=lambda r: r[1] - r[0])) if runs else None
+        if n.get('zone') and not runs:
+            NOTES.append(f'The note "{n["text"]}": {n["zone"]} is not on the line, so the drawing places it (illustrative).')
+        if t is None and n.get('at'):
+            t = tpos(ll_point(n['at']))
+        it = dict(text=str(n['text']), lines=textwrap.wrap(str(n['text']), C['note_chars'])[:3], t=t, illustrative=not runs)
+        NOTE_ITEMS.append(it)
+        if t is None or not 0 <= t <= L:
+            free.append(it)
+    s0, s1 = (SITE_TS[0], SITE_TS[-1]) if SITE_TS else (0.0, L)
+    for i, it in enumerate(free):   # spread along the site, in their order
+        it['t'] = s0 + (i + 0.5) * (s1 - s0) / len(free)
+
+
+def draw(w0, w1, scale, detail, name, frame=None):
     k = 1000 / scale
     inwin = lambda a, b: b > w0 and a < w1
     sel_cut = [c for c in cut if inwin(c['t0'], c['t1'])]
     sel_beh = sorted((c for c in behind if inwin(c['t0'], c['t1'])), key=lambda c: -c['u'])
     m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
     zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
-    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max(C['tree_h'].values())]
+    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max([*C['tree_h'].values(), *(h for _, h, _ in DTREES)])]
     ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
     zmin = float(zwin.min())
     step = nice_step(FS * 1.4, k)
-    zbase = math.floor((zmin - max(4.0, 0.1 * (float(zwin.max()) - zmin))) / step) * step
+    depth = max(4.0, 0.1 * (float(zwin.max()) - zmin), FS * 1.6 / k if RUNS else 0)   # under the ground: room for the bands' names
+    zbase = zmin - depth if frame else math.floor((zmin - depth) / step) * step
     ztop = max(ztops) + 2
-    gut = text_w('0000', FS) + 6
-    lab_rows = []   # rows of (x0, x1)
+    gut = GUT
+    lab_rows = []   # rows of (x0, x1); in a frame the labels are set in the sky instead
     placed = []
-    for t, s, col in labels:
+    for t, s, col in ([] if frame else labels):
         if not (w0 <= t <= w1):
             continue
         xm = gut + (t - w0) * k
@@ -639,12 +770,21 @@ def draw(w0, w1, scale, detail, name):
                 row.append((xm - half, xm + half)); placed.append((t, s, col, r)); break
         else:
             lab_rows.append([(xm - half, xm + half)]); placed.append((t, s, col, len(lab_rows) - 1))
-    W = gut + (w1 - w0) * k + 12
-    key = key_plan(0, 0) if not detail else None   # in the bottom-right corner, beside the caption
-    top = 6
+    W = gut + (w1 - w0) * k + (2 if frame else 12)
+    key = key_plan(0, 0) if not (detail or frame) else None   # in the bottom-right corner, beside the caption
+    notes = [n for n in NOTE_ITEMS if w0 <= n['t'] <= w1] if not detail else []
+    note_h = lambda n: 2.2 + 1.2 * FS * len(n['lines'])
+    top = 1 if frame else 6
     row_h = FS * 1.5
     lab_top = top + FT
-    sec_top = lab_top + len(lab_rows) * row_h + 3
+    sky_top = lab_top + len(lab_rows) * row_h + 1   # the notes stay below the label rows
+    sec_top = sky_top + 2 + (max(map(note_h, notes)) + 4 if notes and not frame else 0)
+    if frame:   # the ground at the frame's foot; the sky above it holds the labels and the notes
+        need = (ztop - zbase) * k + 2
+        if need > frame[1]:
+            NOTES.append(f'{name}: its {frame[0]:g} x {frame[1]:g} mm frame can\'t hold the cut at 1:{scale} without exaggerating '
+                         f'it; drawn {need:.0f} mm high, so the panel crops it.')
+        sky_top, sec_top = top, max(frame[1], need) - 1 - (ztop - zbase) * k
     Y = lambda z: sec_top + (ztop - z) * k
     X = lambda t: gut + (t - w0) * k
     what = 'on the design' if ARGS.massing else 'the site as it is'
@@ -652,8 +792,16 @@ def draw(w0, w1, scale, detail, name):
     caption = [f'Section A–A′, {what}, {part}, looking {LOOK}, 1:{scale}, heights not exaggerated',
                f'Ground: {TERRAIN.source}' + ('' if TERRAIN.flat else
                '; trees assumed ' + ', '.join(f'{c} {h} m' for c, h in C['tree_h'].items()))]
-    H = Y(zbase) + 6 + max(FS * 7.5, key[2] + 4 if key else 0)
-    W = max(W, gut + max(text_w(c) for c in caption) + (key[1] + 16 if key else 6))
+    told = (["bands under the ground: the structure plan's and open space's areas"] if RUNS else []) + (
+        ["notes: the narrative's principles" + ('; a hollow dot is placed by this drawing, illustrative'
+                                                if any(n['illustrative'] for n in notes) else '')] if notes else [])
+    if told:
+        caption.append('; '.join(told)[0].upper() + '; '.join(told)[1:])
+    if frame:
+        H, W = max(frame[1], need), max(W, frame[0])
+    else:
+        H = Y(zbase) + 6 + max(FS * 7.5, key[2] + 4 if key else 0)
+        W = max(W, gut + max(text_w(c) for c in caption) + (key[1] + 16 if key else 6))
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{H:.1f}mm" viewBox="0 0 {W:.2f} {H:.2f}" '
          f'font-family="{esc(S["font"])}">', f'<rect width="{W:.2f}" height="{H:.2f}" fill="{S["paper"]}"/>',
          f'<clipPath id="win"><rect x="{gut:.2f}" y="0" width="{(w1 - w0) * k:.2f}" height="{H:.2f}"/></clipPath>',
@@ -688,8 +836,8 @@ def draw(w0, w1, scale, detail, name):
 
     def behind_building(c):   # lighter the farther, on its own ground
         b = c['b']
-        fill = mix(S['accent'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
-        stroke = mix(S['accent'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')
+        fill = mix(S['new'] if b['new'] else S['existing'], S['paper'], 0.25 + 0.4 * c['u'] / C['behind_m'])
+        stroke = mix(S['ink'], S['paper'], 0.3) if b['new'] else S.get('building', '#9a9a9a')   # white ones keep their outline
         d_out = outline(c['roof'], c['low'])
         o.append(f'<path d="{d_out}" fill="{fill}" stroke="{stroke}" stroke-width="{THIN}"/>')
         floors(c, d_out, stroke)
@@ -711,24 +859,40 @@ def draw(w0, w1, scale, detail, name):
         if c.get('back'):
             o.append(f'<path d="{outline(c["back"], c["low"])}" fill="{mix(S["existing"], S["paper"], 0.25)}" '
                      f'stroke="{S.get("building", "#9a9a9a")}" stroke-width="{THIN}"/>')
+    # the design's trees on and just behind the line, at their height and crown, before the cut buildings
+    for i, (t, h, cr) in enumerate(DTREES):
+        if w0 <= t <= w1:
+            o.append(tree(X(t), Y(float(ground(t))), h * k, cr / 2 * k, i))
     # buildings cut, the strongest tone, the roof cut along the line where there is a model
     for c in sel_cut:
         b = c['b']
-        fill = S['accent'] if b['new'] else S['ink']
+        fill = S['new'] if b['new'] else S['ink']
         d_out = outline(c['roof'], c['bottom'])
-        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
-        floors(c, d_out, S['paper'])
+        o.append(f'<path d="{d_out}" fill="{fill}" stroke="{S["ink"]}" stroke-width="{MID if b["new"] else THIN}"/>')
+        floors(c, d_out, mix(S['new'], S['ink'], 0.5) if b['new'] else S['paper'])
     # the earth, cut, and the ground line
     tt = np.concatenate([[w0], TS[(TS > w0) & (TS < w1)], [w1]])
     gl = 'L'.join('%.2f,%.2f' % (X(t), Y(z)) for t, z in zip(tt, ground(tt)))
     o.append(f'<path d="M{gl}L{X(w1):.2f},{Y(zbase):.2f}L{X(w0):.2f},{Y(zbase):.2f}Z" fill="{S["context"]}" stroke="none"/>')
+    # the design's zones as bands in the earth, each named at its foot where the name fits
+    named = {}
+    for a, b, lab, p in RUNS:
+        a, b = max(a, w0), min(b, w1)
+        if (b - a) * k < 0.3:
+            continue
+        ts_ = np.concatenate([[a], TS[(TS > a) & (TS < b)], [b]])
+        zt_ = 'L'.join(f'{X(t):.2f},{Y(z):.2f}' for t, z in zip(ts_, ground(ts_)))
+        o.append(f'<path class="zone" d="M{zt_}L{X(b):.2f},{Y(zbase):.2f}L{X(a):.2f},{Y(zbase):.2f}Z" fill="{zone_fill(p)}" stroke="none"/>')
+        if text_w(lab) + 2 <= (b - a) * k and X((a + b) / 2) - named.get(lab, -1e9) > 60:
+            named[lab] = X((a + b) / 2)
+            o.append(text(X((a + b) / 2), Y(zbase) - FS * 0.5, lab, anchor='middle', fill=mix(S['ink'], S['paper'], 0.35)))
     # plants by land use, water on the ground
     grass, water = [], []
     for t, cl in zip(TS, LAND):
         if not (w0 <= t <= w1):
             continue
         if cl in C['tree_h']:
-            o.append(tree(X(t), Y(float(ground(t))), C['tree_h'][cl] * k))
+            o.append(tree(X(t), Y(float(ground(t))), C['tree_h'][cl] * k, seed=round(t / C['step_m'])))
         elif cl == 'grass':
             grass.append(t)
         elif cl == 'water':
@@ -743,24 +907,81 @@ def draw(w0, w1, scale, detail, name):
     for t in water:
         o.append(f'<line x1="{X(t - C["step_m"] / 2):.2f}" y1="{Y(float(ground(t))):.2f}" x2="{X(t + C["step_m"] / 2):.2f}" '
                  f'y2="{Y(float(ground(t))):.2f}" stroke="{S["water"]}" stroke-width="{THICK * 2}"/>')
-    if detail:   # people on open ground every person_gap_m and beside the cut buildings' doors
-        spots = [t for t in np.arange(w0 + 5, w1, C['person_gap_m']) if land(float(t)) not in ('built', 'water')]
-        spots += [c['t1'] + 2 for c in sel_cut if not in_cut(c['t1'] + 2)]
-        for t in spots:
-            if w0 < t < w1:
-                o.append(person(X(t), Y(float(ground(t))), C['person_h'] * k))
+    # people at their true size on open ground, and in the excerpt beside the cut buildings' doors
+    spots = [t for t in np.arange(w0 + 5, w1, C['person_gap_m' if detail else 'person_gap_whole_m'])
+             if land(float(t)) not in ('built', 'water')]
+    spots += [c['t1'] + 2 for c in sel_cut if not in_cut(c['t1'] + 2)] if detail else []
+    for t in spots:
+        if w0 < t < w1:
+            o.append(person(X(t), Y(float(ground(t))), C['person_h'] * k))
     o.append(f'<path d="M{gl}" fill="none" stroke="{S["ink"]}" stroke-width="{THICK}" stroke-linejoin="round"/>')
     o.append('</g>')
+    # the sky: the highest thing drawn at each point, which labels in a frame and the notes sit above
+    tt = np.arange(w0, w1 + 1e-6, 0.5 / k)
+    sky = ground(tt)
+    for c in sel_cut + sel_beh:
+        i_ = (tt >= c['t0']) & (tt <= c['t1'])
+        sky[i_] = np.maximum(sky[i_], c['top'])
+    for u, z in BANDS:
+        sky = np.maximum(sky, np.interp(tt, TS, np.nan_to_num(z, nan=-1e9)))
+    for t, h, cr in DTREES + [(t, C['tree_h'][cl], C['tree_h'][cl] * 0.6) for t, cl in zip(TS, LAND) if cl in C['tree_h']]:
+        i_ = np.abs(tt - t) <= cr / 2
+        sky[i_] = np.maximum(sky[i_], float(ground(t)) + h)
+    sky_x, sky_y, boxes, unfit = X(tt), Y(sky), [], []
+
+    def pack(x, w, h, what, shifts=(0,)):   # a box w by h mm over x (or shifted), as low as it clears the sky and the boxes set before it
+        for s_ in shifts:
+            x0 = min(max(x - w / 2 + s_, gut), W - w - 1)
+            i_ = (sky_x >= x0 - 0.5) & (sky_x <= x0 + w + 0.5)
+            yb = float(sky_y[i_].min() if i_.any() else sky_y.min()) - 1.2
+            while yb - h >= sky_top and any(not (x0 + w < a or x0 > c or yb < b or yb - h > d) for a, b, c, d in boxes):
+                yb -= 0.5
+            if yb - h >= sky_top:
+                break
+        else:
+            x0, yb = min(max(x - w / 2, gut), W - w - 1), sky_top + h
+            unfit.append(what)
+        boxes.append((x0, yb - h, x0 + w, yb))
+        return x0 + w / 2, yb - h
+    if frame:
+        placed = [(t, s, col, y0_ + FS * 0.95, xc) for t, s, col in labels if w0 <= t <= w1
+                  for xc, y0_ in [pack(X(t), text_w(s) + 1, FS * 1.15, s)]]
+    else:
+        placed = [(t, s, col, lab_top + (len(lab_rows) - 1 - r) * row_h, min(max(X(t), gut + text_w(s) / 2), W - text_w(s) / 2 - 1))
+                  for t, s, col, r in placed]
     # site boundary and labels
-    for t, s, col, r in placed:
-        yl = lab_top + (len(lab_rows) - 1 - r) * row_h
+    for t, s, col, yl, xt in placed:
         x = X(t)
         colour = col or S['ink']
         dash = ' stroke-dasharray="1.2 0.8"' if col else ''
         yend = Y(zbase) if col else Y(float(ground(t)))
         o.append(f'<line x1="{x:.2f}" y1="{yl + 1:.2f}" x2="{x:.2f}" y2="{yend:.2f}" stroke="{colour}" '
                  f'stroke-width="{MID if col else THIN}"{dash}/>')
-        o.append(text(min(max(x, gut + text_w(s) / 2), W - text_w(s) / 2 - 1), yl, s, anchor='middle', fill=colour))
+        o.append(text(xt, yl, s, anchor='middle', fill=colour))
+    # the ideas on the line: a dot at each note's place, its words under it, and one line through them all
+    dots = []
+    for n in sorted(notes, key=lambda n: n['t']):
+        wn = max(text_w(ln) for ln in n['lines']) + 1
+        xc, y0_ = pack(X(n['t']), wn, note_h(n), n['text'], (0, -0.45 * wn, 0.45 * wn))
+        run = next((r for r in RUNS if r[0] <= n['t'] <= r[1]), None)
+        dots.append((X(n['t']), y0_ + 1.1, mix(zone_fill(run[3]), S['ink'], 0.45) if run else S['accent'], n, xc, y0_))
+    if dots:
+        pts = ([(gut, min(dots[0][1], float(sky_y[0]) - 2))] + [d[:2] for d in dots]
+               + [(X(w1), min(dots[-1][1], float(sky_y[-1]) - 2))])
+        dd = f'M{pts[0][0]:.2f},{pts[0][1]:.2f}'
+        for (xa, ya), (xb, yb) in zip(pts, pts[1:]):   # each arc's middle clears what stands between its ends
+            i_ = (sky_x >= xa) & (sky_x <= xb)
+            mid = max(sky_top + 0.5, min(min(ya, yb) - 0.15 * (xb - xa), float(sky_y[i_].min()) - 2 if i_.any() else ya))
+            dd += f'Q{(xa + xb) / 2:.2f},{(4 * mid - ya - yb) / 2:.2f} {xb:.2f},{yb:.2f}'
+        o.append(f'<path class="idea-line" d="{dd}" fill="none" stroke="{mix(S["ink"], S["paper"], 0.5)}" stroke-width="{MID}" '
+                 f'stroke-dasharray="0.05 1" stroke-linecap="round"/>')
+        for x, y, col, n, xc, y0_ in dots:
+            o.append(f'<circle class="note" cx="{x:.2f}" cy="{y:.2f}" r="0.9" fill="{S["paper"] if n["illustrative"] else col}" '
+                     f'stroke="{col}" stroke-width="{MID}"/>')
+            o += [text(xc, y0_ + 2.2 + FS * (0.9 + 1.2 * i), ln, anchor='middle', fill=mix(S['ink'], S['paper'], 0.25))
+                  for i, ln in enumerate(n['lines'])]
+    if unfit:
+        NOTES.append(f'{name}: no room in the sky for ' + ', '.join(f'"{u}"' for u in unfit) + ': set at the top, over the drawing.')
     # A and A'
     if w0 <= 0.5:
         o.append(text(gut + 1, Y(float(ground(0.0))) - 2, 'A', FT, weight='bold'))
@@ -770,15 +991,15 @@ def draw(w0, w1, scale, detail, name):
     hx = gut - 2
     zt = math.floor(ztop / step) * step
     o.append(f'<line x1="{hx:.2f}" y1="{Y(zbase):.2f}" x2="{hx:.2f}" y2="{Y(zt):.2f}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
-    for z in np.arange(zbase, zt + 0.1, step):
+    for z in np.arange(math.ceil(zbase / step) * step, zt + 0.1, step):
         o.append(f'<line x1="{hx - 1:.2f}" y1="{Y(z):.2f}" x2="{hx:.2f}" y2="{Y(z):.2f}" stroke="{S["ink"]}" stroke-width="{THIN}"/>')
         o.append(text(hx - 1.5, Y(z) + FS * 0.35, f'{z:g}', anchor='end'))
-    o.append(text(1, Y(zt) - FS * 0.9, 'm' if TERRAIN.flat else 'm a.s.l.'))
-    # scale bar and caption
+    o.append(text(1, max(FS, Y(zt) - FS * 0.9), 'm' if TERRAIN.flat else 'm a.s.l.'))
+    # scale bar and caption, which in a frame the panel gives
     yb = Y(zbase) + 5
-    sb, sbw = scale_bar(gut, yb, scale)
-    o += sb
-    for i, c in enumerate(caption):
+    if not frame:
+        o += scale_bar(gut, yb, scale)[0]
+    for i, c in enumerate([] if frame else caption):
         o.append(text(gut, yb + 1.2 + FS * (2.8 + 1.4 * i), c))
     if key:
         kx = W - key[1] - 6
@@ -829,9 +1050,12 @@ def shot(svg, png, w_mm, h_mm):
         NOTES.append(f'{png.name} was not made: the browser failed.')
 
 
-tag = '_design' if ARGS.massing else ''
-whole = draw(0.0, L, ARGS.scale, False, f'site-section{tag}_1-{ARGS.scale}')
-part = draw(E0, E1, ARGS.detail_scale, True, f'site-section{tag}_excerpt_1-{ARGS.detail_scale}')
+W0, W1 = 0.0, L
+if FRAME_W and L > ROOM_M + 0.5:   # the site is longer than the frame: its middle
+    W0, W1 = (L - ROOM_M) / 2, (L + ROOM_M) / 2
+    NOTES.append(f'The {FRAME_W[0]:g} mm frame holds {ROOM_M:.0f} m of the {L:.0f} m line at 1:{ARGS.scale}: the middle is drawn.')
+whole = draw(W0, W1, ARGS.scale, False, WHOLE, FRAME_W)
+part = draw(E0, E1, ARGS.detail_scale, True, PART, FRAME_E)
 
 n_default = sum(1 for c in cut + behind if c['b']['default'])
 info = {
@@ -856,12 +1080,26 @@ info = {
     'ground_behind_m': [u for u, _ in BANDS], 'landscape_m': [u for u, _ in LANDSCAPE],
     'excerpt_t_m': [round(E0, 1), round(E1, 1)], 'excerpt_why': why,
     'labels': [[round(t, 1), s] for t, s, _ in labels],
+    'frame_mm': {'whole': FRAME_W, 'excerpt': FRAME_E}, 'beyond_m': round(BEYOND, 1),
+    'zones': [[round(a, 1), round(b, 1), lab] for a, b, lab, _ in RUNS],
+    'notes': [[round(n['t'], 1), n['text'], 'illustrative' if n['illustrative'] else 'at its zone'] for n in NOTE_ITEMS],
     'drawings': [whole, part],
 }
 (OUT / 'cut.json').write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding='utf-8')
 
 lines = [f'# Site section, {info["pass"]}', '',
-         f'- Line: {choice}; {L:.0f} m from A to A′, {C["beyond_m"]} m past the site at each end, looking {LOOK}.']
+         f'- Line: {choice}; {L:.0f} m from A to A′, {BEYOND:.0f} m past the site at each end, looking {LOOK}.']
+if FRAME_W or FRAME_E:
+    lines.append('- Frames ' + ', '.join(f'{n_} {fr[0]:g} x {fr[1]:g} mm' for n_, fr in (('whole cut', FRAME_W), ('excerpt', FRAME_E)) if fr)
+                 + ' (--frame, else the panels\' plan): the line runs as far past the site as the frame is long; '
+                   'caption, scale bar and key plan left to the panel.')
+if RUNS:
+    lines.append(f'- Bands under the ground: {len(RUNS)} runs of the structure plan\'s and open space\'s areas, '
+                 'each in its smallest area\'s colour and named after the smallest named area.')
+if NOTE_ITEMS:
+    lines.append('- Notes on the line (' + ('--notes' if ARGS.notes else "the narrative's principles") + '): '
+                 + '; '.join(f'"{n["text"]}" ' + ('placed by the drawing, illustrative' if n['illustrative'] else 'at its zone')
+                             for n in NOTE_ITEMS) + f'. People at their true size every {C["person_gap_whole_m"]} m on open ground.')
 if best:
     lines.append(f'- Chosen of {len(cands)} lines (every {C["angles"]}°, offsets {C["offsets_m"]} m): score {best["score"]}'
                  f' (runner-up {runner["score"] if runner else "none"}); it cuts {best["buildings"]} buildings in the site'

@@ -1,0 +1,3 @@
+Made: fresh air traced from the brief's climate map (p. 31), sun, shadows, radiation, wind, road noise (day and night), heat, a do/don't rules map and climate.json, all at 1:10,000, plus climate.md and climate_sheet.
+Key number: 8.4 % of the site (9.2 ha, along Pilsen-Allee and B 16) is at 65 dB(A) or more by day, too loud for homes; another 32.3 % needs a shielding edge.
+Least sure: noise (speeds assumed 70 km/h, traffic is the brief's 10,000-20,000 range midpoint, railway left out for lack of train numbers, DIN 18005 limits) and the fresh-air corridor, whose band along the site is too pale to trace (fit on only two street crossings, no map legend), so no corridor share is given.

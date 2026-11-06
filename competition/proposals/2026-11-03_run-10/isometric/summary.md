@@ -1,0 +1,3 @@
+- The design, isometric at 1:10000, seen from the north-west, 144 × 144 mm in print. At the site plan scale 1:5000 it would be 288 mm wide, wider than the 222 mm panel, so the next usual scale.
+- 141 new buildings; 412 existing buildings, 8 of them at default heights from the site data.
+- Unsure: streets from streets/streets.geojson; colours from the drawing standard; PNG from headless Chrome or Edge.
