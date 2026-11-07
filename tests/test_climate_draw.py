@@ -48,3 +48,23 @@ def test_rules_map_fills_its_frame(tmp_path):
     assert 'width="160.0mm" height="120.0mm" viewBox="0 0 160.0 120.0"' in svg
     assert min(float(s) for s in re.findall(r'font-size="([\d.]+)"', svg)) >= 3.2 - 1e-6
     assert "1:5,000" in svg and "Sources" in svg
+
+
+def test_maps_take_the_standards_existing_grey_and_green(tmp_path):
+    from importlib.util import module_from_spec, spec_from_file_location
+    sys.path.insert(0, str(DRAW.parent))
+    spec = spec_from_file_location("climate_draw", DRAW)
+    d = module_from_spec(spec)
+    spec.loader.exec_module(d)
+    base = json.loads(STYLE.read_text(encoding="utf-8"))
+    assert f'fill="{base["existing"]}"' in draw(tmp_path)   # the buildings in the standard's existing grey
+    b = lambda x0, y0, x1, y1: box(X0 + x0, Y0 + y0, X0 + x1, Y0 + y1)
+    out = tmp_path / "proposal/climate"
+    write(out / "heat.geojson", [(b(0, 0, 300, 400), {"kind": "index", "label": "cool"}),
+                                 (b(300, 0, 600, 400), {"kind": "index", "label": "warm"})])
+    r = subprocess.run([sys.executable, str(DRAW), "--site", str(tmp_path / "site"), "--out", str(out), "--style", str(STYLE)],
+                       capture_output=True, text=True, encoding="utf-8", env={**os.environ, "PYTHONUTF8": "1"})
+    assert r.returncode == 0, r.stderr[-2000:]
+    heat = (out / "heat.svg").read_text(encoding="utf-8")
+    assert d.mix(base["paper"], base["park"], 0.55) in heat   # the cool end is the standard's park green
+    assert f'fill="{base["existing"]}"' in heat
