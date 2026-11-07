@@ -16,6 +16,14 @@ is what exists plus phases 1 to j-1; phase j and later count for nothing. The la
 
 Each building takes the phase phases.py gave it (phasing/phases.geojson), and its homes are counted by phases.py's rule,
 so both scripts give one answer; before phases.py has run, a building takes the massing's phase, else its neighbourhood's.
+An invalid footprint keeps its ID and its phase from a name, but is left out of every measured figure, and each figure says so.
+
+A street is built with the first phase that needs it, else with the land it lies on, else with the last phase. A new street
+is for cars only where the mobility layer routes cars along it. An open space's paths are walking routes from its own phase.
+At every stage each working building and each building that stays is checked: reached, connected beyond the site, by car,
+emergency access, each service within walking distance; so are open space per resident and every car link the mobility
+config forbids. Car access fails a building only where `requirements` asks for it; a building that stays fails only if a
+phase cuts it off, and one not reached today is counted in stage-stats.json.
 
 Reads from the proposal: massing/massing.geojson, massing/config.json and massing/areas.csv (required);
 structure-plan/structure-plan.geojson, streets/streets.geojson, mobility/mobility.geojson,

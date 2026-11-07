@@ -31,6 +31,12 @@ def test_panels_planned_after_the_structure_plan_and_checked():
     assert "panel-layout/issues.md" in lead
 
 
+def test_phases_come_early_and_their_checks_at_the_end():
+    assert reads_of("phasing") == ["brief-reader", "programme", "structure-plan", "massing"]
+    assert line("phasing", "Reads (end)") == "streets, mobility, open-space, drawing-graphics"
+    assert "phasing" in reads_of("concept-diagrams")   # draws the phases, and waits only for the first run
+
+
 def test_one_revision_round_after_the_drawings():
     assert reads_of("art-direction") == ["every drawings (end)"]
     lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
