@@ -20,16 +20,16 @@ Never invent data, and never write a place or a number of this project into the 
 - services outside the site or temporary ones, each with its source;
 - any closure of an existing street during building.
 
-Run it again. Each street is built with the first phase that needs it. An open space's paths are walking routes from its own phase, never before. Stage j is the time phase j is built: only what exists and phases 1 to j−1 work then, so a building under construction never counts. Each working building, and each building that stays, is checked at every stage: reached, connected to the streets beyond the site, by car, emergency access, and each service within walking distance. Open space per resident is checked at every stage too, and so is every car link the mobility config forbids between gateways. If `stage-stats.json` warns that the massing changed, check every building decision, then update `massing_fingerprint`; if it warns that a phase counts other homes than `phases.csv`, name the difference in `summary.md`, because the panels show `phases.csv`.
+Run it again. Each street is built with the first phase that needs it, one no phase needs with the land it lies on, else with the last phase. A new street is for cars only where the mobility layer routes cars along it. An open space's paths are walking routes from its own phase, never before. Stage j is the time phase j is built: only what exists and phases 1 to j−1 work then, so a building under construction never counts. Each working building, and each building that stays, is checked at every stage: reached, connected to the streets beyond the site, by car, emergency access, and each service within walking distance. Open space per resident is checked at every stage too, and so is every car link the mobility config forbids between gateways. A building that stays and isn't reached today is counted in `stage-stats.json`, not failed, since no phase caused it. If `stage-stats.json` warns that the massing changed, check every building decision, then update `massing_fingerprint`; if it warns that a phase counts other homes than `phases.csv`, name the difference in `summary.md`, because the panels show `phases.csv`.
 
-**4. The plan and the table.** Run `python "${CLAUDE_SKILL_DIR}/scripts/draw.py" --proposal <proposal folder> --site <site folder> --style <proposal>/drawing-graphics/style.json --size large`, and `--size small` if the panels need it. Without the drawing standard it draws nothing; say so in `summary.md`. Look at each PNG once.
+**4. The plan and the table.** Run `python "${CLAUDE_SKILL_DIR}/scripts/draw.py" --proposal <proposal folder> --site <site folder> --style <proposal>/drawing-graphics/style.json --size large`, and `--size small` if the panels need it. A frame in the panels' plan sets the plan's size and, if named, its scale. Without the drawing standard it draws nothing; say so in `summary.md`. Look at each PNG once.
 
 **What steps 3 and 4 add to `phasing/`:**
 - `phasing.geojson`, every feature with a `kind`:
   - `phase` (land, homes, residents as an estimate)
   - `building` (`id`, `phase`, `basis`, `reason`, `homes`, `geometry_valid`)
   - `street`, `stop` and `open-space`, each with its `phase`
-- `stage-phases.csv`, the panel table's figures
+- `stage-phases.csv`, the panel table's facilities, open space and access; its homes and residents come from `phases.csv`
 - `stages.csv` and `access.csv`, what works at each stage
 - `checks.csv`, `meets`, `partly`, `does not meet`, "not stated / not measured" or "for Claude to judge", each with the brief's figure, the design's and both sources. Judge the last kind yourself in `phasing.md`.
 - `evidence.csv` and `stage-stats.json`
@@ -42,4 +42,4 @@ Then write `phasing.md`:
 - the count of buildings by basis, adding up to every building in the massing;
 - each proposed or flagged building with its reason.
 
-And write `summary.md` in three lines: the phases and what comes first in each; the homes and residents per phase against the brief's; every flag, the buildings flagged for review, the neighbourhood furthest from its planned homes, the requirement least met and what you're unsure of.
+And write `summary.md` in three lines: the phases and what comes first in each, with the plan's file and scale; the homes and residents per phase against the brief's; every flag, the buildings flagged for review, the neighbourhood furthest from its planned homes, the requirement least met and what you're unsure of.

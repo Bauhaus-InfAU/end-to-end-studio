@@ -14,7 +14,7 @@
  "emergency": {"value": null, "source": "<brief file> p. N or a regulation and its clause: {\"max_distance_m\", \"min_width_m\", \"second_access\": true/false}, or \"not stated\" (never a standard of your own)"},
  "existing_residents": {"value": null, "source": "<brief file> p. N, or a cited source: the residents of the buildings that stay (0 when none hold homes), or \"not stated\""},
  "entrance_max_m": {"value": null, "source": "assumption: how far a footprint may lie from a street or path and still be reached, and why"},
- "snap_m": {"value": null, "source": "assumption: how far apart two street ends may be and still be joined, and why"},
+ "snap_m": {"value": null, "source": "assumption: how far apart two street ends may be and still be joined, and why; too small, and a gap in the drawing cuts off buildings"},
  "near_site_m": {"value": null, "source": "assumption: how far a layer may reach beyond the site and still belong to it"},
  "scale_large": {"value": null, "source": "<brief file> p. N: the phasing plan's scale when large, as a number (2000 for 1:2,000)"},
  "scale_small": {"value": null, "source": "<brief file> p. N: the scale when small"}

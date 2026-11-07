@@ -28,6 +28,7 @@ def test_panels_planned_after_the_structure_plan_and_checked():
     assert "structure-plan" in reads_of("panel-layout")
     lead = (REPO / "plugins/studio/skills/competition-proposal/SKILL.md").read_text(encoding="utf-8")
     assert "frames.py" in lead and "layout-plan.json" in SKILLS["panel-layout"].read_text(encoding="utf-8")
+    assert "panel-layout/issues.md" in lead
 
 
 def test_one_revision_round_after_the_drawings():

@@ -21,7 +21,7 @@ Reads from the proposal: massing/massing.geojson, massing/config.json and massin
 structure-plan/structure-plan.geojson, streets/streets.geojson, mobility/mobility.geojson,
 mobility/config.json (its no_car_link), open-space/open-space.geojson (its open spaces and paths) and
 programme/programme.csv (each optional; a missing one is named in stats.json).
-Writes into <proposal>/phasing/: phasing.geojson, stage-phases.csv, stages.csv, access.csv, checks.csv, evidence.csv, stage-stats.json.
+Writes into <proposal>/phasing/: phasing.geojson, stage-phases.csv (no homes: phases.csv holds those), stages.csv, access.csv, checks.csv, evidence.csv, stage-stats.json.
 Needs shapely>=2, pyproj and networkx.
 """
 import argparse, csv, hashlib, json, math, os, re, sys
@@ -466,15 +466,19 @@ def main():
     def lines_of(g):
         return [g] if g.geom_type == 'LineString' else [q for q in getattr(g, 'geoms', []) if q.geom_type == 'LineString']
 
+    # where mobility routes cars, a new street without them (a bus link) is not for cars
+    car_routes = [M(s) for p, _, s in (mob or []) if p.get('kind') == 'route' and p.get('mode') == 'car']
+    CAR_AREA = unary_union(car_routes).buffer(C['snap_m']) if car_routes else None
     if st is not None:
         src_net = 'streets/streets.geojson'
         for p, _, s in st:
             if p.get('kind') not in ('centreline', 'path'):
                 continue
-            car = p.get('kind') == 'centreline'
+            is_street = p.get('kind') == 'centreline'
             for q in lines_of(M(s)):
-                LINES.append((q, dict(existing=bool(p.get('existing')), car=car, width=num(p.get('width') if car else p.get('width_m')),
-                                      level=p.get('level') or ('path' if not car else None), name=p.get('name'), source=src_net)))
+                car = is_street and (bool(p.get('existing')) or CAR_AREA is None or CAR_AREA.contains(q.interpolate(0.5, normalized=True)))
+                LINES.append((q, dict(existing=bool(p.get('existing')), car=car, width=num(p.get('width') if is_street else p.get('width_m')),
+                                      level=p.get('level') or ('path' if not is_street else None), name=p.get('name'), source=src_net)))
     else:
         src_net = 'massing streets and the site\'s streets'
         foot = ('footway', 'path', 'cycleway', 'pedestrian', 'steps', 'bridleway', 'track')
@@ -654,6 +658,12 @@ def main():
         for i in newE:                       # the rest: built with the phase whose land it lies in
             if E[i]['phase'] is None:
                 E[i]['phase'] = land_phase(E[i]['g'])
+        left = [i for i in newE if E[i]['phase'] is None]
+        for i in left:                       # no phase needs it and it lies on no phase's land: it waits for the last, so all is built at completion
+            E[i]['phase'] = n
+        stats['streets_left_to_the_last_phase'] = len(left)
+        if left:
+            warn(f'{len(left)} pieces of new street or path are needed by no phase and lie on no phase\'s land: built with the last phase')
         for bid, k in connected_at_assign.items():     # guard: a phase never needs a later street
             built = {i for i, e in enumerate(E) if e['existing'] or (e['phase'] is not None and e['phase'] <= k)}
             dout = dist_from(graph(built), [(o, 0.0) for o in OUTN])
@@ -696,8 +706,22 @@ def main():
     has_existing = any(b['existing'] for b in B)
     ex_res = 0 if not has_existing else (None if C['existing_residents'] == NS else float(C['existing_residents']))
     existing_ok = [b for b in B if b['existing'] and b['valid']]
+    TODAY = {'connected': set(), 'car': set()}   # the buildings that stay and are reached today: only these can lose it to a phase
+    if OUTN:
+        today = {i for i, e in enumerate(E) if e['existing']}
+        today_car = {i for i in today if E[i]['car']}
+        d_today = dist_from(graph(today), [(o, 0.0) for o in OUTN])
+        d_car = dist_from(graph(today_car), [(o, 0.0) for o in (CAROUT or OUTN)])
+        for b in existing_ok:
+            if reach(d_today, attach(b['g'], today, C['entrance_max_m'])) is not None:
+                TODAY['connected'].add(b['id'])
+            if reach(d_car, attach(b['g'], today_car, C['entrance_max_m'])) is not None:
+                TODAY['car'].add(b['id'])
+        stats['existing_not_reached_today'] = len(existing_ok) - len(TODAY['connected'])
+    CHECKED = ('connected', 'car') if any(r['measure'] == 'car' for r in C['requirements']) else ('connected',)   # car access only where the brief asks for it
     SV = {}                    # (stage, service) -> (within the limit, not measured, buildings)
     CAP = {}                   # (stage, service) -> (places, places needed), None where existing residents are unknown
+    G_today = graph({i for i, e in enumerate(E) if e['existing'] and e['car']})
     for j in STAGES:
         U = usable_at(j)
         for i in U:   # guard: nothing new is usable before its phase is built
@@ -716,6 +740,8 @@ def main():
             if None in ends:
                 miss = [x for x, e_ in zip((ga, gb), ends) if e_ is None]
                 NCL.append((stl, lab, 'no car route joins them', '', 'not measured: gateway ' + ', '.join(miss) + ' not found on the network'))
+            elif ends[0] in G_today and ends[1] in G_today and nx.has_path(G_today, ends[0], ends[1]):
+                NCL.append((stl, lab, 'no car route joins them', 'existing streets join them today', 'not measured: existing streets already join them'))
             else:
                 joined = ends[0] in GC and ends[1] in GC and nx.has_path(GC, ends[0], ends[1])
                 NCL.append((stl, lab, 'no car route joins them', 'a car route joins them' if joined else 'no car route joins them',
@@ -783,7 +809,8 @@ def main():
                     row[s['name'] + '_m'] = 'none working'
                 else:
                     row[s['name'] + '_m'] = 'not reached' if dd is None else f'{dd:.0f}{how}{" (temporary)" if tmp else ""}'
-            fails = [c for c in ('connected', 'car') if row[c] == 'no'] + (['emergency'] if row['emergency'] in ('does not meet',) else [])
+            fails = [c for c in CHECKED if row[c] == 'no' and (not b['existing'] or b['id'] in TODAY[c])] + \
+                (['emergency'] if row['emergency'] == 'does not meet' and not b['existing'] else [])
             if fails:
                 worst.setdefault(b['id'], set()).update(f'{c} at stage {row["stage"]}' for c in fails)
             ACC.append(row)
@@ -801,7 +828,7 @@ def main():
                     residents=round(res_working), existing_residents='not stated' if ex_res is None else round(ex_res),
                     buildings=len(working),
                     connected=f'{sum(1 for r in rows_j if r["connected"] == "yes")}/{len(rows_j)}',
-                    existing_connected=f'{sum(1 for r in rows_x if r["connected"] == "yes")}/{len(rows_x)}',
+                    existing_connected=f'{sum(1 for r in rows_x if r["id"] in TODAY["connected"] and r["connected"] == "yes")}/{len(TODAY["connected"])}',
                     car=f'{sum(1 for r in rows_j if r["car"] == "yes")}/{len(rows_j)}',
                     emergency=NSM if em == NS else f'{sum(1 for r in rows_j if r["emergency"] == "meets")}/{len(rows_j)}',
                     open_space_m2=round(os_area),
@@ -834,7 +861,7 @@ def main():
         for b in val:
             uses[b['use']] = uses.get(b['use'], 0) + b['gfa']
         fac = {f: sum(1 for b in val if has_word(b['use'], w)) for f, w in FW.items()}
-        osa = [o for o in OS if o['valid'] and (o['phase'] == k if k != 'total' else o['phase'] is not None) and o['use'] in C['open_space_uses']]
+        osa = [o for o in OS if o['valid'] and (o['phase'] == k if k != 'total' else o['phase'] not in (None, 0)) and o['use'] in C['open_space_uses']]
         s_after = STG[k] if k != 'total' else STG[-1]   # stage k+1: phase k finished
         PH.append(dict(phase=k, homes=round(homes), residents=round(homes * hs), left_out=len(bs) - len(val),
                        uses='; '.join(f'{u} {a:.0f} m2' for u, a in sorted(uses.items(), key=lambda x: str(x[0]))),
@@ -967,7 +994,7 @@ def main():
     if has_existing:
         for srow in STG:
             ok, tot = (int(x) for x in srow['existing_connected'].split('/'))
-            add(srow['stage'], 0, 'existing buildings stay reached', 'every building that stays',
+            add(srow['stage'], 0, 'existing buildings stay reached', 'every building reached today',
                 srow['existing_connected'], 'not measured: no street leaves the site' if not OUTN else share_verdict(ok, tot, 1.0),
                 'existing buildings in massing.geojson')
     for stl, lab, brief, design, verdict in NCL:
@@ -1036,10 +1063,14 @@ def main():
 
     if (OUT / 'phases.csv').exists():   # the homes per phase the panels show are phases.py's: say where this count differs
         shown = {r['phase']: num(r['homes']) for r in csv.DictReader((OUT / 'phases.csv').open(encoding='utf-8'))}
-        for ph in PH:
+        for ph in PH[:-1]:              # the numbered phases: phases.csv's total also holds homes with no phase
             if shown.get(str(ph['phase'])) not in (None, ph['homes']):
                 warn(f'phase {ph["phase"]}: {ph["homes"]} homes here, {shown[str(ph["phase"])]:.0f} in phases.csv: a building decided in decisions.json?')
-    write_csv('stage-phases.csv', PH, ['phase', 'homes', 'residents', 'uses', 'facilities', 'open_space_m2', 'access', 'left_out', 'source'])
+    kept = [o for o in OS if o['valid'] and o['phase'] == 0 and o['use'] in C['open_space_uses']]
+    table = PH + ([dict(phase='existing', open_space_m2=round(unary_union([o['g'] for o in kept]).area))] if kept else [])
+    write_csv('stage-phases.csv', [dict(r, source='facilities and floor areas: massing.geojson; open space: open-space.geojson; '
+                                                  'access: stages.csv; homes and residents: phases.csv') for r in table],
+              ['phase', 'uses', 'facilities', 'open_space_m2', 'access', 'left_out', 'source'])
     write_csv('stages.csv', STG)
     write_csv('access.csv', ACC)
     write_csv('checks.csv', CH, ['stage', 'phase', 'requirement', 'brief', 'design', 'verdict', 'source'])

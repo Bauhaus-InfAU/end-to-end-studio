@@ -3,8 +3,10 @@
     python draw.py --proposal <proposal folder> --site <site folder> --style <proposal>/drawing-graphics/style.json
                    [--config <proposal>/phasing/config.json] [--size large|small]
 
-Reads phasing/phasing.geojson, stage-phases.csv and stage-stats.json (written by phasing.py), the scales from config.json
-(scale_large, scale_small) and the look from style.json; without style.json it stops. Large: every building toned by
+Reads phasing/phasing.geojson, stage-phases.csv and stage-stats.json (written by phasing.py), phases.csv (phases.py's homes
+and residents, the numbers the panels show), the scales from config.json (scale_large, scale_small) and the look from
+style.json; without style.json it stops. A frame for this plan in the panels' plan (<proposal>/panel-layout/layout-plan.json,
+else layout.json) sets its size, the legend strip included, and its scale if it names one. Large: every building toned by
 its phase; small: only the phases' outlines and numbers. Buildings flagged for review are untoned with a dashed outline
 and a mark, invalid footprints dotted with their own mark, buildings that fail a stage check outlined in the accent.
 Labels are English unless config.json has "labels": {"value": {...}} in the brief's language.
@@ -27,7 +29,7 @@ PX_PER_MM = 4
 LABELS = {'title': 'Phasing', 'phase': 'Phase', 'existing': 'Existing buildings', 'review': 'Phase under review',
           'invalid': 'Invalid footprint', 'fails': 'Fails a check while later phases are built', 'street': 'Street of phase',
           'homes': 'Homes', 'residents': 'Residents (estimate)', 'facilities': 'Facilities', 'open_space': 'Open space m2',
-          'access': 'Access', 'total': 'Total'}
+          'access': 'Access', 'total': 'Total', 'stays': 'Existing, stays'}
 
 
 def die(msg):
@@ -52,6 +54,18 @@ def shot(svg, png, w, h):
     os.remove(html)
     if not os.path.exists(png) or os.path.getsize(png) == 0:
         die(f'the PNG {png} was not written')
+
+
+def plan_frame(P, size):
+    """(w, h mm, centre [lon, lat] or None, scale or None) of this plan's frame in the panels' plan, else None."""
+    p = next((q for q in (P / 'panel-layout' / n for n in ('layout-plan.json', 'layout.json')) if q.exists()), None)
+    items = [it for q in (json.loads(p.read_text(encoding='utf-8')).get('panels', []) if p else []) for it in q.get('items', [])]
+    other = 'small' if size == 'large' else 'large'
+    for it in items:
+        f, fr = str(it.get('file') or '').replace('\\', '/'), it.get('frame') or {}
+        if f.startswith('phasing/') and 'table' not in f and other not in f and fr.get('w') and fr.get('h'):
+            m = re.search(r'1\s*:\s*([\d,. ]+)', str(it.get('scale') or ''))
+            return float(fr['w']), float(fr['h']), fr.get('centre'), int(re.sub(r'\D', '', m.group(1))) if m else None
 
 
 def tw(s, size):
@@ -85,8 +99,11 @@ def main():
     for f in ('phasing.geojson', 'stage-phases.csv', 'stage-stats.json'):
         if not (OUT / f).exists():
             die(f'no phasing/{f}: run phasing.py first')
+    if not (OUT / 'phases.csv').exists():
+        die('no phasing/phases.csv: run phases.py first')
     cfg = json.loads(Path(a.config or OUT / 'config.json').read_text(encoding='utf-8'))
-    scale = int(cfg['scale_large' if a.size == 'large' else 'scale_small']['value'])
+    frame = plan_frame(P, a.size)
+    scale = (frame and frame[3]) or int(cfg['scale_large' if a.size == 'large' else 'scale_small']['value'])
     lab = dict(LABELS, **((cfg.get('labels') or {}).get('value') or {}))
     stats = json.loads((OUT / 'stage-stats.json').read_text(encoding='utf-8'))
     EPSG = int(stats['epsg'])
@@ -103,10 +120,45 @@ def main():
     k = scale / 1000.0                  # metres per mm on paper
     TXT = max(FLOOR_MM, float(S['text']))
     TITLE = max(TXT, float(S['title']))
-    pad = 0.05 * max(site.bounds[2] - site.bounds[0], site.bounds[3] - site.bounds[1])
-    x0, y0, x1, y1 = site.buffer(pad).bounds
-    Wm, Hm = x1 - x0, y1 - y0
-    W = Wm / k
+    legend = [('fill', tone[kk], f'{lab["phase"]} {kk}') for kk in range(1, n + 1)]
+    if a.size == 'large':
+        new_b = [p for p, _ in F if p['kind'] == 'building' and not p['existing']]
+        if any(p['kind'] == 'building' and p['existing'] for p, _ in F):
+            legend.append(('outline', None, lab['existing']))
+        if any(p['phase'] is None and p['geometry_valid'] for p in new_b):
+            legend.append(('review', None, lab['review']))
+        if any(p['kind'] == 'building' and not p['geometry_valid'] for p, _ in F):
+            legend.append(('invalid', None, lab['invalid']))
+        if any(p['kind'] == 'building' and p.get('fails') for p, _ in F):
+            legend.append(('fails', None, lab['fails']))
+
+    def rows_of_legend(width):
+        """[(kind, colour, label, x, y)] in mm, and the strip's height: title, scale bar and legend."""
+        y, x, out = 3 + TITLE + TXT + 4, 4, []
+        for kind, col, label in legend:
+            wi = 8 + 1.5 + tw(label, TXT) + 5
+            if x + wi > width - 4 and x > 4:
+                x, y = 4, y + TXT + 3
+            out.append((kind, col, label, x, y))
+            x += wi
+        return out, y + 4
+
+    if frame:
+        W = frame[0]
+        strip = rows_of_legend(W)[1]
+        if frame[1] <= strip:
+            die(f'the frame of {frame[0]:g} x {frame[1]:g} mm leaves no room for the plan above its {strip:.0f} mm legend')
+        Wm, Hm = W * k, (frame[1] - strip) * k
+        if frame[2]:
+            cx, cy = TO_M(*frame[2])
+        else:
+            cx, cy = (site.bounds[0] + site.bounds[2]) / 2, (site.bounds[1] + site.bounds[3]) / 2
+        x0, y0, x1, y1 = cx - Wm / 2, cy - Hm / 2, cx + Wm / 2, cy + Hm / 2
+    else:
+        pad = 0.05 * max(site.bounds[2] - site.bounds[0], site.bounds[3] - site.bounds[1])
+        x0, y0, x1, y1 = site.buffer(pad).bounds
+        Wm, Hm = x1 - x0, y1 - y0
+        W = Wm / k
     fr = box(x0, y0, x1, y1)
     Pt = lambda x, y: (x - x0, y1 - y)
     f2 = lambda v: '%.2f' % v
@@ -122,7 +174,6 @@ def main():
         return ''.join(d(q) for q in getattr(g, 'geoms', []))
 
     o = ['<g clip-path="url(#map)">', f'<rect width="{f2(Wm)}" height="{f2(Hm)}" fill="{S["paper"]}"/>']
-    legend = []
     # phase land, lightly, then the streets by phase
     for p, g in F:
         if p['kind'] == 'phase':
@@ -179,7 +230,7 @@ def main():
 
     text(4, 3 + TITLE, f'{lab["title"]}, 1:{scale:,}', TITLE, ' font-weight="bold"')
     L = next((v for v in (10, 20, 50, 100, 200, 500, 1000, 2000, 5000) if v >= Wm / 6), 10000)
-    sx, sy = W - 4 - L / k, 3 + TITLE
+    sx, sy = W - 4 - tw(f'{L} m', TXT) / 2 - L / k, 3 + TITLE     # room for the label centred on the bar's end
     st.append(f'<path d="M{m_(sx)},{m_(Yb(sy))}L{m_(sx + L / k)},{m_(Yb(sy))}" stroke="{S["ink"]}" stroke-width="{m_(float(S["mid"]))}"/>')
     for x in (sx, sx + L / k):
         st.append(f'<path d="M{m_(x)},{m_(Yb(sy - 1.2))}L{m_(x)},{m_(Yb(sy + 1.2))}" stroke="{S["ink"]}" stroke-width="{m_(float(S["thin"]))}"/>')
@@ -195,23 +246,8 @@ def main():
     st.append(f'<path d="M{m_(ax)},{m_(Yb(ay))}L{m_(ax + ar * math.sin(ang))},{m_(Yb(ay - ar * math.cos(ang)))}" '
               f'stroke="{S["ink"]}" stroke-width="{m_(2 * float(S["thin"]))}"/>')
     text(ax + ar * math.sin(ang), ay - ar * math.cos(ang) - 0.8, 'N', extra=' text-anchor="middle"')
-    for kk in range(1, n + 1):
-        legend.append(('fill', tone[kk], f'{lab["phase"]} {kk}'))
-    if a.size == 'large':
-        names = {p.get('basis') for p, _ in F if p['kind'] == 'building'}
-        if any(p['kind'] == 'building' and p['existing'] for p, _ in F):
-            legend.append(('outline', None, lab['existing']))
-        if 'review' in names and any(p['kind'] == 'building' and p['phase'] is None and p['geometry_valid'] and not p['existing'] for p, _ in F):
-            legend.append(('review', None, lab['review']))
-        if any(p['kind'] == 'building' and not p['geometry_valid'] for p, _ in F):
-            legend.append(('invalid', None, lab['invalid']))
-        if any(p['kind'] == 'building' and p.get('fails') for p, _ in F):
-            legend.append(('fails', None, lab['fails']))
-    y, x = 3 + TITLE + TXT + 4, 4
-    for kind, col, label in legend:
-        wi = 8 + 1.5 + tw(label, TXT) + 5
-        if x + wi > W - 4 and x > 4:
-            x, y = 4, y + TXT + 3
+    placed, strip = rows_of_legend(W)
+    for kind, col, label, x, y in placed:
         top = y - TXT * 0.8
         if kind == 'fill':
             st.append(f'<rect x="{m_(x)}" y="{m_(Yb(top))}" width="{m_(8)}" height="{m_(3.5)}" fill="{col}" stroke="{S["ink"]}" stroke-width="{m_(float(S["thin"]))}"/>')
@@ -221,8 +257,7 @@ def main():
             wd = S['thick'] if kind == 'fails' else S['mid']
             st.append(f'<rect x="{m_(x)}" y="{m_(Yb(top))}" width="{m_(8)}" height="{m_(3.5)}" fill="none" stroke="{colr}" stroke-width="{m_(float(wd))}"{dash}/>')
         text(x + 9.5, y, label)
-        x += wi
-    Hs = (y + 4) * k
+    Hs = strip * k
     svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
            f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{escape(S["font"])}">',
            f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath></defs>',
@@ -236,8 +271,12 @@ def main():
     # ---- the table for the panel, at 1:1 in mm ----
     rows = list(csv.DictReader((OUT / 'stage-phases.csv').open(encoding='utf-8')))
     head = [lab['phase'], lab['homes'], lab['residents'], lab['facilities'], lab['open_space'], lab['access']]
-    body = [[lab['total'] if r['phase'] == 'total' else r['phase'], r['homes'], r['residents'], r['facilities'] or '-',
-             r['open_space_m2'], r['access']] for r in rows]
+    shown = {r['phase']: r for r in csv.DictReader((OUT / 'phases.csv').open(encoding='utf-8'))}
+    names = {'total': lab['total'], 'existing': lab['stays'], 'none': lab['review']}
+    if 'none' in shown:                # homes with no phase: a row of their own, so the column still adds up
+        rows.insert(n, dict(phase='none', facilities='', open_space_m2='', access=''))
+    body = [[names.get(r['phase'], r['phase']), shown.get(r['phase'], {}).get('homes') or '-', shown.get(r['phase'], {}).get('residents') or '-',
+             r['facilities'] or '-', r['open_space_m2'] or '-', r['access'] or '-'] for r in rows]
     widths = [max(tw(str(row[i]), TXT) for row in [head] + body) + (8 if i == 0 else 4) for i in range(len(head))]   # the first column holds the tone too
     rh = TXT + 2.5
     Wt, Ht = sum(widths) + 2, rh * (len(body) + 1) + 2
