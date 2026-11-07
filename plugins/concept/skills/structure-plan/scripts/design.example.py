@@ -3,6 +3,9 @@
 # F is the frame: F.site is the site in metres from its south-west corner; F.lu, F.street and F.strip give land uses,
 # streets and strips; F.box, F.point and F.line make shapes in the same metres.
 
+# What the plan must hold, from programme/ or the brief: homes per phase, commerce floor area, the storey cap.
+F.programme({1: 400}, commerce_m2=8000, m2_per_home=95, storeys=6, source='assumption: no programme given')
+
 # The land to build on: the largest piece of farmland in the site, else the whole site.
 farm = F.lu('farmland', 'meadow', 'grass')
 pieces = list(farm.geoms) if hasattr(farm, 'geoms') else [farm]
@@ -16,7 +19,9 @@ F.add('green', 'Middle strip', strip, 'new', 'hypothesis',
       'assumption: a strip through the new land carries cool air and rain', roles=['climate', 'water', 'recreation'])
 
 # The neighbourhood is the land around the strip.
-F.add('neighbourhood', 'Field', land.difference(strip.buffer(1)), 'new', 'mapped', 'plots.geojson: farmland')
+field = land.difference(strip.buffer(1))
+F.add('neighbourhood', 'Field', field, 'new', 'mapped', 'plots.geojson: farmland',
+      phase=1, homes=round(field.area / 1e4 * 60), density='60 homes per ha (assumption)', commerce_m2=8000)
 
 # The main centre stands where the main street meets the new land.
 main = F.street('', ['trunk', 'primary', 'secondary', 'tertiary'])

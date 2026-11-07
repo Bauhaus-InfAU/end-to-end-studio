@@ -138,6 +138,14 @@ class Frame:
         return LineString(coords)
 
     # ------------------------------------------------------------ features
+    def programme(self, homes, commerce_m2=0, m2_per_home=95, storeys=6, coverage=0.22, source=None):
+        """What the plan must hold, for the checks: homes per phase as {phase: homes}, the commerce floor area, the
+        floor area of a home, the storey cap and the share of a neighbourhood its buildings cover (own assumption 0.22:
+        about what the massing skill's blocks cover once its streets, squares and courtyards are taken). A neighbourhood's own storeys or coverage
+        overrides these."""
+        self.asked = {'homes': {str(k): v for k, v in dict(homes).items()}, 'commerce_m2': commerce_m2,
+                      'm2_per_home': m2_per_home, 'storeys': storeys, 'coverage': coverage, 'source': source}
+
     def add(self, kind, name, geom, action, basis, source=None, **props):
         """One feature of the plan. Stops with what is wrong on a bad value or an empty geometry."""
         if kind not in KINDS:
@@ -201,6 +209,10 @@ class Frame:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         feats = [{'type': 'Feature', 'properties': p, 'geometry': mapping(self.to_wgs(g))} for p, g in self.features]
-        path.write_text(json.dumps({'type': 'FeatureCollection', 'crs_note': 'WGS84, longitude first', 'features': feats},
-                                   ensure_ascii=False), encoding='utf-8')
+        fc = {'type': 'FeatureCollection', 'crs_note': 'WGS84, longitude first', 'features': feats}
+        if getattr(self, 'asked', None):
+            fc['programme'] = self.asked
+        else:
+            self.warnings.append('no F.programme(...): the homes, commerce and floor area cannot be checked')
+        path.write_text(json.dumps(fc, ensure_ascii=False), encoding='utf-8')
         return list(self.warnings) + [f'missing: {m}' for m in self.missing]
