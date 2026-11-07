@@ -3,8 +3,8 @@ The look comes from a style JSON made from drawing-graphics/standard.md; without
 
 python draw.py --site SITE_DIR --out CLIMATE_DIR [--style style.json] [--scale 5000] [--margin 300] [--frame W H] [--centre LON LAT]
 
-style.json keys (all optional): paper, ink, accent, context, water, font, thin, mid, thick (mm), text, title (mm),
-ramp (list of colours, light to dark); its `diagram` line weights and text sizes (px) replace thin, mid, thick, text, title.
+style.json keys (all optional): paper, ink, accent, context, existing (the buildings, else context), cool (else the
+standard's park, kept or grove green), water, font, thin, mid, thick (mm), text, title (mm), ramp (list of colours, light to dark); its `diagram` line weights and text sizes (px) replace thin, mid, thick, text, title.
 A frame of a climate map in the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json; else --frame)
 gives every map its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills the frame, its
 title, short legend, north arrow and scale bar in a box inside it.
@@ -26,7 +26,7 @@ from shapely.geometry import box
 
 from common import Site, read
 
-FALLBACK = dict(paper="#ffffff", ink="#000000", accent="#d7263d", context="#c9c9c9", water="#e4e4e4",
+FALLBACK = dict(paper="#ffffff", ink="#000000", accent="#d7263d", context="#c9c9c9", existing="#c9c9c9", water="#e4e4e4",
                 font="Helvetica, Arial, sans-serif", thin=0.1, mid=0.25, thick=0.6, text=3.2, title=5.0)
 MIN_TEXT = 3.2  # mm; no text is smaller than 12 px printed (9 pt, 3.17 mm), source lines and scale bars included
 SCALES = [500, 1000, 2000, 2500, 5000, 7500, 10000, 15000, 20000, 25000, 50000]
@@ -145,7 +145,12 @@ class Map:
         for g, _ in S.layer("rail"):
             self.add(g, fill="none", stroke=st["ink"], stroke_width=st["thin"], stroke_dasharray="1.2 0.8")
         if buildings:
-            self.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["context"], stroke="none")
+            self.buildings()
+
+    def buildings(self):
+        """The site's existing buildings, the same on every map: the standard's existing grey."""
+        S = self.S
+        self.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=self.st["existing"], stroke="none")
 
     def site(self):
         self.add(self.S.poly, fill="none", stroke=self.st["ink"], stroke_width=self.st["mid"], stroke_dasharray="3 1.5")
@@ -272,7 +277,7 @@ class Map:
 
 
 KEYS = {"paper": ("paper", "background"), "ink": ("ink", "line", "lines", "text colour", "text color"), "accent": ("accent", "highlight", "new"),
-        "context": ("context", "existing", "grey", "gray"), "water": ("water",), "cool": ("cool", "green", "vegetation")}
+        "existing": ("existing",), "context": ("context", "grey", "gray"), "water": ("water",), "cool": ("cool", "green", "vegetation", "park")}
 
 
 def standard(out, given):
@@ -346,6 +351,10 @@ def main():
     S, out = Site(a.site, a.buildings), Path(a.out)
     found, look = standard(out, a.style)
     st = dict(FALLBACK, **found)
+    if "existing" not in found:  # a standard from before C6/C7 has only context
+        st["existing"] = st["context"]
+    if "cool" not in found:  # since C6/C7 the standard's green is park (or kept, grove)
+        st["cool"] = next((found[k] for k in ("park", "kept", "grove", "green") if k in found), mix(st["paper"], st["ink"], 0.35))
     dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # a thematic plan's weights and text sizes, px
     st.update({k: dg[d] * 25.4 / 96 for k, d in (("thin", "line"), ("mid", "outline"), ("thick", "heavy"),
                                                  ("text", "label_size"), ("title", "title_size")) if d in dg})
@@ -403,12 +412,12 @@ def main():
         m.add(m.extent.difference(done), fill=nc, stroke="none")
         for (g, p), c in zip(F, cols):
             m.add(g, fill=c, stroke="none")
-        m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["ink"], fill_opacity=0.55)
+        m.buildings()
         m.site()
         for (g, p), c in zip(F, cols):
             m.key("fill", c, p["label"])
         m.key("fill", nc, nc_label)
-        m.key("fill", st["ink"], "Existing buildings", opacity=0.55)
+        m.key("fill", st["existing"], "Existing buildings")
         lo_k, hi_k, unit = ("hours_min", "hours_max", "h of sun a year") if name == "sun-hours" else ("kwh_min", "kwh_max", "kWh/m² a year")
         m.compact = dict(bar=cols, low=f"{F[0][1][lo_k]:g}", high=f"{F[-1][1][hi_k]:g}", unit=unit, rows=[["url(#notcomputed)", 1, nc_label]])
         made.append(m.save(out / f"{name}.svg", sun.get("sources", [])))
@@ -422,11 +431,11 @@ def main():
             cols = ramp(len(G) + 1, st)[1:]
             for (g, p), c in zip(G, cols):
                 m.add(g, fill=c, fill_opacity=0.6, stroke="none")
-            m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["ink"])
+            m.buildings()
             m.site()
             for (g, p), c in zip(G, cols):
                 m.key("fill", c, f'{p["local_time"]}, sun {p["sun_altitude_deg"]:.0f}° high from {p["sun_azimuth_deg"]:.0f}°', opacity=0.6)
-            m.key("fill", st["ink"], "Existing buildings")
+            m.key("fill", st["existing"], "Existing buildings")
             m.compact = dict(bar=cols, low=G[0][1]["local_time"], high=G[-1][1]["local_time"], unit="", opacity=0.6)
             made.append(m.save(out / f"shadows_{day.lower().replace(' ', '-')}.svg", sun.get("sources", [])))
 
@@ -449,7 +458,7 @@ def main():
             cols = ramp(len(G), st)
             for (g, p), c in zip(G, cols):
                 m.add(g, fill=c, stroke="none", fill_opacity=0.85)
-            m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["paper"], stroke=st["ink"], stroke_width=st["thin"])
+            m.buildings()
             srcs = S.layer("noise-sources", out)
             for g, p in srcs:
                 m.add(g, fill="none", stroke=st["ink"], stroke_width=st["thick"], **({"stroke_dasharray": "2 1"} if p.get("kind") == "rail" else {}))
@@ -469,22 +478,21 @@ def main():
         m = new("Heat island", "How much each place heats up today, from what covers the ground")
         F = S.layer("heat", out)
         idx = [(g, p) for g, p in F if p["kind"] == "index"]
-        cool = st.get("cool", mix(st["paper"], st["ink"], 0.35))
+        cool = st["cool"]
         cols = [mix(st["paper"], cool, 0.55), mix(st["paper"], cool, 0.2)] + ramp(4, st)[1:]
         for (g, p), c in zip(idx, cols):
             m.add(g, fill=c, stroke="none")
         for g, p in F:
             if p["kind"] == "unknown":
                 m.add(g, fill=m.hatch("unknown", st["ink"], 1.2, 45, st["thin"]), fill_opacity=0.5, stroke="none")
-        # buildings as outlines here, so no grey of theirs is mistaken for the cool class
-        m.context(buildings=False)
-        m.add(shapely.union_all([g for g, _ in S.layer(S.buildings_path.stem, S.buildings_path.parent)]), fill=st["paper"], stroke=st["ink"], stroke_width=st["thin"])
+        # the cool class is green now, so the buildings' grey can't be mistaken for it
+        m.context()
         m.site()
         for (g, p), c in zip(idx, cols):
             m.key("fill", c, p["label"].capitalize())
         if any(p["kind"] == "unknown" for _, p in F):
             m.key("fill", "url(#unknown)", "Too little land-use data to say", opacity=0.5)
-        m.key("fill", st["paper"], "Existing buildings (roofs count as very hot)")
+        m.key("fill", st["existing"], "Existing buildings (roofs count as very hot)")
         m.compact = dict(bar=cols[:len(idx)], low="cool", high="very hot", unit="(relative)",
                          rows=[["url(#unknown)", 0.5, "No land-use data"]] if any(p["kind"] == "unknown" for _, p in F) else [])
         made.append(m.save(out / "heat.svg", meta(out, "heat").get("sources", [])))
