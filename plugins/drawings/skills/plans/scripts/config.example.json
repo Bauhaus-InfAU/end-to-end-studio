@@ -12,6 +12,11 @@
   ],
   "source": "<brief file> p. N"
  },
+ "idea": {
+  "value": {"label": "<the narrative's own word for its idea>",
+            "names": ["<the name of each feature in structure-plan, massing, open-space or mobility that carries it>"]},
+  "source": "<narrative/narrative.md: Idea; leave null when no design layer has the idea as a shape>"
+ },
  "labels": {
   "value": {"new": "New buildings", "existing": "Kept buildings", "context": "Existing buildings", "site-plan": "Site plan",
             "figure-ground": "Figure-ground"},
