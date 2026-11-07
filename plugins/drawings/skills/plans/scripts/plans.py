@@ -14,7 +14,7 @@ the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json) fr
 drawn to its size, the legend strip included. The style's storey_labels writes the storeys roman or arabic (default).
 Writes <name>_1-<scale>.svg and .png and drawings.json into <proposal>/plans/.
 """
-import argparse, json, math, os, re, subprocess, sys
+import argparse, json, math, os, random, re, subprocess, sys
 from xml.sax.saxutils import escape
 from shapely.geometry import shape, box, Point, Polygon
 from shapely.ops import transform, unary_union
@@ -52,6 +52,8 @@ DEFAULTS = {
     'gone_rail': ['abandoned', 'razed', 'dismantled'],   # rail lines no longer there, not drawn
     'tree_crown_m': 6,          # crown diameter of a tree without crown_m, metres
     'tree_shadow': 0.3,         # a crown's shadow falls this share of its diameter away, the way the buildings' fall
+    'tree_plan_scale': 1500,    # at this scale and larger, trees and hedges are drawn in detail, else simply
+    'tree_tones': [0, 0.18, -0.25],   # trees in these tones of the standard's grove: 0 itself, + towards ink, - towards paper
     'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
     'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
@@ -69,7 +71,7 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'buildings': 'Buildings', 'street': 'Streets and squares', 'path': 'Paths', 'green': 'Fields and woods',
           'park': 'Parks', 'kept': 'Kept green', 'lawn': 'Lawn, gardens', 'meadow': 'Meadow',
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
-          'rail': 'Rail', 'tree': 'Trees', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
+          'rail': 'Rail', 'tree': 'Trees', 'hedge': 'Hedges', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
           'public': 'Squares, shared streets', 'entrance': 'Entrances', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
@@ -422,6 +424,33 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         sh = shadows(inside(BUILD))
         if not sh.is_empty:
             o.append(f'<path d="{d(sh)}" fill="{S["shadow"]}" stroke="none" fill-rule="evenodd" style="mix-blend-mode:multiply"/>')
+        # 4b'. hedges: a dark band at their width; in detail, a row of small clipped lobes
+        hed = [(p, g) for p, g in inside([x for x in (OPEN or []) if x[0].get('kind') == 'hedge'])]
+        if hed:
+            dark_h = mix(S['grove'], S['ink'], 0.35)
+            legend.setdefault('hedge', ('line', dark_h, 'thick', None))
+            if scale <= CFG['tree_plan_scale']:   # one long band, its edges in soft waves, like a clipped hedge
+                bands = []
+                for p, g in hed:
+                    hw = float(p.get('width_m') or 1.5)
+                    n = max(2, round(g.length / 2.0))   # a gentle wave about every 2 m along each long side
+                    sides = ([], [])
+                    for i in range(n + 1):
+                        dd = g.length * i / n
+                        a, b = g.interpolate(max(0, dd - 0.3)), g.interpolate(min(g.length, dd + 0.3))
+                        q, t = g.interpolate(dd), math.hypot(b.x - a.x, b.y - a.y) or 1
+                        nx, ny = -(b.y - a.y) / t * hw / 2, (b.x - a.x) / t * hw / 2
+                        sides[0].append(P(q.x + nx, q.y + ny)); sides[1].append(P(q.x - nx, q.y - ny))
+                    wave = lambda pts: ''.join(f' A{f2(math.dist(a, b))},{f2(math.dist(a, b))} 0 0 0 {f2(b[0])},{f2(b[1])}'
+                                               for a, b in zip(pts, pts[1:]))
+                    L, R = sides[0], sides[1][::-1]   # wavy long sides, straight ends
+                    bands.append(f'M{f2(L[0][0])},{f2(L[0][1])}{wave(L)} L{f2(R[0][0])},{f2(R[0][1])}{wave(R)}Z')
+                o.append(f'<path d="{" ".join(bands)}" fill="{S["grove"]}" stroke="{dark_h}" '
+                         f'stroke-width="{f2(0.6 * lw("thin"))}" stroke-linejoin="round"/>')
+            else:
+                o.append(f'<path d="{" ".join(d(g) for _, g in hed)}" fill="none" stroke="{dark_h}" '
+                         f'stroke-width="{f2(max(float(hed[0][0].get("width_m") or 1.2), 0.35 * k))}" stroke-linecap="round" '
+                         f'stroke-linejoin="round"/>')
         # 4c. trees at every scale, the massing's and open-space's: a crown over its soft shadow, under the buildings
         trees = [(*P(g.x, g.y), float(p.get('crown_m') or CFG['tree_crown_m']) / 2) for p, g in inside(MASS + (OPEN or []))
                  if p.get('kind') == 'tree' and g.geom_type == 'Point']
@@ -430,9 +459,34 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             dx, dy = 2 * CFG['tree_shadow'] * math.sin(a), -2 * CFG['tree_shadow'] * math.cos(a)
             o.append(f'<g fill="{S["shadow"]}" fill-opacity="0.5" style="mix-blend-mode:multiply">' + ''.join(
                 f'<circle cx="{f2(x + dx * r)}" cy="{f2(y + dy * r)}" r="{f2(r)}"/>' for x, y, r in trees) + '</g>')
-            o.append(f'<g fill="{S["grove"]}" fill-opacity="0.9" stroke="{mix(S["grove"], S["ink"], 0.3)}" '
-                     f'stroke-width="{f2(lw("thin"))}">' + ''.join(
-                         f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for x, y, r in trees) + '</g>')
+            dark = mix(S["grove"], S["ink"], 0.3)
+            tones = [mix(S['grove'], S['ink'], t) if t >= 0 else mix(S['grove'], S['paper'], -t) for t in CFG['tree_tones']]
+            tone = [random.Random(f'{x + wx0:.0f},{wy1 - y:.0f}tone').randrange(len(tones)) for x, y, r in trees]
+            if scale <= CFG['tree_plan_scale']:   # large: a tree plan, a scalloped crown with its branches and trunk
+                crowns, branches, trunks = [[] for _ in tones], [], []
+                for (x, y, r), tn in zip(trees, tone):
+                    rnd = random.Random(f'{x + wx0:.0f},{wy1 - y:.0f}')   # each tree its own, the same every run
+                    n, rot = max(7, min(13, round(r * 1.5))), rnd.uniform(0, 2 * math.pi)
+                    pts = [(x + rr * math.cos(t), y + rr * math.sin(t)) for i in range(n)
+                           for t, rr in [(rot + 2 * math.pi * i / n, r * rnd.uniform(0.86, 1.0))]]
+                    seg = ''.join(f' A{f2(0.62 * math.dist(p, q))},{f2(0.62 * math.dist(p, q))} 0 0 1 {f2(q[0])},{f2(q[1])}'
+                                  for p, q in zip(pts, pts[1:] + pts[:1]))
+                    crowns[tn].append(f'M{f2(pts[0][0])},{f2(pts[0][1])}{seg}Z')
+                    for _ in range(rnd.randint(4, 6)):
+                        t, rr = rnd.uniform(0, 2 * math.pi), r * rnd.uniform(0.45, 0.75)
+                        branches.append(f'M{f2(x)},{f2(y)} L{f2(x + rr * math.cos(t))},{f2(y + rr * math.sin(t))}')
+                    trunks.append(f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(max(0.25, 0.06 * r))}"/>')
+                for c, cr in zip(tones, crowns):
+                    if cr:
+                        o.append(f'<path d="{" ".join(cr)}" fill="{c}" fill-opacity="0.85" stroke="{dark}" '
+                                 f'stroke-width="{f2(lw("thin"))}" stroke-linejoin="round"/>')
+                o.append(f'<path d="{" ".join(branches)}" fill="none" stroke="{dark}" stroke-width="{f2(0.6 * lw("thin"))}" '
+                         f'stroke-linecap="round"/>')
+                o.append(f'<g fill="{dark}">' + ''.join(trunks) + '</g>')
+            else:   # small: a dot at the crown's size
+                for i, c in enumerate(tones):
+                    o.append(f'<g fill="{c}" fill-opacity="0.9" stroke="{dark}" stroke-width="{f2(lw("thin"))}">' + ''.join(
+                        f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for (x, y, r), tn in zip(trees, tone) if tn == i) + '</g>')
             legend.setdefault('tree', ('dot', S['grove']))
         # 5. existing buildings: around the site pale, kept ones in it with an outline
         used.append('site buildings')
