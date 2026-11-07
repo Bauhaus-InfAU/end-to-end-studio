@@ -1,0 +1,19 @@
+{
+ "epsg": null,
+ "massing_fingerprint": null,
+ "buildings": [
+  {"id": "<b-... from evidence.csv>", "centre_lonlat": [0, 0], "footprint_m2": 0, "phase": null, "basis": "proposed or review", "reason": "<the evidence it rests on>"}
+ ],
+ "stops": [
+  {"name": "<stop name in mobility.geojson>", "phase": 0, "source": "<brief file> p. N, or why: 0 for a stop that exists today"}
+ ],
+ "open_spaces": [
+  {"name": "<open space name or id>", "phase": 1, "reason": "<why it comes then>"}
+ ],
+ "services_outside": [
+  {"name": "<name>", "service": "<service name in config.json>", "lonlat": [0, 0], "stages": [1, 2], "temporary": false, "source": "<where it is documented>"}
+ ],
+ "closures": [
+  {"street": "<existing street name in streets.geojson>", "stages": [2], "source": "<brief file> p. N"}
+ ]
+}
