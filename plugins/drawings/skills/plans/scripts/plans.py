@@ -10,7 +10,10 @@ plan, "phase1", or [lon, lat]) and labels (the legend's words) are optional. Eve
 optional: buildings from massing/, the street surface from streets/, the ground from open-space/, stops and hubs
 from mobility/, the centres from structure-plan/, and in the detail areas only the ground floors from
 ground-floor/detail.geojson. A missing layer is left out and named in drawings.json. Every plan names the squares,
-centres, parks and stops; a detail area also names its streets and the buildings' special uses (school, daycare, ...).
+centres, parks and stops; a detail area also names its streets and the buildings' special uses (school, daycare, ...),
+hatches the ground floors open to the public, marks the shared courtyards and lists under `not_shown` what the layers
+don't give it (entrances, play, uses). The optional idea {"label", "names"} draws the design layers' features of those
+names in the accent with the label, on the site plan and the detail areas; `idea` in drawings.json says if it was found.
 Two detail areas whose windows overlap are listed under `overlaps` in drawings.json. A detail area or the site plan that
 the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json) frames takes that frame's scale and is
 drawn to its size, the legend strip included. The style's storey_labels writes the storeys roman or arabic (default).
@@ -77,6 +80,7 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
           'public': 'Squares, shared streets', 'entrance': 'Entrances', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
+          'courtyard': 'Shared courtyards', 'active-gf': 'Ground floors open to the public', 'idea': 'The idea',
           'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
 # the look without a drawing standard: black on white, one accent
 FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#ffffff', 'public': '#f0b8b5',
@@ -152,6 +156,19 @@ BUILD = [(p, g) for p, g in MASS if p.get('kind') == 'building']
 NEW = [(p, g) for p, g in BUILD if not p.get('existing')]
 KEPT = [(p, g) for p, g in BUILD if p.get('existing')]
 CTX_OUT = [(p, g) for p, g in CTX if not site.contains(g.representative_point())]
+
+# the narrative's idea, where a design layer has it as a shape: config's idea {"label", "names"} names the features
+IDEA = CFG.get('idea') if isinstance(CFG.get('idea'), dict) else None
+IDEA_G, IDEA_NOTE = [], ''
+if IDEA:
+    want = {str(n).strip().lower() for n in IDEA.get('names') or []}
+    IDEA_G = [g for p, g in (SP or []) + MASS + (OPEN or []) + (MOB or [])
+              if str(p.get('name', '')).strip().lower() in want and not g.is_empty]
+    LAB['idea'] = str(IDEA.get('label') or LAB['idea'])
+    IDEA_NOTE = ('drawn: %s' % LAB['idea']) if IDEA_G else (
+        'missing: no feature named %s in structure-plan, massing, open-space or mobility' % ', '.join(sorted(want)))
+# a ground floor that is not homes: shops, services, a daycare, a school, a hub
+ACTIVE_GF = lambda p: bool(p.get('ground_floor')) and not str(p['ground_floor']).startswith('housing')
 
 PW = float(CFG['panel_width_mm']) - 2 * float(CFG['margin_mm'])          # panel room, mm
 PH_ALL = float(CFG['panel_height_mm']) - 2 * float(CFG['margin_mm'])
@@ -293,6 +310,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     fs = TXT * k
     used, missing, legend = ['massing'], [], {}
     taken = []                                           # the boxes of the text written so far, on paper in metres
+    not_shown = []                                       # what a detail area should show and the layers don't give
 
     def lw(key): return float(S[key]) * k
     def f2(v): return '%.2f' % v
@@ -340,7 +358,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             fill(g.intersection(fr), S['water'], 'water')
         # 2. the ground: open-space's layer, else the massing's
         for p, g in inside([(p, g) for p, g in MASS if p.get('kind') == 'open-space' and p.get('use') == 'garden']):
-            fill(g, S['lawn'], 'lawn')
+            if kind == 'detail' and p.get('type') == 'courtyard':      # the shared ground inside a block
+                fill(g, S['lawn'], 'courtyard', S['path'], 'thin')
+            else:
+                fill(g, S['lawn'], 'lawn')
         if OPEN is not None:
             used.append('open-space')
             for p, g in inside([x for x in OPEN if x[0].get('kind') == 'open-space']):
@@ -451,6 +472,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 fill(g, S['new'], 'landmark', S['ink'], 'thick')
             else:
                 fill(g, S['new'], 'new', S['ink'], 'mid')
+            if kind == 'detail' and ACTIVE_GF(p):          # in a detail area, a ground floor open to the public: hatched
+                o.append(f'<path d="{d(g)}" fill="url(#gf-{name})" stroke="none"/>')
+                legend.setdefault('active-gf', ('hatch',))
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')
@@ -471,6 +495,13 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 elif p.get('kind') == 'entrance' and g.geom_type == 'Point':
                     o.append(symbol('entrance', *P(g.x, g.y), k, p.get('bearing_deg')))
                     legend.setdefault('entrance', ('entrance',))
+            kinds = {p.get('kind') for p, g in gfd}
+            if 'entrance' not in kinds:
+                not_shown.append('entrances (ground-floor)')
+            if 'play' not in kinds and not inside([x for x in (OPEN or []) if x[0].get('use') == 'playground']):
+                not_shown.append('play (ground-floor or open-space)')
+            if 'use' not in kinds and not any(ACTIVE_GF(p) for p, g in inside(NEW)):
+                not_shown.append('ground-floor uses (ground-floor or massing)')
             for p, g in gfd:
                 if p.get('kind') != 'use' or not p.get('label') or g.geom_type != 'Point':
                     continue
@@ -541,6 +572,22 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             if put(*P(c.x, c.y), s, bold):
                 named.add(s)
 
+        # the idea first, in the accent, so its name gets the room
+        idea_here = [g for g in IDEA_G if g.intersects(fr)]
+        for g in idea_here:
+            if g.geom_type.endswith('Polygon'):
+                line(g.boundary, S['accent'], 'thick', None, 'idea')
+            elif g.geom_type.endswith('Point'):
+                for q in getattr(g, 'geoms', [g]):
+                    x, y = P(q.x, q.y)
+                    o.append(f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(2 * k)}" fill="none" stroke="{S["accent"]}" '
+                             f'stroke-width="{f2(lw("thick"))}"/>')
+                legend.setdefault('idea', ('line', S['accent'], 'thick', None))
+            else:
+                line(g, S['accent'], 'thick', None, 'idea')
+        if idea_here:
+            place(unary_union(idea_here), LAB['idea'], True)
+            named.update(str(n).strip() for n in IDEA.get('names') or [])   # named once, as the idea
         for p, g in [x for x in MASS if x[0].get('kind') == 'open-space' and x[0].get('use') == 'square']:
             place(g, p.get('name'), True)
         for p, g in [x for x in (SP or []) if x[0].get('kind') == 'centre']:
@@ -603,11 +650,14 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
-    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window)
+    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name)
     Hs = H_strip * k
     head = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
             f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
-            f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath></defs>',
+            f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath>'
+            f'<pattern id="gf-{name}" patternUnits="userSpaceOnUse" width="{f2(1.2 * k)}" height="{f2(1.2 * k)}" '
+            f'patternTransform="rotate(45)"><path d="M0,0V{f2(1.2 * k)}" stroke="{S["ink"]}" '
+            f'stroke-width="{f2(lw("thin"))}"/></pattern></defs>',
             f'<rect width="{f2(Wm)}" height="{f2(Hm + Hs)}" fill="{S["paper"]}"/>']
     fname = f'{name}_1-{scale}'
     svgp = os.path.join(OUT, fname + '.svg')
@@ -620,9 +670,14 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             shot(svgp, png, int(W * px), int(H * px))
     except Exception as e:
         print('no PNG for', fname, ':', e, file=sys.stderr)
-    return dict(name=name, file=fname + '.svg', png=os.path.exists(png), title=title, scale=scale,
-                width_mm=round(W, 1), height_mm=round(H, 1), map_width_mm=round(W, 1), map_height_mm=round(Hm / k, 1),
-                fits=W <= PW + 0.5 and H <= PH_ALL + 0.5, layers_used=used, layers_missing=missing)
+    e = dict(name=name, file=fname + '.svg', png=os.path.exists(png), title=title, scale=scale,
+             width_mm=round(W, 1), height_mm=round(H, 1), map_width_mm=round(W, 1), map_height_mm=round(Hm / k, 1),
+             fits=W <= PW + 0.5 and H <= PH_ALL + 0.5, layers_used=used, layers_missing=missing)
+    if kind == 'detail':
+        e['not_shown'] = not_shown
+    if kind == 'site' and IDEA:
+        e['idea'] = IDEA_NOTE
+    return e
 
 
 def shadows(items):
@@ -669,7 +724,7 @@ def north_angle(window):
     return math.atan2(x - cx, y - cy)
 
 
-def legend_strip(title, scale, W, legend, k, Hm, window):
+def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
     """The title, north, scale bar, legend and source under the map. Returns (svg lines, strip height in mm)."""
     ink, paper = S['ink'], S['paper']
     o = []
@@ -727,6 +782,9 @@ def legend_strip(title, scale, W, legend, k, Hm, window):
         elif spec[0] == 'line':
             da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
             o.append(f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>')
+        elif spec[0] == 'hatch':
+            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
+                     f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>')
         elif spec[0] == 'dot':
             o.append(f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>')
         elif spec[0] == 'text':
