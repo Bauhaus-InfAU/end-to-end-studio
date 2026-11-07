@@ -67,6 +67,7 @@ DEFAULTS = {
     'detail_min_mm': 150,       # a detail window is never smaller than this on paper, where the panel allows
     'detail_overlap_max': 0.1,  # two detail areas may share at most this part of the smaller one's window
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
+    'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
     'legend_mm': 30,            # the strip under the map for the title, legend, scale bar, north and source
     'caption_room_mm': 60,      # panel height kept free for a caption and the legend strip
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
@@ -536,20 +537,25 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         # 9b. names, so a place reads as a place: on every plan the squares, centres, parks and stops; in a detail
         #     area also the buildings' special uses and the streets. A name that would cover another, or leave the
         #     map, is left out.
-        def put(cx, cy, s, bold=False, angle=0.0, anchor='middle', within=None):
-            """Write s centred on (cx, cy) on paper, turned by angle degrees; False when there is no room."""
+        def put(cx, cy, s, bold=False, angle=0.0, anchor='middle', within=None, avoid=None, force=False):
+            """Write s centred on (cx, cy) on paper, turned by angle degrees; False when there is no room. avoid: a
+            shape in metres the text must stay off; force: write it even without room."""
             wt = tw(s, fs, bold)
             u0 = {'start': 0, 'middle': -wt / 2, 'end': -wt}[anchor]
             ca, sa = math.cos(math.radians(angle)), math.sin(math.radians(angle))
             pts = [(cx + u * ca - v * sa, cy + u * sa + v * ca) for u, v in
                    ((u0, -0.5 * fs), (u0 + wt, -0.5 * fs), (u0 + wt, 0.5 * fs), (u0, 0.5 * fs))]
             bb = (min(q[0] for q in pts), min(q[1] for q in pts), max(q[0] for q in pts), max(q[1] for q in pts))
-            if bb[0] < 0 or bb[1] < 0 or bb[2] > Wm or bb[3] > Hm:
-                return False
-            if any(bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
-                return False
-            if within is not None and not within.contains(Polygon([(x_ + wx0, wy1 - y_) for x_, y_ in pts])):
-                return False
+            where = Polygon([(x_ + wx0, wy1 - y_) for x_, y_ in pts])
+            if not force:
+                if bb[0] < 0 or bb[1] < 0 or bb[2] > Wm or bb[3] > Hm:
+                    return False
+                if any(bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
+                    return False
+                if within is not None and not within.contains(where):
+                    return False
+                if avoid is not None and avoid.intersects(where):
+                    return False
             taken.append(bb)
             rot = f' transform="rotate({f2(angle)} {f2(cx)} {f2(cy)})"' if angle else ''
             wgt = ' font-weight="bold"' if bold else ''
@@ -558,17 +564,43 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                      f'stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(s)}</text>')
             return True
 
+        # the detail areas' names on the site plan first, at a corner of their window clear of the buildings
+        blds = unary_union([g for p, g in inside(BUILD)] or [Polygon()])
+        for wname, wb in windows:
+            (sx0, sy0), (sx1, sy1) = P(wb[0], wb[3]), P(wb[2], wb[1])
+            h, m_ = fs / 2 + 1.5 * k, 1.5 * k
+            spots = [(sx0 + m_, sy0 + h, 'start'), (sx1 - m_, sy0 + h, 'end'), (sx0 + m_, sy1 - h, 'start'),
+                     (sx1 - m_, sy1 - h, 'end'), (sx0, sy0 - h, 'start'), (sx0, sy1 + h, 'start')]
+            if not any(put(x, y, wname, anchor=a, avoid=blds) for x, y, a in spots):
+                put(*spots[0], wname, force=True)
+
         named = set()
+        core = fr.buffer(-2 * fs)                         # the map less a margin as wide as two lines of text
+        def middle(g):
+            """The middle of an area's open ground (the area less its buildings), else of the area."""
+            pieces = [q for q in getattr(g, 'geoms', [g]) if q.geom_type == 'Polygon']
+            if not pieces:
+                return g.representative_point()
+            whole = max(pieces, key=lambda q: q.area)
+            free = whole.difference(blds)
+            free = [q for q in getattr(free, 'geoms', [free]) if q.geom_type == 'Polygon' and q.area > 1]
+            q = max(free, key=lambda q: q.area) if free else whole
+            return polylabel(q, 1.0) if q.area > 1 else q.representative_point()
+
         def place(g, s, bold):
+            """Name an area on its open ground; one cut by the map's edge only when most of it is on the map."""
             s = str(s or '').strip()
             if not s or s in named or not g.intersects(fr):
                 return
-            piece = g.intersection(fr)
-            if piece.geom_type.endswith('Polygon'):
-                piece = max(getattr(piece, 'geoms', [piece]), key=lambda q: q.area)
-                c = polylabel(piece, 1.0) if piece.area > 1 else piece.representative_point()
+            seen = g.intersection(fr)
+            if g.geom_type.endswith('Polygon'):
+                c = middle(g)
+                if not core.contains(c):
+                    if seen.is_empty or seen.area < CFG['label_seen_min'] * g.area:
+                        return                            # a sliver at the edge: left unnamed
+                    c = middle(seen)
             else:
-                c = piece.representative_point()
+                c = seen.representative_point()
             if put(*P(c.x, c.y), s, bold):
                 named.add(s)
 
@@ -643,10 +675,8 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                         break
         # 10. the site boundary, and the detail areas on the site plan
         line(site, S['ink'], 'thick', (3, 1.5), 'site')
-        for wname, wb in windows:
+        for wname, wb in windows:                         # their names are written with the others, in 9b
             line(box(*wb).exterior, S['ink'], 'thin', (2, 1), 'window')
-            x, y = P(wb[0], wb[3])
-            o.append(f'<text x="{f2(x + 1.5 * k)}" y="{f2(y + 1.5 * k + fs)}" font-size="{f2(fs)}" fill="{S["ink"]}">{escape(wname)}</text>')
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
