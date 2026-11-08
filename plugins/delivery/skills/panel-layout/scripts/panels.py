@@ -4,6 +4,11 @@
       Lists every summary, drawing, table and text in the proposal folder, with each
       drawing's print size, and writes panel-layout/inventory.json.
 
+  python panels.py frames <proposal folder>/panel-layout/layout.json
+      Gives every drawing that asks for a frame (<drawing>.frame.json next to it) that frame in
+      layout.json, at the drawing's scale, at most the panel's width. Names what it changed; move
+      the neighbours it now covers, as the report says.
+
   python panels.py render <proposal folder>/panel-layout/layout.json [--png-dpi 96] [--check]
       Places the items of layout.json on the panels, each drawing with a scale in its frame
       at a true scale, cropped by the frame's edge; renders panel-N.html/.pdf/.png with a
@@ -749,6 +754,44 @@ def pdf_pages(path):
 
 # ---------- render ----------
 
+def frame_request(file, folder):
+    """What a drawing asks for in the <drawing>.frame.json next to it: {"scale": int, "w": mm, "h": mm}, else None."""
+    try:
+        r = json.loads((Path(folder) / file).with_suffix(".frame.json").read_text(encoding="utf-8"))
+        return {"scale": scale_number(r["scale"]), "w": float(r["needs_mm"]["w"]), "h": float(r["needs_mm"]["h"])}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def give_frames(layout_path):
+    """Writes into layout.json the frame each drawing asks for; the scale never changes. Returns what it did, line by line."""
+    layout_path = Path(layout_path).resolve()
+    L = json.loads(layout_path.read_text(encoding="utf-8"))
+    fmt = L["format"]
+    m = fmt.get("margin_mm", 15)
+    content_w = fmt["width_mm"] - 2 * m
+    said, changed = [], False
+    for it in (i for p in L["panels"] for i in p.get("items", []) if i.get("type") == "drawing" and i.get("file")):
+        req = frame_request(it["file"], layout_path.parent.parent)
+        if not req:
+            continue
+        if req["scale"] != scale_number(it.get("scale")):
+            said.append(f"- `{it['id']}`: asks at 1:{req['scale']:,}, but is planned at {it.get('scale')}: no frame given; its skill draws it at the planned scale")
+            continue
+        new = {"w": min(req["w"], content_w), "h": req["h"]}
+        if it.get("frame") == new:
+            continue
+        said.append(f"- `{it['id']}`: frame {it.get('frame')} is now {new}, at {it['scale']}"
+                    + (f"; it asked for {req['w']:g} mm wide, the panel has {content_w:g}" if req["w"] > content_w else ""))
+        it["frame"], changed = new, True
+        it.pop("crop", None)                     # aimed at the old frame
+        if "x" in it and it["x"] + new["w"] > fmt["width_mm"] - m:
+            it["x"] = m
+    if changed:
+        layout_path.write_text(json.dumps(L, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    return said or ["No drawing asks for another frame."]
+
+
 def render(layout_path, png_dpi, check=False):
     layout_path = Path(layout_path).resolve()
     out = layout_path.parent
@@ -1098,6 +1141,12 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
                            if it["_hidden"] > 0.005 else ", whole drawing shown"))
                 if it.get("_fills", 1) < 0.8:
                     held += f", fills {100 * it['_fills']:.0f} % of its frame"
+                asked = frame_request(it["file"], folder)
+                if asked and asked["scale"] == sc and (it.get("frame") or {}) != {"w": min(asked["w"], fmt["width_mm"] - 2 * fmt.get("margin_mm", 15)), "h": asked["h"]}:
+                    problems += 1
+                    held += f"  **its skill asks for a frame of {asked['w']:g} x {asked['h']:g} mm: run `panels.py frames`, then move its neighbours**"
+                    add("here", sev, "a drawing asks for another frame", what, f"asks for {asked['w']:g} x {asked['h']:g} mm at 1:{sc:,}",
+                        "run `panels.py frames`, then move its neighbours; never change its scale")
                 if it.get("_bar"):
                     held += ", scale bar added"
                 elif not it.get("_own_bar") and not unscaled(it["file"]):
@@ -1314,6 +1363,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("scan")
     s.add_argument("folder")
+    f = sub.add_parser("frames")
+    f.add_argument("layout")
     r = sub.add_parser("render")
     r.add_argument("layout")
     r.add_argument("--png-dpi", type=int, default=96)
@@ -1323,6 +1374,8 @@ def main():
         inv = scan(a.folder)
         print(json.dumps({k: v for k, v in inv.items() if k != "skills"}, indent=1, ensure_ascii=False))
         print("summaries:", ", ".join(k for k, v in inv["skills"].items() if v["summary"]) or "none")
+    elif a.cmd == "frames":
+        print("\n".join(give_frames(a.layout)))
     else:
         render(a.layout, a.png_dpi, a.check)
 
