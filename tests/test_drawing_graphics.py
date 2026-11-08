@@ -34,6 +34,24 @@ def test_white_buildings_pass(tmp_path):
     assert r.returncode == 0, r.stdout
 
 
+def test_marks_say_who_carries_them(tmp_path):
+    """Issue #34: the base places drawings on panels (marks "panel"); "drawing" is the other value, anything else fails."""
+    assert base()["marks"] == "panel"
+    s = base(); s["marks"] = "drawing"
+    assert check(s, tmp_path).returncode == 0
+    s["marks"] = "everywhere"
+    r = check(s, tmp_path)
+    assert r.returncode != 0 and "marks" in r.stdout
+    s.pop("marks")
+    assert "marks: missing" in check(s, tmp_path).stdout
+
+
+def test_type_sizes_on_the_standards_scale():
+    """Labels at 9 pt and a drawing's own title at the subheading's 14 pt, the sizes base.md lists (1 pt = 25.4/72 mm)."""
+    pt = lambda mm: mm / 25.4 * 72
+    assert round(pt(base()["text"])) == 9 and round(pt(base()["title"])) == 14
+
+
 def test_small_text_fails(tmp_path):
     s = base(); s["text"] = 2.0
     r = check(s, tmp_path)

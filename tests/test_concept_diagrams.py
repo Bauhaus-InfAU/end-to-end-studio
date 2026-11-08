@@ -79,3 +79,23 @@ def test_draws_to_its_planned_frame(tmp_path):
     import re
     assert abs(float(re.search(r'width="([\d.]+)mm"', svg).group(1)) - 100) < 0.3, svg[:300]
     assert svg.count('<tspan x="20" dy=') >= 2  # the caption's second line (and the footer's)
+
+
+def test_families_groups_and_pies_work_together(tmp_path):
+    """A family is one group, a hidden part or a frame titled only is left out, and a pie frame draws in a family."""
+    (tmp_path / "site.geojson").write_text(json.dumps(SITE), encoding="utf-8")
+    pie = {"file": "04_ground", "title": "The ground, counted", "caption": "Less is sealed.", "family": "concept", "elements": [
+        {"kind": "pie", "charts": [{"title": "design", "source": "analysis/comparison.csv",
+                                    "parts": [{"value": 30, "label": "sealed"}, {"value": 70, "label": "open", "accent": True}]}]}]}
+    frames = [dict(SPEC["frames"][0], family="site"), dict(SPEC["frames"][1], family="site"),
+              dict(SPEC["frames"][1], file="hidden_part", family="site", hidden=True),
+              dict(SPEC["frames"][1], file="elsewhere", family="site", number=False), pie,
+              dict(SPEC["frames"][3], family="concept")]
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({**SPEC, "families": {"site": {"mode": "sequence"}, "concept": {"mode": "separate"}}, "frames": frames}), encoding="utf-8")
+    out = tmp_path / "out"
+    r = subprocess.run([sys.executable, str(DD), "render", str(spec), str(out)], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    groups = {g["name"]: g["files"] for g in json.loads((out / "groups.json").read_text(encoding="utf-8"))["groups"]}
+    assert groups == {"site": ["out/01_green-link.svg", "out/02_square.svg"], "concept": ["out/04_ground.svg", "out/04_metaphor.svg"]}, groups
+    assert not (out / "hidden_part.svg").exists() and "open 70 %" in (out / "04_ground.svg").read_text(encoding="utf-8")

@@ -49,6 +49,7 @@ if not CFG:
     NOTES.append('no config.json: the scale and panel width were not taken from the brief')
 
 scale, scale_src, frame_w, frame_h, file_name = None, None, None, None, None
+planned_frame, ROOM_WORD = None, 'frame'
 for nm in ('layout-plan.json', 'layout.json'):      # the panels' plan, else the layout; items at the top or per panel
     layout = PROP / 'panel-layout' / nm
     if not layout.exists():
@@ -65,6 +66,12 @@ for nm in ('layout-plan.json', 'layout.json'):      # the panels' plan, else the
             frame_w = (it.get('frame') or {}).get('w') or None
             frame_h = (it.get('frame') or {}).get('h') or None
             file_name = Path(str(it.get('file'))).stem if it.get('file') else None
+            fmt = L.get('format') or {}
+            if fmt.get('width_mm') and fmt.get('height_mm'):      # the frame is a first guess: draw to the panel's room and ask for the frame
+                planned_frame = {'w': frame_w, 'h': frame_h}
+                m_ = fmt.get('margin_mm', 15)
+                frame_w, frame_h = fmt['width_mm'] - 2 * m_, fmt['height_mm'] - fmt.get('content_top_mm', m_) - m_
+                ROOM_WORD = 'panel'
             break
     except (ValueError, OSError, AttributeError) as e:
         NOTES.append('panel-layout/%s could not be read (%s)' % (nm, e))
@@ -994,20 +1001,27 @@ with (OUT / 'types.csv').open('w', newline='', encoding='utf8') as fh:
 fits = ''
 if len(ROWS) > 1:
     fits = ' Wrapped into %d rows of %s types on a shared baseline grid, at the same scale%s.' % (
-        len(ROWS), ', '.join(str(len(r)) for r in ROWS), ', to keep within the %.0f mm frame' % float(panel_w) if panel_w else '')
+        len(ROWS), ', '.join(str(len(r)) for r in ROWS), ', to keep within the %.0f mm %s' % (float(panel_w), ROOM_WORD) if panel_w else '')
 if panel_w or frame_h:
     big_w, big_h = panel_w and W > float(panel_w) + 0.5, frame_h and H > float(frame_h) + 0.5
-    fits += ' It is %.0f x %.0f mm, %s the %s frame.' % (W, H, 'LARGER than' if big_w or big_h else 'within',
-                                                       ' x '.join('%.0f mm' % float(v) for v in (panel_w, frame_h) if v))
+    fits += ' It is %.0f x %.0f mm, %s the %s %s.' % (W, H, 'LARGER than' if big_w or big_h else 'within',
+                                                       ' x '.join('%.0f mm' % float(v) for v in (panel_w, frame_h) if v), ROOM_WORD)
     if big_w or big_h:
         nxt = next((s_ for s_ in (750, 1000, 1250, 1500, 2000, 2500, 3000, 5000) if s_ > scale
                     and all(not lim or v <= float(lim) for v, lim in zip(size_at(scale / s_), (panel_w, frame_h)))), None)
-        UNSURE.append('not even one type fits its frame at 1:%s, so the one with the most buildings is drawn alone, ' % f"{scale:,}"
+        UNSURE.append('not even one type fits its ' + ROOM_WORD + ' at 1:%s, so the one with the most buildings is drawn alone, ' % f"{scale:,}"
                       + ('it would about fit at 1:%d (the scale was not changed)' % nxt if nxt else
                          'and even at 1:5,000 its text alone would need about %.0f x %.0f mm: the frame needs more room' % size_at(scale / 5000)))
 if LEFT_OUT:
     fits += ' Left out, %s, all in types.csv: %s.' % (
-        'to fit the frame' if panel_w or frame_h else 'at most %d types drawn' % MAX_TYPES, ', '.join(LEFT_OUT))
+        'to fit the ' + ROOM_WORD if panel_w or frame_h else 'at most %d types drawn' % MAX_TYPES, ', '.join(LEFT_OUT))
+# the frame this drawing needs at its scale, for panel-layout's second run; the format is in the drawings' TOPIC.md
+request = {'drawing': svg_path.name, 'scale': '1:%d' % scale, 'needs_mm': {'w': math.ceil(W), 'h': math.ceil(H)},
+           'planned_frame_mm': planned_frame, 'by': 'building-types', 'why': '%d of %d types' % (len(SEL), len(TYPES))}
+(OUT / (name + '.frame.json')).write_text(json.dumps(request, indent=1) + '\n', encoding='utf8')
+if planned_frame:
+    fits += ' Asks for a frame of %d x %d mm at 1:%s in %s.frame.json (planned: %s x %s mm).' % (
+        request['needs_mm']['w'], request['needs_mm']['h'], f"{scale:,}", name, planned_frame['w'], planned_frame['h'])
 n_given = sum(1 for c in SEL for n_ in c['e']['notes'] if n_[3])
 n_notes = sum(len(c['e']['notes']) for c in SEL)
 illus = ['windows in %g m bays' % BAY] if DRAWN['windows'] else []

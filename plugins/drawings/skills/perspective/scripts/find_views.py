@@ -73,8 +73,7 @@ def segments(scene):
             c = np.array(part.exterior.coords)[:, :2]
             for a, e in zip(c, c[1:]):
                 seg.append((*a, *e)), kind.append(3), height.append(h)
-    r = scene.assumed["tree_crown_radius"]
-    for x, y, h in scene.trees:
+    for x, y, h, r in scene.trees:
         seg.append((x - r, y, x + r, y)), kind.append(4), height.append(h)
         seg.append((x, y - r, x, y + r)), kind.append(4), height.append(h)
     if not seg:

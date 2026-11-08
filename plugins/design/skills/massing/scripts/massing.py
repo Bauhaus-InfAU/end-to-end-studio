@@ -7,7 +7,7 @@ every key in BRIEF. DEFAULTS are the skill's own and config.json may override th
 structure-plan neighbourhood name to low, medium, high, urban or commercial; `phase1` lists the first
 phase's neighbourhoods. Writes massing.geojson, areas.csv, stats.json and assumptions.md into <proposal>/massing/.
 """
-import argparse, json, math, sys, csv, os
+import argparse, json, math, sys, csv, os, random
 from shapely.geometry import shape, mapping, Polygon, LineString, Point, box, MultiPolygon
 from shapely.ops import transform, unary_union, nearest_points
 from shapely import affinity, prepare
@@ -50,7 +50,10 @@ OPTIONAL = {'school_gfa': 0, 'school_yard': 0, 'school_sports': 0, 'pool_gfa': 0
             'daycare_gfa': 0, 'daycares': 0, 'food_market': '', 'figure': {}, 'homes_target_is_minimum': False,
             'community_buildings': []}
 DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.0, 'keep_buffer': 4.0,
-            'tree_step': 12.0, 'tree_off': 4.0, 'square_main_m': 60.0, 'square_local_m': 30.0, 'route_bonus_m': 40.0,
+            'tree_step': 12.0, 'tree_off': 2.0,   # street trees: spacing, and how far beyond the street's edge, m
+            'tree_sizes': {'main': [8.0, 14.0], 'secondary': [6.0, 10.0]},   # street trees' crown diameter and height, m
+            'tree_vary': 0.3, 'tree_seed': 1,   # each tree's size and spacing vary by up to this share, the same every run
+            'square_main_m': 60.0, 'square_local_m': 30.0, 'route_bonus_m': 40.0,
             'centre_bonus_m': 150.0, 'green_minus_m': 15.0, 'epsg': None,
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
@@ -270,11 +273,26 @@ def block_buildings(T, col=0, row=0):
 
 
 def clip(q, land):
-    """a part cut to its land: the largest piece, if it keeps 60 % of the part and 150 m2 (90 % of a smaller part)"""
-    cl = q.intersection(land)
-    if cl.geom_type == 'MultiPolygon':
-        cl = max(cl.geoms, key=lambda r: r.area)
-    return cl if cl.geom_type == 'Polygon' and cl.area >= 0.6 * q.area and cl.area >= min(150, 0.9 * q.area) else None
+    """a part whole on its land, never cut: a bar that crosses the land's edge shortened in 3 m steps until it fits, if
+    it keeps 12 m and 60 % of its length or 30 m, and one deeper than 20 m also made shallower, down to 60 % of its
+    depth; the largest that fits, else None (an L or U is then tried as its arms)"""
+    inside = q.intersection(land)
+    if inside.area >= q.area - 1:
+        return q
+    x0, y0, x1, y1 = q.bounds
+    if abs(q.area - (x1 - x0) * (y1 - y0)) > 1:
+        return None
+    along_x = x1 - x0 >= y1 - y0
+    L, D = (x1 - x0, y1 - y0) if along_x else (y1 - y0, x1 - x0)
+    lens = [L] + [L - 3 * k for k in range(1, int(L // 3)) if L - 3 * k >= 12 and (L - 3 * k >= 0.6 * L or L - 3 * k >= 30)]
+    deps = [D] + ([D - 3 * k for k in range(1, int(D // 3)) if D - 3 * k >= 0.6 * D] if D > 20 else [])
+    for n, e in sorted(((n, e) for n in lens for e in deps if (n, e) != (L, D)), key=lambda t: -t[0] * t[1]):
+        for a in (3 * i for i in range(round((L - n) / 3) + 1)):
+            for b in (3 * j for j in range(round((D - e) / 3) + 1)):
+                r = box(x0 + a, y0 + b, x0 + a + n, y0 + b + e) if along_x else box(x0 + b, y0 + a, x0 + b + e, y0 + a + n)
+                if r.difference(inside).area < 1:
+                    return r
+    return None
 
 
 def bars(q, g):
@@ -914,25 +932,41 @@ for u, t, g in community:
     if g.area > 50: add('open-space', g, use=u, type=t)
 
 bu = unary_union([b['geom'] for b in buildings] + [g for _, g in kept])
+RNG = random.Random(CONFIG['tree_seed'])
 trees = []
-all_streets = [g for _, g in street_routes] + sec_streets
+all_streets = [(g, CONFIG['street_w'], 'main') for _, g in street_routes] + [(g, CONFIG['sec_street_w'], 'secondary') for g in sec_streets]
+# a tree stands beside its street, never on one: tree_off beyond the street's edge, off every street's surface
+surface = unary_union([g.buffer(w / 2 + 1) for g, w, _ in all_streets]
+                      + [g.buffer(CONFIG['path_w'] / 2 + 1) for g in [g for _, g in path_routes] + green_paths]
+                      + [m(f['geometry']) for f in load_if(os.path.join(SITE, 'street-land.geojson'))
+                         if f['geometry']['type'] in ('Polygon', 'MultiPolygon')]   # the cadastre's existing street land
+                      ).buffer(6).buffer(-6)   # corners rounded as the kerbs are, so no tree stands in a junction
 # trees only along the street stretches in or just beside the new neighbourhoods; green paths get none
 new_land = unary_union([g.intersection(site) for p, g in nbh if p['action'] != 'keep' and p['name'] in CONFIG['density']])
-for g in all_streets:
+for g, w, size in all_streets:
     g = g.intersection(new_land.buffer(CONFIG['street_w']))
     for ln in ([g] if g.geom_type == 'LineString' else list(getattr(g, 'geoms', []))):
         if ln.geom_type != 'LineString' or ln.length < CONFIG['tree_step']: continue
         for side in (-1, 1):
-            off = ln.parallel_offset(CONFIG['tree_off'], 'left' if side > 0 else 'right')
+            off = ln.parallel_offset(w / 2 + CONFIG['tree_off'], 'left' if side > 0 else 'right')
             for q in ([off] if off.geom_type == 'LineString' else list(getattr(off, 'geoms', []))):
                 dd = CONFIG['tree_step'] / 2
                 while dd < q.length:
                     pt = q.interpolate(dd)
-                    if not bu.buffer(1).contains(pt) and not any(s.contains(pt) for s in sq_all):
-                        trees.append(pt)
-                    dd += CONFIG['tree_step']
-for t in trees:
-    add('tree', t)
+                    # loose, not a grid: up to 1 m further from the street
+                    a, b = q.interpolate(max(0, dd - 0.5)), q.interpolate(min(q.length, dd + 0.5))
+                    n = math.hypot(b.x - a.x, b.y - a.y) or 1
+                    j = RNG.uniform(0, 1.0)
+                    pt2 = Point(pt.x - (b.y - a.y) / n * j, pt.y + (b.x - a.x) / n * j)
+                    if ln.distance(pt2) < ln.distance(pt):
+                        pt2 = Point(pt.x + (b.y - a.y) / n * j, pt.y - (b.x - a.x) / n * j)
+                    if not bu.buffer(1).contains(pt2) and not surface.contains(pt2) and not any(s.contains(pt2) for s in sq_all):
+                        trees.append((pt2, size))
+                    dd += CONFIG['tree_step'] * RNG.uniform(1 - CONFIG['tree_vary'] * 1.33, 1 + CONFIG['tree_vary'] * 1.33)
+for t, size in trees:
+    crown, height = CONFIG['tree_sizes'][size]
+    f = RNG.uniform(1 - CONFIG['tree_vary'], 1 + CONFIG['tree_vary'])   # trees of one street, of different ages
+    add('tree', t, group='street', street=size, crown_m=round(crown * f, 1), height_m=round(height * f, 1))
 
 json.dump({'type': 'FeatureCollection', 'name': 'massing',
            'note': 'WGS84, longitude first; areas measured in EPSG:%d' % EPSG, 'features': feats},
