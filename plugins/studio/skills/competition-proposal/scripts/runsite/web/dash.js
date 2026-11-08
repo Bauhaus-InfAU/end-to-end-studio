@@ -172,7 +172,7 @@ function ledgerChart(runs, ledger, reg) {
       const m = row.runs[c.label];
       if (!m) return;
       const after = fj >= 0 && j > fj;
-      const tip = reg(`<b>${esc(row.error)}</b><br>${esc(c.label)}: ${m === "q" ? "probably" : "seen"}${after ? ", after the fix" : ""}`);
+      const tip = reg(`<b>${esc(row.error)}</b><br>${esc(c.label)}: ${m === "q" ? "present, not reported" : "seen"}${after ? ", after the fix" : ""}`);
       s += `<a href="${href(c.key)}" aria-label="${esc(row.error)}, ${esc(c.label)}"><circle class="dot${after ? " back" : ""}${m === "q" ? " maybe" : ""}" data-tip="${tip}" cx="${lw + j * cw + cw / 2}" cy="${yy}" r="${m === "q" ? 3.5 : 4.5}"/></a>`;
     });
   });
@@ -195,7 +195,7 @@ async function dashboard(el) {
     </div>
     <div class="dash-grid g2">
       <section class="chart"><h2>Where the money goes</h2><p>Dollars per skill and run. Darker is more.</p><div class="dash-scroll" id="d-heat"><p class="muted">Loading the runs…</p></div></section>
-      <section class="chart"><h2>Problems that come back</h2><p>Line: when a fix landed (dashed: it did not hold). Hollow: it came back after the fix. Small: probably.</p><div class="dash-scroll" id="d-led"></div></section>
+      <section class="chart"><h2>Problems that come back</h2><p>Line: when a fix landed (dashed: it did not hold). Hollow: it came back after the fix. Small: present, not reported.</p><div class="dash-scroll" id="d-led"></div></section>
     </div></div>`;
   const $ = id => el.querySelector(id);
   $("#d-items").innerHTML = itemsChart(runs, reg);
