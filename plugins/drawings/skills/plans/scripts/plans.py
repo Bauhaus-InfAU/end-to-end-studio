@@ -70,6 +70,8 @@ DEFAULTS = {
     'detail_pad_m': 30,         # ground around them, metres
     'detail_min_mm': 150,       # a detail window is never smaller than this on paper, where the panel allows
     'detail_overlap_max': 0.1,  # two detail areas may share at most this part of the smaller one's window
+    'detail_shown_min': 0.7,    # a detail area whose frame shows less of its subject (the new buildings around it) is too small
+    'entrance_mm': 4,           # an entrance arrow's length on paper, mm
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
     'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
     'idea_band_mm': 7,          # a line idea is drawn as a band this wide on paper, in the accent's pale tone
@@ -783,11 +785,18 @@ def shadows(items):
 def symbol(kind, x, y, k, b=None):
     ink, paper = S['ink'], S['paper']
     sw = '%.2f' % (float(S['mid']) * k)
-    if kind == 'entrance':   # a triangle outside the facade, its tip at the door; b: the way the door faces, degrees
-        a = math.radians(180 if b is None else float(b))
-        ox, oy, L, hw = math.sin(a), -math.cos(a), 2.2 * k, 1.1 * k
-        bx, by = x + ox * L, y + oy * L
-        return f'<path d="M{x:.2f},{y:.2f}L{bx - oy * hw:.2f},{by + ox * hw:.2f}L{bx + oy * hw:.2f},{by - ox * hw:.2f}Z" fill="{ink}"/>'
+    if kind == 'entrance':   # an arrow from outside into the door, its head at the door; b: the way the door faces
+        if b is None:                                    # the legend: lying flat, pointing right, centred on x
+            a = math.radians(270)
+            x += CFG['entrance_mm'] * k / 2
+        else:
+            a = math.radians(float(b))
+        ox, oy, L = math.sin(a), -math.cos(a), CFG['entrance_mm'] * k
+        h, hw = 0.45 * L, 0.25 * L                       # the head's length and half width
+        tx, ty, hx, hy = x + ox * L, y + oy * L, x + ox * h, y + oy * h
+        return (f'<line x1="{tx:.2f}" y1="{ty:.2f}" x2="{hx:.2f}" y2="{hy:.2f}" stroke="{ink}" stroke-width="{sw}"/>'
+                f'<path d="M{x:.2f},{y:.2f}L{hx - oy * hw:.2f},{hy + ox * hw:.2f}L{hx + oy * hw:.2f},{hy - ox * hw:.2f}Z" '
+                f'fill="{ink}"/>')
     if kind == 'stop':
         return (f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{2.0 * k:.2f}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
                 f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{1.0 * k:.2f}" fill="{ink}"/>')
@@ -950,6 +959,17 @@ for name, title, scale, win, cut, a in details:
         e['weak'] = '; '.join(why)
         print('%s is weak (%s): give it the district centre or a typical neighbourhood as `at`' % (name, e['weak']),
               file=sys.stderr)
+    # a frame too small for its subject cuts the new buildings around it off: say how much, for panel-layout
+    anchor = anchor_of(a.get('at'))[0]
+    near = [g for p, g in NEW if g.distance(anchor) <= CFG['detail_near_m']]
+    if near:
+        w_ = box(*win)
+        e['subject_shown'] = round(sum(g.intersection(w_).area for g in near) / sum(g.area for g in near), 2)
+        if e['subject_shown'] < CFG['detail_shown_min']:
+            e['too_small'] = 'its frame shows %d %% of the new buildings within %g m of %s' % (
+                round(100 * e['subject_shown']), CFG['detail_near_m'], a.get('at'))
+            print('%s is too small: %s; panel-layout should give it a larger frame' % (name, e['too_small']),
+                  file=sys.stderr)
     made.append(e)
 
 if fig_scale:

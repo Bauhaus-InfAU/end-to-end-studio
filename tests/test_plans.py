@@ -179,11 +179,35 @@ def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
         detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
         assert "ground-floor" in made["detail-area-1"]["layers_used"] and ">Entrances</text>" in detail
         assert "entrances (ground-floor)" not in made["detail-area-1"]["not_shown"]   # now it has them
+        doors = sum(1 for f in json.loads((gf / "detail.geojson").read_text(encoding="utf-8"))["features"]
+                    if f["properties"]["kind"] == "entrance")
+        arrows = len(re.findall(r'<line [^>]+/><path d="M[^"]+Z" fill="[^"]+"/>', detail))   # a shaft and its head
+        assert doors and arrows >= 1, (doors, arrows)
         assert "ground-floor" not in made["site-plan"]["layers_used"]
         assert ">Entrances</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     finally:
         shutil.rmtree(gf)
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_flag_a_detail_area_too_small_for_its_subject(drawn):
+    """A frame that cuts off most of the new buildings around a detail area's centre is flagged too small."""
+    out, site_dir = drawn
+    plan = out / "panel-layout/layout-plan.json"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text(json.dumps({"panels": [{"items": [{"id": "detail-area-1", "type": "drawing", "scale": "1:1000",
+                                                       "file": "plans/detail-area-1_1-1000.svg", "frame": {"w": 90, "h": 70}}]}]}),
+                    encoding="utf-8")
+    try:
+        r = draw(out, site_dir)
+        e = made_of(out)["detail-area-1"]
+        assert e["subject_shown"] < 0.7 and "too_small" in e, e
+        assert "too small" in r.stderr
+    finally:
+        plan.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+    e = made_of(out)["detail-area-1"]
+    assert "too_small" not in e and e["subject_shown"] >= 0.7, e   # the panel's own room shows it whole
 
 
 def made_of(out):
