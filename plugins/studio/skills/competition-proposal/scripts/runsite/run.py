@@ -27,9 +27,10 @@ def _text(path):
 
 def _json(path):
     try:
-        return json.loads(_text(path))
+        data = json.loads(_text(path))
     except ValueError:
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _num(value):
@@ -153,15 +154,19 @@ def _items(folder, layout, n, log_text, required):
             continue
         frame = it.get("frame") or {}
         w, h = it.get("w") or frame.get("w"), it.get("h") or frame.get("h")
-        if w is None:
+        if w is None and h is None:
             continue
-        if h is None:
-            h = w
+        if w is None or h is None:
+            ratio = 1.0  # the drawing's PNG height over width, else square
             png = folder / Path(file).with_suffix(".png")
             if png.exists():
                 from PIL import Image
                 with Image.open(png) as im:
-                    h = w * im.size[1] / im.size[0]
+                    ratio = im.size[1] / im.size[0]
+            if h is None:
+                h = w * ratio
+            else:
+                w = h / ratio
         by = next((r.get("by") for r in required if r.get("id") == it["id"] and r.get("by")), None)
         out.append({"id": it["id"], "file": file, "skill": by or Path(file).parts[0],
                     "caption": it.get("caption"), "shows": it.get("shows"), "scale": it.get("scale"),
@@ -211,11 +216,11 @@ def read_run(folder, skills, overrides, names):
     issues = _issues(_text(folder / "panel-layout" / "issues.md"))
     summaries = {p.parent.name: _text(p) for p in sorted(folder.glob("*/summary.md")) if not p.parent.name.startswith(".")}
     layout = _json(folder / "panel-layout" / "layout.json")
-    layout = layout if isinstance(layout, dict) else {}
-    pngs = sorted(folder.glob("panel-layout/panel-*.png"), key=lambda p: int(re.search(r"(\d+)", p.stem)[1]))
+    pngs = sorted((p for p in folder.glob("panel-layout/panel-*.png") if re.fullmatch(r"panel-\d+\.png", p.name)),
+                  key=lambda p: int(p.stem[6:]))
     panels = []
     for png in pngs:
-        n = int(re.search(r"(\d+)", png.stem)[1])
+        n = int(png.stem[6:])
         try:
             from PIL import Image
             with Image.open(png) as im:

@@ -3,4 +3,5 @@
  "panels": [{"story": "Why", "items": [
   {"id": "idea", "type": "text", "x": 15, "y": 46, "w": 564, "h": 26, "text": "The idea."},
   {"id": "site-plan", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "x": 15, "y": 76, "frame": {"w": 564, "h": 540}, "shows": "the site", "caption": "Site plan", "scale": "1:3000"},
-  {"id": "other", "type": "drawing", "file": "isometric/other-drawing.svg", "x": 15, "y": 700, "w": 100, "h": 100}]}]}
+  {"id": "other", "type": "drawing", "file": "isometric/other-drawing.svg", "x": 15, "y": 700, "w": 100, "h": 100},
+  {"id": "tall", "type": "drawing", "file": "plans/tall.svg", "x": 15, "y": 810, "h": 20}]}]}

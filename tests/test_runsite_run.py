@@ -38,8 +38,8 @@ def test_read_run_details(fixture_proposals):
     assert r["events"] and r["n_skills"] == len(r["skills"])
     panel = r["panels"][0]
     assert (panel["n"], panel["img"], panel["w_px"], panel["h_px"]) == (1, "img/2026-01-02_run-1/panel-1.jpg", 594, 841)
-    assert [i["id"] for i in panel["items"]] == ["site-plan", "other"]      # the text item has no file
-    sp, other = panel["items"]
+    assert [i["id"] for i in panel["items"]] == ["site-plan", "other", "tall"]      # the text item has no file
+    sp, other = panel["items"][:2]
     assert sp["img"] == "img/2026-01-02_run-1/site-plan.jpg" and sp["scale"] == "1:3000"
     assert sp["caption"] == "Site plan" and sp["shows"] == "the site"
     assert round(sp["h"], 4) == round(540/841, 4)
@@ -74,3 +74,18 @@ def test_jury_links_from_overrides(fixture_proposals):
 def test_scrub_applied(fixture_proposals):
     r = read_run(fixture_proposals / "2026-01-02_run-1", SK, {}, ["Lantern"])
     assert "Lantern" not in json.dumps(r)
+
+
+def test_item_with_only_h_is_kept(fixture_proposals):
+    r = read_run(fixture_proposals / "2026-01-02_run-1", SK, {}, [])
+    tall = r["panels"][0]["items"][-1]
+    assert tall["id"] == "tall" and round(tall["h"], 4) == round(20/841, 4) and round(tall["w"], 4) == round(20/594, 4)
+
+
+def test_json_list_and_odd_panel_names_do_not_raise(fixture_proposals):
+    f = fixture_proposals / "2026-01-02_run-1"
+    (f / "art-direction" / "fixes.json").write_text("[1]")
+    (f / "massing" / "stats.json").write_text("[]")
+    (f / "panel-layout" / "panel-final.png").write_bytes(PNG_1PX)
+    r = read_run(f, SK, {}, [])
+    assert [p["n"] for p in r["panels"]] == [1] and r["headline"]["homes"] is None
