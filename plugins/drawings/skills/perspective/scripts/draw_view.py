@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Draws one eye-level base view of a scene: a shaded massing as SVG and PNG, a depth map and a map of what each pixel is."""
+import colorsys
 import json
 import math
 import os
+import random
 import re
 import shutil
 import struct
@@ -77,6 +79,51 @@ def path(pts, fill):
 
 def line(a, b, col, w):
     return f'<line x1="{a[0]:.1f}" y1="{a[1]:.1f}" x2="{b[0]:.1f}" y2="{b[1]:.1f}" stroke="{col}" stroke-width="{w}"/>'
+
+
+def tree_tone(col, rnd):
+    """One of five greens from the standard's tree colour: itself, darker, lighter, a warmer and a cooler hue."""
+    rgb = [int(col[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    h, l, s = colorsys.rgb_to_hls(*rgb)
+    dh, dl = [(0, 0), (0, -0.08), (0, 0.08), (-0.035, 0.02), (0.035, -0.03)][rnd.randrange(5)]
+    return "#%02x%02x%02x" % tuple(round(v * 255) for v in colorsys.hls_to_rgb((h + dh) % 1, min(.95, max(.05, l + dl)), s))
+
+
+def elevation_tree(base, mid, r, w, style, rnd):
+    """A tree as an architectural elevation: a wavy, slightly tall crown shaded on one side, a tapering trunk, and
+    branches fanning up into the crown's lower half. base: the trunk's foot, mid: the crown's centre, px; r: its radius."""
+    if r < 2:   # far off: a small soft blob is all that reads
+        return (line(base, mid, style["trunk"], w)
+                + f'<circle cx="{mid[0]:.1f}" cy="{mid[1]:.1f}" r="{r:.1f}" fill="{tree_tone(style["tree"], rnd)}"/>')
+    fill, ink = tree_tone(style["tree"], rnd), style["line"]
+    n, rot = rnd.randint(10, 15), rnd.uniform(0, 2 * math.pi)
+    pts = [(mid[0] + rr * math.cos(t), mid[1] + 1.12 * rr * math.sin(t)) for i in range(n)
+           for t, rr in [(rot + 2 * math.pi * i / n, r * rnd.uniform(0.8, 1.0))]]
+    crown = f"M{pts[0][0]:.1f},{pts[0][1]:.1f}" + "".join(
+        f" A{0.6 * math.dist(p, q):.1f},{0.6 * math.dist(p, q):.1f} 0 0 1 {q[0]:.1f},{q[1]:.1f}" for p, q in zip(pts, pts[1:] + pts[:1]))
+    # the trunk: wide at the foot, narrower where it meets the crown's middle
+    tw = max(w, r * 0.09)
+    trunk = (f'<path d="M{base[0] - tw / 2:.1f},{base[1]:.1f} L{mid[0] - tw / 4:.1f},{mid[1]:.1f} '
+             f'L{mid[0] + tw / 4:.1f},{mid[1]:.1f} L{base[0] + tw / 2:.1f},{base[1]:.1f}Z" fill="{style["trunk"]}"/>')
+    # the side away from the light: the crown darkened, and the crown itself again on top, moved towards the light,
+    # so a rim that follows the crown's waves stays dark
+    shade = (f'<rect x="{mid[0] - 2 * r:.1f}" y="{mid[1] - 2 * r:.1f}" width="{4 * r:.1f}" height="{4 * r:.1f}" '
+             f'fill="{ink}" fill-opacity="0.13"/>'
+             f'<path d="{crown}" transform="translate({-0.22 * r:.1f},{-0.14 * r:.1f})" fill="{fill}"/>')
+    branches = []
+    for _ in range(rnd.randint(3, 5)):   # from the trunk inside the crown's lower half, up and out
+        f = rnd.uniform(0.0, 0.75)
+        sx, sy = mid[0], mid[1] + f * 1.1 * r
+        a = math.radians(rnd.choice((-1, 1)) * rnd.uniform(25, 60))
+        ln = r * rnd.uniform(0.45, 0.8)
+        ex, ey = sx + ln * math.sin(a), sy - ln * math.cos(a)
+        branches.append(f'M{sx:.1f},{sy:.1f} Q{sx + 0.3 * (ex - sx):.1f},{sy + 0.6 * (ey - sy):.1f} {ex:.1f},{ey:.1f}')
+    cid = "tc%x" % rnd.getrandbits(48)   # this crown's own clip, for its shaded side
+    return (trunk
+            + f'<path d="{crown}" fill="{fill}" fill-opacity="0.92" stroke="{ink}" stroke-width=".6" stroke-linejoin="round"/>'
+            + f'<clipPath id="{cid}"><path d="{crown}"/></clipPath><g clip-path="url(#{cid})">{shade}</g>'
+            + f'<path d="M{mid[0]:.1f},{mid[1] + 1.1 * r:.1f} L{mid[0]:.1f},{mid[1] - 0.2 * r:.1f} {" ".join(branches)}" '
+              f'fill="none" stroke="{style["trunk"]}" stroke-width="{max(.5, tw * 0.35):.1f}" stroke-linecap="round" stroke-opacity="0.8"/>')
 
 
 def grey(v):
@@ -329,8 +376,7 @@ def draw_view(scene, view, out, stem, style):
         z = float(scene.ground(np.array([x]), np.array([y]))[0])
         base, mid = cam.px(cam.cam(x, y, z)), cam.px(cam.cam(x, y, z + height - r_crown))
         r = cam.f * r_crown / c0[2]
-        s = line(base, mid, style["trunk"], max(.6, cam.f * .3 / c0[2]))
-        s += f'<circle cx="{mid[0]:.1f}" cy="{mid[1]:.1f}" r="{r:.1f}" fill="{style["tree"]}" stroke="{style["line"]}" stroke-width=".6"/>'
+        s = elevation_tree(base, mid, r, max(.6, cam.f * .3 / c0[2]), style, random.Random(f"{x:.0f},{y:.0f}"))
         items.append((math.hypot(x - cam.ex, y - cam.ey), s))
         buf.disc(mid[0], mid[1], r, 1 / c0[2], CLASSES["tree"])
     items.sort(key=lambda i: -i[0])
