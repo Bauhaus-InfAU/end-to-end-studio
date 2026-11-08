@@ -254,10 +254,24 @@ def paint(items, large, labels, fs):
     for _, k, g, h, fl, roof, p in items:
         if k == "t":   # its soft shadow on the ground, the trunk, the crown at the top of its height
             r, dark = roof, mix(S["tree"], S["new_line"], 0.3); cx, cy = iso(g.x, g.y, h - r); gx, gy = iso(g.x, g.y)
+            rnd = random.Random("%.0f,%.0f" % (g.x, g.y))   # each tree its own tone and outline, the same every run
+            fill = [S["tree"], mix(S["tree"], S["new_line"], 0.18), mix(S["tree"], S["ground"], 0.25)][rnd.randrange(3)]
             out.append('<ellipse cx="%.1f" cy="%.1f" rx="%.1f" ry="%.1f" fill="%s" fill-opacity="0.5"/>'
                        '<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="0.35"/>'
-                       '<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" fill-opacity="0.9" stroke="%s" stroke-width="0.35"/>'
-                       % (gx + 0.4 * r, gy, 1.22 * r, 0.71 * r, S["shadow"], gx, gy, cx, cy + r, dark, cx, cy, r, S["tree"], dark))
+                       % (gx + 0.4 * r, gy, 1.22 * r, 0.71 * r, S["shadow"], gx, gy, cx, cy + r, dark))
+            if large:   # close: a scalloped crown, its side away from the light a shade darker
+                n, rot0 = max(7, min(12, round(r * 1.4))), rnd.uniform(0, 2 * math.pi)
+                pts = [(cx + rr * math.cos(t), cy + rr * math.sin(t)) for i in range(n)
+                       for t, rr in [(rot0 + 2 * math.pi * i / n, r * rnd.uniform(0.86, 1.0))]]
+                arcs = "".join(" A%.2f,%.2f 0 0 1 %.2f,%.2f" % (0.62 * math.dist(p, q), 0.62 * math.dist(p, q), *q)
+                               for p, q in zip(pts, pts[1:] + pts[:1]))
+                out.append('<path d="M%.2f,%.2f%sZ" fill="%s" stroke="%s" stroke-width="0.3" stroke-linejoin="round"/>'
+                           '<path d="M%.2f,%.2f A%.2f,%.2f 0 0 0 %.2f,%.2f A%.2f,%.2f 0 0 1 %.2f,%.2f Z" fill="%s" fill-opacity="0.35"/>'
+                           % (*pts[0], arcs, fill, dark, cx + 0.8 * r, cy - 0.45 * r, 0.92 * r, 0.92 * r, cx - 0.45 * r, cy + 0.8 * r,
+                              1.1 * r, 1.1 * r, cx + 0.8 * r, cy - 0.45 * r, dark))
+            else:
+                out.append('<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" fill-opacity="0.9" stroke="%s" stroke-width="0.35"/>'
+                           % (cx, cy, r, fill, dark))
             continue
         if k == "p":   # a person, illustrative: a body and a head, 1.75 m
             (bx, by), (tx, ty), (hx, hy) = iso(g.x, g.y, 0.1), iso(g.x, g.y, 1.2), iso(g.x, g.y, 1.5)

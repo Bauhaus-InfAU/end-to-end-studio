@@ -406,7 +406,8 @@ class Scene:
             if g.geom_type != "Point":
                 self.warn("Trees that aren't single points were left out.")
                 continue
-            self.trees.append((g.x, g.y, number(p.get("height_m")) or self.assumed["tree_height"]))
+            self.trees.append((g.x, g.y, number(p.get("height_m")) or self.assumed["tree_height"],   # x, y, height, crown radius
+                               (number(p.get("crown_m")) or 2 * self.assumed["tree_crown_radius"]) / 2))
         built = [b["geom"].buffer(2) for b in self.buildings if b["group"] != "context"]
         self.design_cut = unary_union(built + new_parts) if built or new_parts else None
         self.new_built = unary_union([b["geom"] for b in self.buildings if b["group"] == "new"])

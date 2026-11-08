@@ -318,8 +318,8 @@ def draw_view(scene, view, out, stem, style):
         if g.distance(_point(cam)) > FAR:
             continue
         draw_block(scene, cam, style, buf, items, g, h, style[tone], CLASSES[tone], soft=True, outline=False)
-    r_crown, near_trees = scene.assumed["tree_crown_radius"], 0
-    for x, y, height in scene.trees:
+    near_trees = 0
+    for x, y, height, r_crown in scene.trees:   # each tree at its own crown
         c0 = cam.cam(x, y, 0)
         if math.hypot(x - cam.ex, y - cam.ey) > FAR or c0[2] < NEAR:
             continue
