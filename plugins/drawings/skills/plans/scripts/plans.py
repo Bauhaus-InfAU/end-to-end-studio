@@ -12,8 +12,10 @@ from mobility/, the centres from structure-plan/, and in the detail areas only t
 ground-floor/detail.geojson. A missing layer is left out and named in drawings.json. Every plan names the squares,
 centres, parks and stops; a detail area also names its streets and the buildings' special uses (school, daycare, ...),
 hatches the ground floors open to the public, marks the shared courtyards and lists under `not_shown` what the layers
-don't give it (entrances, play, uses). The optional idea {"label", "names"} draws the design layers' features of those
-names in the accent with the label, on the site plan and the detail areas; `idea` in drawings.json says if it was found.
+don't give it (entrances, play, uses), and `site_share`, `new_buildings` and `weak` when it shows little of the design.
+The optional idea {"label", "names"} finds the features of those names in the design layers or the site (a street,
+the rail, water) and lays them under the buildings in the accent's pale tone, a line as a broad band, an area as a tint
+with its outline, named with the label; `idea` in drawings.json says if it was found.
 Two detail areas whose windows overlap are listed under `overlaps` in drawings.json. A detail area or the site plan that
 the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json) frames takes that frame's scale and is
 drawn to its size, the legend strip included. The style's storey_labels writes the storeys roman or arabic (default).
@@ -68,6 +70,12 @@ DEFAULTS = {
     'detail_overlap_max': 0.1,  # two detail areas may share at most this part of the smaller one's window
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
     'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
+    'idea_band_mm': 7,          # a line idea is drawn as a band this wide on paper, in the accent's pale tone
+    'idea_tint': 0.18,          # how strong the accent lies on the idea's band or area (0 to 1)
+    'idea_join_m': 30,          # lines of the idea closer than twice this (a rail beside a road) make one band
+    'idea_reach_m': 50,         # a line idea is drawn up to this far beyond the site
+    'detail_site_min': 0.6,     # a detail area with less of its window on the site is flagged as weak
+    'detail_new_min': 6,        # ... and one with fewer new buildings in it
     'legend_mm': 30,            # the strip under the map for the title, legend, scale bar, north and source
     'caption_room_mm': 60,      # panel height kept free for a caption and the legend strip
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
@@ -163,11 +171,15 @@ IDEA = CFG.get('idea') if isinstance(CFG.get('idea'), dict) else None
 IDEA_G, IDEA_NOTE = [], ''
 if IDEA:
     want = {str(n).strip().lower() for n in IDEA.get('names') or []}
-    IDEA_G = [g for p, g in (SP or []) + MASS + (OPEN or []) + (MOB or [])
+    # a design layer's shape, or the site's own (a street, the rail, water) when the idea is a valley or a line
+    IDEA_G = [g for p, g in (SP or []) + MASS + (OPEN or []) + (MOB or []) + SITE_STREETS + RAIL + WATER
               if str(p.get('name', '')).strip().lower() in want and not g.is_empty]
     LAB['idea'] = str(IDEA.get('label') or LAB['idea'])
     IDEA_NOTE = ('drawn: %s' % LAB['idea']) if IDEA_G else (
-        'missing: no feature named %s in structure-plan, massing, open-space or mobility' % ', '.join(sorted(want)))
+        'missing: no feature named %s in the design layers or the site' % ', '.join(sorted(want)))
+IDEA_AREA = unary_union([g for g in IDEA_G if g.geom_type.endswith('Polygon')] or [Polygon()])
+IDEA_LINE = unary_union([g for g in IDEA_G if 'LineString' in g.geom_type] or [Polygon()])
+IDEA_LINE = IDEA_LINE.intersection(site.buffer(CFG['idea_reach_m'])) if not IDEA_LINE.is_empty else IDEA_LINE
 # a ground floor that is not homes: shops, services, a daycare, a school, a hub
 ACTIVE_GF = lambda p: bool(p.get('ground_floor')) and not str(p['ground_floor']).startswith('housing')
 
@@ -233,8 +245,8 @@ def anchor_of(at):
         return (unary_union(gs), '') if gs else (None, 'no phase1 neighbourhoods in massing/config.json and the structure plan')
     if SP is None:
         return None, 'no structure-plan/structure-plan.geojson to find the centre "%s"' % at
-    gs = [g for p, g in SP if p.get('kind') == 'centre' and str(p.get('name', '')).lower() == str(at).lower()]
-    return (unary_union(gs), '') if gs else (None, 'no centre named "%s" in the structure plan' % at)
+    gs = [g for p, g in SP if p.get('kind') in ('centre', 'neighbourhood') and str(p.get('name', '')).lower() == str(at).lower()]
+    return (unary_union(gs), '') if gs else (None, 'no centre or neighbourhood named "%s" in the structure plan' % at)
 
 
 def detail_window(anchor, scale, frame_m=None):
@@ -435,6 +447,14 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         for g in paths:
             if g.intersects(fr):
                 line(g, S['path'], 'thin', (1.2, 0.8), 'path')
+        # 3d. the idea, under the buildings like a highlighter: a line as a broad band, an area as a tint
+        j = CFG['idea_join_m']                           # grown and shrunk again: close lines become one band
+        idea_ground = unary_union([IDEA_AREA, IDEA_LINE.buffer(j + CFG['idea_band_mm'] * k / 2).buffer(-j)
+                                   if not IDEA_LINE.is_empty else Polygon()]).intersection(fr.buffer(10))
+        if not idea_ground.is_empty and kind != 'figure-ground':
+            o.append(f'<path d="{d(idea_ground)}" fill="{S["accent"]}" fill-opacity="{CFG["idea_tint"]}" stroke="none" '
+                     f'fill-rule="evenodd"/>')
+            legend.setdefault('idea', ('band',))
         # 4. rail: four thin lines
         for p, g in inside(RAIL):
             if p.get('railway') in CFG['gone_rail']:
@@ -604,21 +624,44 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             if put(*P(c.x, c.y), s, bold):
                 named.add(s)
 
-        # the idea first, in the accent, so its name gets the room
+        def along(gs, s, bold=False):
+            """Write s along the longest piece of these lines in the window, never upside down."""
+            u_ = unary_union(gs)
+            cut = (linemerge(u_) if u_.geom_type == 'MultiLineString' else u_).intersection(
+                box(wx0 + 2 * fs, wy0 + 2 * fs, wx1 - 2 * fs, wy1 - 2 * fs))
+            parts = [q for q in getattr(cut, 'geoms', [cut]) if q.geom_type == 'LineString']
+            if not parts:
+                return False
+            ln, wt = max(parts, key=lambda q: q.length), tw(s, fs, bold)
+            for t in (0.5, 0.35, 0.65, 0.2, 0.8):
+                at = t * ln.length
+                if at - wt / 2 < 0 or at + wt / 2 > ln.length:
+                    continue
+                (ax, ay), (bx, by) = P(*ln.interpolate(at - wt / 2).coords[0][:2]), P(*ln.interpolate(at + wt / 2).coords[0][:2])
+                ang = math.degrees(math.atan2(by - ay, bx - ax))
+                ang = ang - 180 if ang > 90 else ang + 180 if ang <= -90 else ang
+                mid = ln.interpolate(at)
+                if put(*P(mid.x, mid.y), s, bold, angle=ang):
+                    return True
+            return False
+
+        # the idea first, so its name gets the room: an area's outline in the accent over its tint, a line's name
+        # along its band, a point ringed
         idea_here = [g for g in IDEA_G if g.intersects(fr)]
         for g in idea_here:
             if g.geom_type.endswith('Polygon'):
-                line(g.boundary, S['accent'], 'thick', None, 'idea')
+                line(g.boundary, S['accent'], 'thick')
             elif g.geom_type.endswith('Point'):
                 for q in getattr(g, 'geoms', [g]):
                     x, y = P(q.x, q.y)
                     o.append(f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(2 * k)}" fill="none" stroke="{S["accent"]}" '
                              f'stroke-width="{f2(lw("thick"))}"/>')
-                legend.setdefault('idea', ('line', S['accent'], 'thick', None))
-            else:
-                line(g, S['accent'], 'thick', None, 'idea')
+                legend.setdefault('idea', ('band',))
         if idea_here:
-            place(unary_union(idea_here), LAB['idea'], True)
+            lines_ = [g for g in idea_here if 'LineString' in g.geom_type]
+            areas_ = [g for g in idea_here if not 'LineString' in g.geom_type]
+            if not (lines_ and along(lines_, LAB['idea'], True)):
+                place(unary_union(areas_ or idea_here), LAB['idea'], True)
             named.update(str(n).strip() for n in IDEA.get('names') or [])   # named once, as the idea
         for p, g in [x for x in MASS if x[0].get('kind') == 'open-space' and x[0].get('use') == 'square']:
             place(g, p.get('name'), True)
@@ -654,25 +697,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             for p, g in SITE_STREETS + [x for x in MASS if x[0].get('kind') == 'street' and x[0].get('level') != 'path']:
                 if p.get('name') and g.geom_type in ('LineString', 'MultiLineString') and g.intersects(fr):
                     byname.setdefault(str(p['name']).strip(), []).append(g)
-            inner = box(wx0 + 2 * fs, wy0 + 2 * fs, wx1 - 2 * fs, wy1 - 2 * fs)
             for s, gs in sorted(byname.items(), key=lambda it: -sum(q.length for q in it[1])):
-                u_ = unary_union(gs)
-                cut = (linemerge(u_) if u_.geom_type == 'MultiLineString' else u_).intersection(inner)
-                parts = [q for q in getattr(cut, 'geoms', [cut]) if q.geom_type == 'LineString']
-                if not parts or s in named:
-                    continue
-                ln, wt = max(parts, key=lambda q: q.length), tw(s, fs)
-                for t in (0.5, 0.35, 0.65, 0.2, 0.8):     # along the street, the longest piece in the window
-                    at = t * ln.length
-                    if at - wt / 2 < 0 or at + wt / 2 > ln.length:
-                        continue
-                    (ax, ay), (bx, by) = P(*ln.interpolate(at - wt / 2).coords[0][:2]), P(*ln.interpolate(at + wt / 2).coords[0][:2])
-                    ang = math.degrees(math.atan2(by - ay, bx - ax))
-                    ang = ang - 180 if ang > 90 else ang + 180 if ang <= -90 else ang   # never upside down
-                    mid = ln.interpolate(at)
-                    if put(*P(mid.x, mid.y), s, angle=ang):
-                        named.add(s)
-                        break
+                if s not in named and along(gs, s):
+                    named.add(s)
         # 10. the site boundary, and the detail areas on the site plan
         line(site, S['ink'], 'thick', (3, 1.5), 'site')
         for wname, wb in windows:                         # their names are written with the others, in 9b
@@ -705,6 +732,8 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
              fits=W <= PW + 0.5 and H <= PH_ALL + 0.5, layers_used=used, layers_missing=missing)
     if kind == 'detail':
         e['not_shown'] = not_shown
+        e['site_share'] = round(fr.intersection(site).area / fr.area, 2)   # how much of the window is the site
+        e['new_buildings'] = len(inside(NEW))
     if kind == 'site' and IDEA:
         e['idea'] = IDEA_NOTE
     return e
@@ -812,6 +841,9 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
         elif spec[0] == 'line':
             da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
             o.append(f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>')
+        elif spec[0] == 'band':
+            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["accent"]}" '
+                     f'fill-opacity="{CFG["idea_tint"]}" stroke="{S["accent"]}" stroke-width="{m(thin)}"/>')
         elif spec[0] == 'hatch':
             o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
                      f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>')
@@ -887,6 +919,14 @@ for name, title, scale, win, cut, a in details:
     e.update(cropped=cut, at=a.get('at'), shows=a.get('shows', ''), page=a.get('page', ''))
     if name in OVERLAPS:
         e['overlaps'] = OVERLAPS[name]
+    # a detail area at the site's edge, or with hardly a new building in it, shows little of the design
+    why = [w for w, bad in (('%d %% of it is off the site' % round(100 * (1 - e['site_share'])),
+                             e['site_share'] < CFG['detail_site_min']),
+                            ('only %d new buildings' % e['new_buildings'], e['new_buildings'] < CFG['detail_new_min'])) if bad]
+    if why:
+        e['weak'] = '; '.join(why)
+        print('%s is weak (%s): give it the district centre or a typical neighbourhood as `at`' % (name, e['weak']),
+              file=sys.stderr)
     made.append(e)
 
 if fig_scale:

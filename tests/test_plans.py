@@ -218,6 +218,36 @@ def test_plans_draw_the_idea_or_say_it_is_missing(drawn):
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 
+def test_plans_draw_a_line_idea_as_a_band(drawn):
+    """An idea that is a line of the site (a valley's street) lies under the buildings as a pale band, named along it."""
+    out, site_dir = drawn
+    accent = json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))["accent"]
+    try:
+        draw(out, site_dir, {**CONFIG, "idea": {"label": "The valley", "names": ["Pilsen-Allee"]}})
+        site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+        assert made_of(out)["site-plan"]["idea"].startswith("drawn")
+        assert site.index('fill="%s" fill-opacity=' % accent) < site.index('mix-blend-mode:multiply')   # under the buildings
+        assert re.search(r'font-weight="bold"[^>]*>The valley</text>', site)
+        assert ">Pilsen-Allee</text>" not in site                          # named once, as the idea
+    finally:
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_flag_a_weak_detail_area(drawn):
+    """A detail area off the site, with no new building in it, is flagged so the agent can move it."""
+    out, site_dir = drawn
+    assert "weak" not in made_of(out)["detail-area-1"]
+    g = shape(json.loads((site_dir / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"])
+    off = [round(g.bounds[0] - 0.02, 5), round(g.bounds[1] - 0.02, 5)]   # about 2 km off the site's corner
+    try:
+        r = draw(out, site_dir, {**CONFIG, "detail_areas": [{"name": "detail-area-1", "scale": 1000, "at": off}]})
+        weak = made_of(out)["detail-area-1"]
+        assert "weak" in weak and weak["new_buildings"] == 0 and weak["site_share"] < 0.6, weak
+        assert "is weak" in r.stderr
+    finally:
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
 def test_plans_say_what_a_detail_area_cannot_show(drawn):
     """Without ground-floor/, the detail area names the entrances as missing instead of inventing them."""
     out, _ = drawn
