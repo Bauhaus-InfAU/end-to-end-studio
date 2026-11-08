@@ -78,3 +78,77 @@ def test_build_replaces_its_own_earlier_site(fixture_project, tmp_path):
     (out / "stale.txt").write_text("x")
     build(fixture_project, fixture_project / "proposals", out, None, None)
     assert not (out / "stale.txt").exists()
+
+
+def _all_text(out):
+    return "".join(p.read_text(encoding="utf-8") for p in out.rglob("*.json"))
+
+
+def test_3d_layers_are_left_out(fixture_project, tmp_path):
+    ring = [[[12.0, 49.0, 5.0], [12.01, 49.0, 5.0], [12.01, 49.01, 6.0], [12.0, 49.0, 5.0]]]
+    f = {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon", "coordinates": ring}}
+    (fixture_project / "site" / "mesh.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [f]}))
+    out = tmp_path / "site"; build(fixture_project, fixture_project / "proposals", out, None, None)
+    shared = json.loads((out / "data/geo/shared.json").read_text(encoding="utf-8"))
+    assert "mesh" not in shared.get("site", {}) and "site" in shared["site"]
+
+
+def test_names_are_scrubbed_everywhere(fixture_project, tmp_path):
+    refs = tmp_path / "refs"; (refs / "winners/1_copper-moth").mkdir(parents=True)
+    p = fixture_project / "proposals"
+    (p / "ledger.json").write_text(json.dumps([{"error": "like copper-moth", "kind": "data", "runs": {}, "fix": None}]))
+    geo = {"type": "Feature", "properties": {"n": "copper-moth"}, "geometry": {"type": "Point", "coordinates": [12.0, 49.0]}}
+    (p / "2026-01-02_run-1/massing").mkdir(exist_ok=True)
+    (p / "2026-01-02_run-1/massing/x.geojson").write_text(json.dumps(geo))
+    out = tmp_path / "site"; build(fixture_project, p, out, refs, None)
+    assert "copper-moth" not in _all_text(out) and "a reference" in _all_text(out)
+
+
+def test_names_file_is_read(fixture_project, tmp_path):
+    refs = tmp_path / "refs"; refs.mkdir(); (refs / "names.txt").write_text("Zebra Yard\n")
+    p = fixture_project / "proposals"
+    (p / "ledger.json").write_text(json.dumps([{"error": "zebra yard", "kind": "data", "runs": {}, "fix": None}]))
+    out = tmp_path / "site"; build(fixture_project, p, out, refs, None)
+    assert "zebra" not in _all_text(out).lower()
+
+
+def test_failed_build_can_be_rebuilt(fixture_project, tmp_path):
+    out = tmp_path / "site"
+    lay = fixture_project / "proposals/2026-01-02_run-1/panel-layout/layout.json"
+    good = lay.read_text(encoding="utf-8")
+    d = json.loads(good); d["panels"][0]["items"][0].update(file="../x.png"); d["panels"][0]["items"][1]["file"] = "../x.png"
+    lay.write_text(json.dumps(d), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        build(fixture_project, fixture_project / "proposals", out, None, None)
+    lay.write_text(good, encoding="utf-8")
+    assert build(fixture_project, fixture_project / "proposals", out, None, None)["built"]
+
+
+def test_references_must_be_a_folder(fixture_project, tmp_path):
+    with pytest.raises(SystemExit):
+        build(fixture_project, fixture_project / "proposals", tmp_path / "site", tmp_path / "nope", None)
+
+
+def test_item_id_cannot_escape(fixture_project, tmp_path):
+    lay = fixture_project / "proposals/2026-01-02_run-1/panel-layout/layout.json"
+    d = json.loads(lay.read_text(encoding="utf-8"))
+    d["panels"][0]["items"][1]["id"] = "../../../escaped"
+    lay.write_text(json.dumps(d), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        build(fixture_project, fixture_project / "proposals", tmp_path / "a" / "b" / "site", None, None)
+    assert not list(tmp_path.rglob("escaped*"))
+
+
+def test_unreadable_panel_is_skipped(fixture_project, tmp_path):
+    (fixture_project / "proposals/2026-01-02_run-1/panel-layout/panel-1.png").write_bytes(b"not a png")
+    out = tmp_path / "site"; build(fixture_project, fixture_project / "proposals", out, None, None)
+    assert (out / "data/runs/2026-01-02_run-1.json").exists()
+
+
+def test_runs_sorted_by_date_then_number(fixture_project, tmp_path):
+    p = fixture_project / "proposals"
+    for name in ("2026-01-03_run-10", "2026-01-03_run-7"):
+        shutil.copytree(p / "2026-01-02_run-1", p / name)
+    out = tmp_path / "site"; build(fixture_project, p, out, None, None)
+    idx = json.loads((out / "data/index.json").read_text(encoding="utf-8"))
+    assert [r["label"] for r in idx["runs"]] == ["run-1", "run-7", "run-10"]
