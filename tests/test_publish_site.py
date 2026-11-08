@@ -1,7 +1,14 @@
 """publish_site: merge with what is already published, refuse an unsafe build. Made-up names only."""
 import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
 
 from publish_site import check, merge, richness
+
+SCRIPT = Path(__file__).resolve().parents[1] / "plugins/studio/skills/competition-proposal/scripts/publish_site.py"
 
 
 def make_site(root, runs, references=True):
@@ -72,3 +79,83 @@ def test_check_needs_build_json(tmp_path):
     s = make_site(tmp_path / "s", {"r1": 1})
     (s / "build.json").unlink()
     assert check(s, [], True)
+
+
+def test_merge_skips_keys_that_are_not_run_names(tmp_path):
+    local, pub = make_site(tmp_path / "l", {"r1": 1}), make_site(tmp_path / "p", {"r1": 1})
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("x", encoding="utf-8")
+    idx = json.loads((pub / "data/index.json").read_text(encoding="utf-8"))
+    idx["runs"].append({"key": "../../victim", "date": "z"})
+    (pub / "data/index.json").write_text(json.dumps(idx), encoding="utf-8")
+    assert merge(local, pub) == []
+    assert (victim / "keep.txt").exists()
+
+
+def test_merge_skips_cards_without_a_run_file_and_dropped_runs(tmp_path):
+    local, pub = make_site(tmp_path / "l", {"r1": 1}), make_site(tmp_path / "p", {"r0": 3, "r2": 3})
+    (pub / "data/runs/r2.json").unlink()
+    assert merge(local, pub) == ["r0"]
+    local2 = make_site(tmp_path / "l2", {"r1": 1})
+    assert merge(local2, pub, ("r0",)) == []
+
+
+def test_merge_skips_runs_with_links(tmp_path):
+    local, pub = make_site(tmp_path / "l", {"r1": 1}), make_site(tmp_path / "p", {"r0": 1})
+    outside = tmp_path / "secret.txt"
+    outside.write_text("x", encoding="utf-8")
+    try:
+        (pub / "img/r0/link.jpg").symlink_to(outside)
+    except OSError:
+        pytest.skip("this computer can't make symbolic links")
+    assert merge(local, pub) == []
+
+
+def _bare(tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    return remote
+
+
+def _publish(site, remote, *extra, answer=None):
+    return subprocess.run([sys.executable, str(SCRIPT), str(site), "--remote", str(remote), "--no-references", *extra],
+                          input=answer, capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+
+def _branch_files(remote):
+    got = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "gh-pages"],
+                         capture_output=True, text=True)
+    return got.stdout.split() if got.returncode == 0 else None
+
+
+def test_publish_needs_a_yes(tmp_path):
+    site, remote = make_site(tmp_path / "s", {"r1": 1}, references=False), _bare(tmp_path)
+    done = _publish(site, remote, answer="n\n")
+    assert "Not published" in done.stdout and _branch_files(remote) is None
+    done = _publish(site, remote, answer="")          # no terminal: input() ends
+    assert "Not published" in done.stdout + done.stderr and _branch_files(remote) is None
+
+
+def test_publish_then_republish_keeps_other_runs(tmp_path):
+    remote = _bare(tmp_path)
+    first = make_site(tmp_path / "a", {"r0": 2}, references=False)
+    assert _publish(first, remote, "--yes").returncode == 0
+    second = make_site(tmp_path / "b", {"r1": 1}, references=False)
+    done = _publish(second, remote, "--yes")
+    assert done.returncode == 0, done.stderr
+    files = _branch_files(remote)
+    assert "img/r0/d0.jpg" in files and "img/r1/d0.jpg" in files
+
+
+def test_publish_stops_when_the_remote_cannot_be_read(tmp_path):
+    site = make_site(tmp_path / "s", {"r1": 1}, references=False)
+    done = _publish(site, tmp_path / "no-such-remote.git", "--yes")
+    assert done.returncode != 0 and "Nothing was changed" in done.stdout + done.stderr
+
+
+def test_publish_needs_references_or_no_references(tmp_path):
+    site, remote = make_site(tmp_path / "s", {"r1": 1}), _bare(tmp_path)
+    done = subprocess.run([sys.executable, str(SCRIPT), str(site), "--remote", str(remote), "--yes"],
+                          capture_output=True, text=True)
+    assert done.returncode != 0 and "--no-references" in done.stdout + done.stderr
