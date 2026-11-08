@@ -110,19 +110,18 @@ def elevation_tree(base, mid, r, w, style, rnd):
     shade = (f'<rect x="{mid[0] - 2 * r:.1f}" y="{mid[1] - 2 * r:.1f}" width="{4 * r:.1f}" height="{4 * r:.1f}" '
              f'fill="{ink}" fill-opacity="0.13"/>'
              f'<path d="{crown}" transform="translate({-0.22 * r:.1f},{-0.14 * r:.1f})" fill="{fill}"/>')
+    sx, sy = mid[0], mid[1] + rnd.uniform(0.2, 0.45) * r   # the trunk forks once inside the crown
     branches = []
-    for _ in range(rnd.randint(3, 5)):   # from the trunk inside the crown's lower half, up and out
-        f = rnd.uniform(0.0, 0.75)
-        sx, sy = mid[0], mid[1] + f * 1.1 * r
-        a = math.radians(rnd.choice((-1, 1)) * rnd.uniform(25, 60))
-        ln = r * rnd.uniform(0.45, 0.8)
+    for side in (-1, 1):   # two branches, one to each side, up and out
+        a = math.radians(side * rnd.uniform(25, 45))
+        ln = r * rnd.uniform(0.55, 0.8)
         ex, ey = sx + ln * math.sin(a), sy - ln * math.cos(a)
         branches.append(f'M{sx:.1f},{sy:.1f} Q{sx + 0.3 * (ex - sx):.1f},{sy + 0.6 * (ey - sy):.1f} {ex:.1f},{ey:.1f}')
     cid = "tc%x" % rnd.getrandbits(48)   # this crown's own clip, for its shaded side
     return (trunk
             + f'<path d="{crown}" fill="{fill}" fill-opacity="0.92" stroke="{ink}" stroke-width=".6" stroke-linejoin="round"/>'
             + f'<clipPath id="{cid}"><path d="{crown}"/></clipPath><g clip-path="url(#{cid})">{shade}</g>'
-            + f'<path d="M{mid[0]:.1f},{mid[1] + 1.1 * r:.1f} L{mid[0]:.1f},{mid[1] - 0.2 * r:.1f} {" ".join(branches)}" '
+            + f'<path d="M{mid[0]:.1f},{mid[1] + 1.1 * r:.1f} L{sx:.1f},{sy:.1f} {" ".join(branches)}" '
               f'fill="none" stroke="{style["trunk"]}" stroke-width="{max(.5, tw * 0.35):.1f}" stroke-linecap="round" stroke-opacity="0.8"/>')
 
 
