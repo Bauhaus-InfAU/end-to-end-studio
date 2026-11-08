@@ -183,6 +183,8 @@ def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
                     if f["properties"]["kind"] == "entrance")
         arrows = len(re.findall(r'<line [^>]+/><path d="M[^"]+Z" fill="[^"]+"/>', detail))   # a shaft and its head
         assert doors and arrows >= 1, (doors, arrows)
+        assert ">Walls, cut at the ground floor</text>" in detail   # 1:1,000: a ground-floor plan, its walls cut
+        assert ">Walls, cut at the ground floor</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
         assert "ground-floor" not in made["site-plan"]["layers_used"]
         assert ">Entrances</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     finally:

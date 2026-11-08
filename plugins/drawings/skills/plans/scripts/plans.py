@@ -72,6 +72,9 @@ DEFAULTS = {
     'detail_overlap_max': 0.1,  # two detail areas may share at most this part of the smaller one's window
     'detail_shown_min': 0.7,    # a detail area whose frame shows less of its subject (the new buildings around it) is too small
     'entrance_mm': 4,           # an entrance arrow's length on paper, mm
+    'cut_scale_max': 1000,      # detail areas at this scale and larger are ground-floor plans: outer walls cut, open at the doors
+    'wall_m': 0.5,              # the cut outer wall's thickness, metres
+    'door_m': 2.0,              # a door's opening in the cut wall, metres
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
     'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
     'idea_band_mm': 7,          # a line idea is drawn as a band this wide on paper, in the accent's pale tone
@@ -91,7 +94,7 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
           'rail': 'Rail', 'tree': 'Trees', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
-          'public': 'Squares, shared streets', 'entrance': 'Entrances', 'bike-stands': 'Bike stands',
+          'public': 'Squares, shared streets', 'entrance': 'Entrances', 'cut': 'Walls, cut at the ground floor', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
           'courtyard': 'Shared courtyards', 'active-gf': 'Ground floors open to the public', 'idea': 'The idea',
           'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
@@ -512,15 +515,25 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             fill(g, S['context'], 'context')
         for p, g in inside(KEPT):
             fill(g, S['existing'], 'existing', S['ink'], 'thin')
-        # 6. new buildings
+        # 6. new buildings; in a detail area at cut_scale_max and larger, cut at the ground floor
+        cut = kind == 'detail' and scale <= CFG['cut_scale_max']
+        door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []
+        tone = S['paper'] if cut else S['new']             # a ground-floor plan shows the inside, not the roof
         for p, g in inside(NEW):
             if p.get('landmark'):
-                fill(g, S['new'], 'landmark', S['ink'], 'thick')
+                fill(g, tone, 'landmark', S['ink'], 'thick')
             else:
-                fill(g, S['new'], 'new', S['ink'], 'mid')
+                fill(g, tone, 'new', S['ink'], 'mid')
             if kind == 'detail' and ACTIVE_GF(p):          # in a detail area, a ground floor open to the public: hatched
                 o.append(f'<path d="{d(g)}" fill="url(#gf-{name})" stroke="none"/>')
                 legend.setdefault('active-gf', ('hatch',))
+            if cut:                                          # a ground-floor plan: the outer walls cut, open at the doors
+                wall = g.difference(g.buffer(-CFG['wall_m'], join_style=2))
+                doors = [q for q in door_pts if q.distance(g.exterior if g.geom_type == 'Polygon' else g.boundary) < 1.5]
+                if doors:
+                    wall = wall.difference(unary_union([q.buffer(CFG['door_m'] / 2) for q in doors]))
+                if not wall.is_empty:
+                    fill(wall, S['ink'], 'cut')
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')
@@ -560,14 +573,15 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 wt = tw(str(p['label']), fs)
                 x0_ = x if anchor == 'start' else x - wt if anchor == 'end' else x - wt / 2
                 bb = (x0_, y - fs, x0_ + wt, y + 0.2 * fs)
-                if any(bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
-                    continue                              # a label that would cover another is left out
+                if bb[0] < 0 or bb[1] < 0 or bb[2] > Wm or bb[3] > Hm or any(
+                        bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
+                    continue                              # a label off the map or over another is left out
                 taken.append(bb)
                 o.append(f'<text x="{f2(x)}" y="{f2(y)}" font-size="{f2(fs)}" text-anchor="{anchor}" fill="{S["ink"]}" '
                          f'stroke="{S["paper"]}" stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(str(p["label"]))}</text>')
         # 9. storeys on the new buildings
         if kind == 'detail' or CFG.get('storeys_on_site_plan'):
-            ink_on_new = S['ink'] if lum(S['new']) > 0.55 else S['paper']   # whichever reads on the new buildings' tone
+            ink_on_new = S['ink'] if cut or lum(S['new']) > 0.55 else S['paper']   # whichever reads on the buildings' tone
             for p, g in inside(NEW):
                 if p.get('floors') is None:
                     continue
@@ -577,7 +591,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 c = g.representative_point()
                 x, y = P(c.x, c.y)
                 o.append(f'<text x="{f2(x)}" y="{f2(y + 0.36 * fs)}" font-size="{f2(fs)}" text-anchor="middle" fill="{ink_on_new}">{s}</text>')
-                legend.setdefault('storeys', ('text', ink_on_new))
+                legend.setdefault('storeys', ('text', ink_on_new, tone))
                 taken.append((x - tw(s, fs) / 2, y - 0.5 * fs, x + tw(s, fs) / 2, y + 0.5 * fs))
         # 9b. names, so a place reads as a place: on every plan the squares, centres, parks and stops; in a detail
         #     area also the buildings' special uses and the streets. A name that would cover another, or leave the
@@ -704,9 +718,20 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         if kind == 'detail':
             gf_uses = [g for p, g in gfd if p.get('kind') == 'use' and p.get('label')]
             for p, g in inside(NEW):
-                u = str(p.get('use') or '').strip()
-                if not u or any(u.startswith(w) for w in CFG['plain_uses']) or any(g.distance(q) < 5 for q in gf_uses):
+                if any(g.distance(q) < 5 for q in gf_uses):
                     continue                              # ground-floor's label at the door says it already
+                u = str(p.get('use') or '').strip()
+                if cut:   # a ground-floor plan: what the ground floor holds and its area, where the data says it
+                    u = str(p.get('ground_floor') or ('' if u.startswith(('housing', 'mixed')) else u)).strip()
+                    if not u or u.startswith('housing'):
+                        continue
+                    s = '%s %s m²' % (u[0].upper() + u[1:], '{:,}'.format(int(round(g.area, -1))))
+                    c = g.representative_point()
+                    x, y = P(c.x, c.y)
+                    put(x, y + 1.1 * fs, s, within=g) or put(x, y, s, within=g)   # inside, or not at all
+                    continue
+                if not u or any(u.startswith(w) for w in CFG['plain_uses']):
+                    continue
                 s = u[0].upper() + u[1:]
                 c = g.representative_point()
                 x, y = P(c.x, c.y)
@@ -882,7 +907,9 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
         elif spec[0] == 'dot':
             o.append(f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>')
         elif spec[0] == 'text':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{S["new"]}"/>')
+            bg = spec[2] if len(spec) > 2 else S['new']   # the buildings' tone: the roof's, or a cut plan's paper
+            o.append(f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{bg}" '
+                     f'stroke="{ink}" stroke-width="{m(thin)}"/>')
             o.append(f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>')
         else:
             o.append(symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k))
