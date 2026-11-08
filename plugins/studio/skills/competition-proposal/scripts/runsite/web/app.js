@@ -9,7 +9,10 @@
  *                           Rejects if the file doesn't load.
  * Site.geo(key)             -> Promise<Geo|null>   data/geo/<key>.json, cached;
  *                           key "shared" is the project's site, climate and
- *                           analysis. Resolves null when the run has no file.
+ *                           analysis. Resolves null when the file is missing
+ *                           (the 404 still shows in the network log), so
+ *                           check run.has.geo before calling it. A failed
+ *                           load isn't cached.
  * Site.page(name, {mount(el, run), unmount()})
  *                           Register a page. name: "model" | "panels" |
  *                           "loop" | "dash".
@@ -17,9 +20,12 @@
  *                             <main id="view"> below the top bar (absolute,
  *                             fills the window, overflow:auto; el.dataset.page
  *                             is the page name). run is the Run, or null on
- *                             #all. mount may be async.
+ *                             #all. mount may be async; after each await,
+ *                             return if !el.isConnected (the route has moved
+ *                             on and el is gone).
  *                           unmount(): called before the next mount, even when
- *                             only the run changes. Stop timers, animation
+ *                             only the run changes, and always after its own
+ *                             mount has settled. Stop timers, animation
  *                             frames, deck.gl instances and window listeners
  *                             here; the shell throws el away afterwards.
  * Site.go(key, page)        Navigate: sets the hash. go(key, "model"|"panels"|
@@ -37,8 +43,10 @@
  * shows "This run isn't on the site." in the view.
  *
  * Shared CSS in app.css: tokens (--bg --paper --ink --ink2 --muted --hair
- * --hair2 --opus --sonnet --sel --issue, plus --issue-text for words in the
- * issue red, --bar for the top bar height, --sans, --mono) and the classes
+ * --hair2 --opus --sonnet --sel --issue, plus --issue-text:#cc2f35 for words
+ * in the issue red: --issue is 3.9:1 on white, below WCAG AA for text, so use
+ * --issue for lines and dots and --issue-text for text; --bar for the top bar
+ * height, --sans, --mono) and the classes
  * .mono .num .muted .label .bad .float .tip (.tip.on shows it) .md .view-msg.
  * Page styles go in <page>.css, scoped under #view[data-page="<page>"].
  * ------------------------------------------------------------------------
@@ -124,6 +132,7 @@ function geo(key) {
   if (!geoCache[key]) {
     geoCache[key] = fetch(`data/geo/${encodeURIComponent(key)}.json`)
       .then(res => res.ok ? res.json() : null);
+    geoCache[key].catch(() => delete geoCache[key]);
   }
   return geoCache[key];
 }
@@ -131,8 +140,9 @@ function geo(key) {
 /* ---------- routing ---------- */
 const picker = document.getElementById("run-picker");
 let lastKey = null;      // the run the picker shows; kept while on #all
-let mounted = null;      // the page object currently mounted
-let routeId = 0;         // drops a mount whose route was left while it loaded
+let mounted = null;      // {page, settled}: the last mount and when it finished
+let teardown = Promise.resolve();   // unmounts run one after another, in order
+let routeId = 0;         // drops a route that was left while it waited
 
 const card = key => Site.index.runs.find(r => r.key === key);
 const newest = () => Site.index.runs[Site.index.runs.length - 1];
@@ -145,7 +155,8 @@ function go(key, page) {
   location.hash = hashFor(key, page);
 }
 function parse(hash) {
-  const h = decodeURIComponent(hash.replace(/^#/, ""));
+  let h;
+  try { h = decodeURIComponent(hash.replace(/^#/, "")); } catch (e) { return null; }
   if (h === "all") return { key: null, page: "dash" };
   let m = h.match(/^all\/(.+)$/);
   if (m) return { key: m[1], page: "dash" };
@@ -186,12 +197,18 @@ async function route() {
   const r = parse(location.hash);
   if (!r) { location.replace(hashFor(newest().key, "model")); return; }
   const id = ++routeId;
-  if (mounted) {
-    try { mounted.unmount(); } catch (e) { console.error(e); }
-    mounted = null;
-  }
-  const el = freshView(r.page);
+  const el = freshView(r.page);   // detaches the old el at once, so a pending mount sees it gone
   updateBar(r);
+  // Unmount the previous page only after its mount has settled.
+  const prev = mounted;
+  mounted = null;
+  teardown = teardown.then(async () => {
+    if (!prev) return;
+    await prev.settled;
+    try { prev.page.unmount(); } catch (e) { console.error(e); }
+  });
+  await teardown;
+  if (id !== routeId) return;
   if (r.key && !card(r.key)) { message(el, "This run isn't on the site."); return; }
   let data = null;
   if (r.key) {
@@ -200,11 +217,14 @@ async function route() {
       if (id === routeId) message(el, "This run's data didn't load.");
       return;
     }
+    if (id !== routeId) return;
   }
   const page = pages[r.page];
-  if (id !== routeId || !page) return;
-  mounted = page;
-  try { await page.mount(el, data); } catch (e) { console.error(e); }
+  if (!page) return;
+  const settled = (async () => {
+    try { await page.mount(el, data); } catch (e) { console.error(e); }
+  })();
+  mounted = { page, settled };
 }
 
 function fillBar() {

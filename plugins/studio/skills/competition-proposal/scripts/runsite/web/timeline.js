@@ -25,7 +25,7 @@
  * highlight(skill|null)  marks that skill's row in --sel; null clears.
  *
  * Hovering a bar shows skill, times, model and its log line in a tooltip.
- * Play stops by itself when el leaves the page. A run with no bars renders
+ * Play stops by itself when the timeline leaves the page or is rebuilt. A run with no bars renders
  * "No timeline: this run's log has no times." and returns no-op methods.
  */
 
@@ -243,7 +243,7 @@ function timeline(el, run, opts = {}) {
     btn.setAttribute("aria-label", "Pause");
     let last = performance.now();
     const tick = time => {
-      if (!el.isConnected) { frame = null; return; }
+      if (!cursor.isConnected) { frame = null; return; }
       api.set(cur + ((time - last) / 1000) * (T / PLAY_SECONDS));
       last = time;
       if (cur >= T) stop();

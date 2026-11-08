@@ -45,7 +45,7 @@ button,select{font:inherit;color:inherit}
 .tip{position:fixed;z-index:50;pointer-events:none;max-width:280px;padding:6px 9px;border-radius:6px;
   background:var(--ink);color:#fff;font-size:12px;line-height:1.4;opacity:0;transition:opacity .1s}
 .tip.on{opacity:1}
-.tip .tip-dim{color:#c9c8c4}
+.tip .tip-dim{color:rgba(255,255,255,.75)}
 
 /* markdown from Site.md */
 .md p{margin:0 0 .7em}
@@ -98,7 +98,6 @@ button,select{font:inherit;color:inherit}
 .tl-ev{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--issue);opacity:.6}
 .tl-cursor{position:absolute;top:-6px;bottom:0;width:1px;margin-left:-.5px;background:var(--sel)}
 .tl-cursor::before{content:"";position:absolute;top:0;left:-4px;width:9px;height:9px;border-radius:50%;background:var(--sel)}
-.tl-scrub{position:absolute;inset:-6px 0 0;pointer-events:auto;cursor:ew-resize;touch-action:none}
 .tl-empty{margin:0;padding:14px 24px;color:var(--muted)}
 
 /* phone width */
