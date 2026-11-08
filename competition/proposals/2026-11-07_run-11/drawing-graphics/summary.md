@@ -1,0 +1,3 @@
+Look: a pale green-grey plan language with white buildings, fine ink lines, dotted tree crowns and roman storey numbers, as in all three winners' site plans, with almost no text on the drawings.
+Accent: muted rose-red #c24a4f with pale pink #f0c4c4, marking only the public ground of the line (the six crossings, the Station Bridge deck, the first row's fronts onto the line).
+Unsure: the rose accent matches all three winners, so it may not set us apart; I read the nine boards and four single drawings, so the mobility, climate and open-space recipes are thin; the accent is close to the pale greens in value, so it needs the hatch.

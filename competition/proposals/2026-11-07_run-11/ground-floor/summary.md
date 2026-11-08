@@ -1,0 +1,3 @@
+Placed 281 doors on 253 buildings (all on a street facade), 1,088 bike stands, 79 play areas (7,174 m2; 45 of 124 courtyards under 600 m2 got none, none had a playground), 29 labelled centre uses (the 1,200 m2 food market put into building 172 at Station Bridge), 6 bus bays and 300 bike spaces at Station Bridge.
+Ground-floor area of the non-housing uses at the centres: 66,984 m2.
+Flags: none (every use and surface found room); stands (4 per door), play areas (100 m2) and the 300 bike spaces are illustrative proposals, not the brief's numbers (the brief gives only the 6 platforms, p. 27); massing change needed: none.
