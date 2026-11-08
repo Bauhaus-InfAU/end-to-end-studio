@@ -69,7 +69,15 @@ DEFAULTS = {
     "canopy_landuse": ({"forest": ["wood", 10, 20], "natural:wood": ["wood", 10, 20], "natural:scrub": ["wood", 5, 5],
                         "orchard": ["orchard", 6, 6]}, "kept land uses drawn as canopy: group, crown diameter, height, m"),
     "avenue_offset_m": (4, "avenue trees stand this far either side of a park path's centre line, m"),
-    "cluster_every_m": (35, "in parks, a loose cluster of one to five trees about this far apart, m"),
+    "cluster_every_m": (35, "in parks, a group of three to eight trees about this far apart, m"),
+    "edge_cluster_every_m": (22, "along a park's edge, within edge_band_m of it, groups this far apart, m"),
+    "edge_band_m": (15, "the band inside a park's edge where groups stand closer, m"),
+    "tree_vary": (0.3, "a planted tree's crown and height vary by up to this share of its group's"),
+    "hedge_width_m": (1.5, "hedges round playgrounds and along park edges that face a street, m"),
+    "hedge_min_m": (8, "a hedge shorter than this is left out, m"),
+    "hedge_share": (0.4, "the share of park edges facing a street that get a hedge; every playground gets one"),
+    "field_edge_m": (12, "a field the plan keeps open takes groups of trees in a band this wide along its edge, m"),
+    "field_edge_roles": (["agriculture"], "structure-plan green roles whose edges take trees though the land stays open"),
     "treeless_roles": (["agriculture", "energy", "utility", "sport"], "structure-plan green roles whose land gets no trees"),
     "open_landuse": (["farmland", "meadow", "grass"],
                      "land uses that stay without trees where the structure plan keeps them (everywhere without one)"),
@@ -373,6 +381,11 @@ def main():
     treeless = unary_union([g for p, g in plan if {str(r).lower() for r in p.get("roles") or []} & set(cfg["treeless_roles"])]
                            + [unary_union([g for p, g in plots if p.get("landuse") in cfg["open_landuse"]]).intersection(kept_zone)
                               .difference(wood)])
+    # a field stays open, but its edge takes trees, as a field margin does; land of another treeless role stays bare
+    def greens(roles): return unary_union([g for p, g in plan if {str(r).lower() for r in p.get("roles") or []} & set(roles)])
+    field = greens(cfg["field_edge_roles"])
+    treeless = treeless.difference(field.difference(field.buffer(-cfg["field_edge_m"]))
+                                   .difference(greens(set(cfg["treeless_roles"]) - set(cfg["field_edge_roles"]))))
     no_crown = unary_union([keep_free, treeless, water_u, buildings] + water + playgrounds
                            + [g for p, g in mass_open if p.get("use") == "water"])
     no_trunk = unary_union([sealed] + [g.buffer(cfg["path_width_m"] / 2 + 0.5) for g in paths + boardwalks]
@@ -380,6 +393,8 @@ def main():
     courts = [g.intersection(site) for p, g in mass_open if p.get("use") == "garden"]
     trees = plant(cfg, kept, covers, paths, courts, sealed, no_crown, no_trunk)
     n_old = sum(1 for t in trees if t[4])
+    hedge = hedges(cfg, parks, playgrounds, streets, unary_union(paths + boardwalks + [g for g, _ in links]),
+                   unary_union([keep_free, treeless, water_u, buildings, sealed] + water))
 
     # Write.
     out = Path(a.out)
@@ -418,6 +433,8 @@ def main():
             crosses_street=bool(g.intersects(streets)))
     for pt, group, crown, height, existing in trees:
         add(pt, kind="tree", group=group, crown_m=crown, height_m=height, existing=existing)
+    for g in hedge:
+        add(g, kind="hedge", width_m=cfg["hedge_width_m"], length_m=round(g.length))
     with open(out / "open-space.geojson", "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f)
 
@@ -801,7 +818,8 @@ def plant(cfg, kept, covers, paths, courts, sealed, no_crown, no_trunk):
                    for u, v in near.get((i + di, j + dj), ())):
                 continue
             near.setdefault((i, j), []).append((x, y))
-            out.append((Point(x, y), group, crown, height, existing))
+            f = 1.0 if existing else rng.uniform(1 - cfg["tree_vary"], 1 + cfg["tree_vary"])   # young and old trees
+            out.append((Point(x, y), group, round(crown * f, 1), round(height * f, 1), existing))
 
     for lu, g in kept:
         if lu in cfg["canopy_landuse"]:
@@ -826,12 +844,31 @@ def plant(cfg, kept, covers, paths, courts, sealed, no_crown, no_trunk):
     put(*scatter(covers["grove"], step, rng), "grove", crown, height)
     crown, height, step = cfg["tree_sizes"]["park"]
     ground = unary_union([covers[n] for n in ("lawn", "meadow", "wet-meadow")])
-    for x, y in zip(*scatter(ground, cfg["cluster_every_m"], rng, 0.4)):
-        k = int(rng.integers(1, 6))
-        ang = rng.uniform(0, 2 * math.pi) + np.arange(k - 1) * 2 * math.pi / max(k - 1, 1)
-        xs, ys = np.array([x, *(x + step * np.cos(ang))]), np.array([y, *(y + step * np.sin(ang))])
+    edge = ground.difference(ground.buffer(-cfg["edge_band_m"]))   # the park's rim, where groups frame the open middle
+    centres = [*zip(*scatter(edge, cfg["edge_cluster_every_m"], rng, 0.45)), *zip(*scatter(ground, cfg["cluster_every_m"], rng, 0.45))]
+    for x, y in centres:   # a group: three to eight trees round a point, close enough for their crowns to touch
+        k = int(rng.integers(3, 9))
+        xs, ys = x + rng.normal(0, 0.7 * step, k), y + rng.normal(0, 0.7 * step, k)
         inside = shapely.contains_xy(ground, xs, ys)
         put(xs[inside], ys[inside], "park", crown, height)
+    return out
+
+
+def hedges(cfg, parks, playgrounds, streets, gaps, no_hedge):
+    """Hedges round each playground and along some (hedge_share) of the stretches of a park's edge that face a street,
+    cut where paths and links pass: lines, hedge_min_m long or more."""
+    w, rng = cfg["hedge_width_m"], np.random.default_rng(cfg["tree_seed"])
+    near = streets.buffer(w + 2)
+    lines = [(p.buffer(w / 2 + 0.5).boundary, True) for p in playgrounds]
+    lines += [(p.buffer(-w / 2 - 0.5).boundary.intersection(near), False) for p in parks]
+    cut = unary_union([gaps.buffer(3), no_hedge])
+    out = []
+    for g, always in lines:
+        for q in getattr(g.difference(cut), "geoms", [g.difference(cut)]):
+            q = shapely.line_merge(q) if q.geom_type == "MultiLineString" else q
+            for s in getattr(q, "geoms", [q]):
+                if s.geom_type == "LineString" and s.length >= cfg["hedge_min_m"] and (always or rng.random() < cfg["hedge_share"]):
+                    out.append(s)
     return out
 
 
