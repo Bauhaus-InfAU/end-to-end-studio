@@ -166,6 +166,33 @@ def test_plans_line_streets_with_trees_in_detail_areas_only(drawn):
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 
+def test_plans_keep_street_trees_off_the_road(drawn):
+    """Where the street surface covers a row's place, as at a junction, no street tree stands on it."""
+    out, site_dir = drawn
+    mass = json.loads((out / "massing/massing.geojson").read_text(encoding="utf-8"))["features"]
+    sq = shape(next(f for f in mass if f["properties"].get("name") == "Square")["geometry"]).centroid
+    epsg = (32600 if sq.y >= 0 else 32700) + int((sq.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    c = transform(to_m, sq)
+    count = lambda: len(re.findall(r"<circle", (out / f"plans/{FILES[1]}.svg").read_text(encoding="utf-8")))
+    before = count()
+    line = {"type": "LineString", "coordinates": [list(to_ll(c.x - 120, c.y)), list(to_ll(c.x + 120, c.y))]}
+    corners = [(-130, -30), (130, -30), (130, 30), (-130, 30), (-130, -30)]
+    road = {"type": "Polygon", "coordinates": [[list(to_ll(c.x + dx, c.y + dy)) for dx, dy in corners]]}
+    streets = out / "streets/streets.geojson"
+    streets.parent.mkdir(exist_ok=True)
+    streets.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "centreline", "level": "local", "width": 10}, "geometry": line},
+        {"type": "Feature", "properties": {"kind": "street"}, "geometry": road}]}), encoding="utf-8")
+    try:
+        draw(out, site_dir)
+        assert count() == before, (before, count())
+    finally:
+        streets.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
 def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
     """With ground-floor/detail.geojson, a detail area shows the doors and bike stands; the site plan doesn't."""
     out, site_dir = drawn

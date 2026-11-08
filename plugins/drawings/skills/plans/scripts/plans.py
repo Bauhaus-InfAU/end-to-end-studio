@@ -582,7 +582,8 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         if kind == 'detail':
             # a row of street trees along both sides of each street, clear of the buildings and the trees already there
             have = [g for p, g in inside(MASS + (OPEN or [])) if p.get('kind') == 'tree' and g.geom_type == 'Point']
-            clear = unary_union([g.buffer(1.0) for p, g in inside(BUILD)] + [g.buffer(4.0) for g in have] or [Polygon()])
+            road = [g for p, g in inside([x for x in (STREETS or []) if x[0].get('kind') == 'street'])]   # also where streets meet
+            clear = unary_union([g.buffer(1.0) for p, g in inside(BUILD)] + [g.buffer(4.0) for g in have] + road or [Polygon()])
             step = CFG['street_tree_m']
             for p, g in inside([x for x in (STREETS or []) if x[0].get('kind') == 'centreline'
                                 and 'LineString' in x[1].geom_type]):
@@ -994,7 +995,7 @@ def legend_items(legend, x0, top0, cols, colw, rows, rowh, m, Y, k, hatch_id):
 
 
 def legend_box(legend, k, hatch_id, map_h_mm, cols=2, measure=False):
-    """The legend over the map's bottom-left corner, the way the winners set theirs: a bold heading, then two columns
+    """The legend over the map's bottom-left corner: a bold heading, then two columns
     of entries, each its label with the sample to its right, the samples lined up; on the paper tone, no outline.
     Returns (svg lines, its box in mm)."""
     keys = list(legend)
