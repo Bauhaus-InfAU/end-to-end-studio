@@ -69,6 +69,8 @@ DEFAULTS = {
     'contour_m': 1,             # contour lines from the site's terrain model every this many metres (0: none)
     'contour_index': 5,         # every this many contours is stronger and carries its height
     'contour_cell_mm': 1.0,     # the terrain is sampled this far apart on paper, mm, and smoothed, so lines run soft
+    'street_tree_m': 11,        # detail areas: a street tree this often along both sides of each street, metres
+    'street_tree_kerb_m': 2,    # ... this far outside the street's edge, metres
     'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
     'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
@@ -78,6 +80,11 @@ DEFAULTS = {
     'detail_pad_m': 30,         # ground around them, metres
     'detail_min_mm': 150,       # a detail window is never smaller than this on paper, where the panel allows
     'detail_overlap_max': 0.1,  # two detail areas may share at most this part of the smaller one's window
+    'detail_shown_min': 0.7,    # a detail area whose frame shows less of its subject (the new buildings around it) is too small
+    'entrance_mm': 4,           # an entrance arrow's length on paper, mm
+    'cut_scale_max': 1000,      # detail areas at this scale and larger are ground-floor plans: outer walls cut, open at the doors
+    'wall_m': 0.5,              # the cut outer wall's thickness, metres
+    'door_m': 2.0,              # a door's opening in the cut wall, metres
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
     'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
     'idea_band_mm': 7,          # a line idea is drawn as a band this wide on paper, in the accent's pale tone
@@ -87,6 +94,8 @@ DEFAULTS = {
     'detail_site_min': 0.6,     # a detail area with less of its window on the site is flagged as weak
     'detail_new_min': 6,        # ... and one with fewer new buildings in it
     'legend_mm': 30,            # the strip under the map for the title, legend, scale bar, north and source
+    'legend_box_mm': 4,         # the site plan's legend box sits this far in from the map's bottom-left corner, mm
+    'legend_box_opacity': 0.85, # ... on the paper tone at this opacity, so the plan shows through
     'caption_room_mm': 60,      # panel height kept free for a caption and the legend strip
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
     'png_px_per_mm': 4,         # PNG resolution, pixels per printed mm
@@ -97,10 +106,10 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
           'rail': 'Rail', 'tree': 'Trees', 'hedge': 'Hedges', 'stop': 'Stop', 'hub': 'Mobility hub', 'access': 'Car access',
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
-          'public': 'Squares, shared streets', 'entrance': 'Entrances', 'bike-stands': 'Bike stands',
+          'public': 'Squares, shared streets', 'entrance': 'Entrances', 'cut': 'Walls, cut at the ground floor', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
           'courtyard': 'Shared courtyards', 'active-gf': 'Ground floors open to the public', 'idea': 'The idea',
-          'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
+          'site-plan': 'Site plan', 'figure-ground': 'Figure-ground', 'legend': 'Legend'}
 # the look without a drawing standard: black on white, one accent
 FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#ffffff', 'public': '#f0b8b5',
                   'shadow': '#a8a8a8', 'shadow_len': 1.2,
@@ -522,7 +531,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         j = CFG['idea_join_m']                           # grown and shrunk again: close lines become one band
         idea_ground = unary_union([IDEA_AREA, IDEA_LINE.buffer(j + CFG['idea_band_mm'] * k / 2).buffer(-j)
                                    if not IDEA_LINE.is_empty else Polygon()]).intersection(fr.buffer(10))
-        if not idea_ground.is_empty and kind != 'figure-ground':
+        if not idea_ground.is_empty and kind == 'site':   # the site plan only: up close the tint reads as a stain
             o.append(f'<path d="{d(idea_ground)}" fill="{S["accent"]}" fill-opacity="{CFG["idea_tint"]}" stroke="none" '
                      f'fill-rule="evenodd"/>')
             legend.setdefault('idea', ('band',))
@@ -570,6 +579,27 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         # 4c. trees at every scale, the massing's and open-space's: a crown over its soft shadow, under the buildings
         trees = [(*P(g.x, g.y), float(p.get('crown_m') or CFG['tree_crown_m']) / 2) for p, g in inside(MASS + (OPEN or []))
                  if p.get('kind') == 'tree' and g.geom_type == 'Point']
+        if kind == 'detail':
+            # a row of street trees along both sides of each street, clear of the buildings and the trees already there
+            have = [g for p, g in inside(MASS + (OPEN or [])) if p.get('kind') == 'tree' and g.geom_type == 'Point']
+            clear = unary_union([g.buffer(1.0) for p, g in inside(BUILD)] + [g.buffer(4.0) for g in have] or [Polygon()])
+            step = CFG['street_tree_m']
+            for p, g in inside([x for x in (STREETS or []) if x[0].get('kind') == 'centreline'
+                                and 'LineString' in x[1].geom_type]):
+                off = float(p.get('width') or CFG['street_w_new']) / 2 + CFG['street_tree_kerb_m']
+                for part in getattr(g, 'geoms', [g]):
+                    for side in (1, -1):
+                        try:
+                            row = part.offset_curve(side * off)
+                        except Exception:
+                            continue
+                        for ln in getattr(row, 'geoms', [row]):
+                            t = step / 2                 # the same rhythm on every run, so the plan doesn't jitter
+                            while t < ln.length:
+                                q = ln.interpolate(t)
+                                t += step
+                                if fr.contains(q) and not clear.contains(q):
+                                    trees.append((*P(q.x, q.y), CFG['tree_crown_m'] / 2))
         if trees:
             a = math.radians(CFG['shadow_az_deg'])
             dx, dy = 2 * CFG['tree_shadow'] * math.sin(a), -2 * CFG['tree_shadow'] * math.cos(a)
@@ -610,15 +640,25 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             fill(g, S['context'], 'context')
         for p, g in inside(KEPT):
             fill(g, S['existing'], 'existing', S['ink'], 'thin')
-        # 6. new buildings
+        # 6. new buildings; in a detail area at cut_scale_max and larger, cut at the ground floor
+        cut = kind == 'detail' and scale <= CFG['cut_scale_max']
+        door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []
+        tone = S['paper'] if cut else S['new']             # a ground-floor plan shows the inside, not the roof
         for p, g in inside(NEW):
             if p.get('landmark'):
-                fill(g, S['new'], 'landmark', S['ink'], 'thick')
+                fill(g, tone, 'landmark', S['ink'], 'thick')
             else:
-                fill(g, S['new'], 'new', S['ink'], 'mid')
+                fill(g, tone, 'new', S['ink'], 'mid')
             if kind == 'detail' and ACTIVE_GF(p):          # in a detail area, a ground floor open to the public: hatched
                 o.append(f'<path d="{d(g)}" fill="url(#gf-{name})" stroke="none"/>')
                 legend.setdefault('active-gf', ('hatch',))
+            if cut:                                          # a ground-floor plan: the outer walls cut, open at the doors
+                wall = g.difference(g.buffer(-CFG['wall_m'], join_style=2))
+                doors = [q for q in door_pts if q.distance(g.exterior if g.geom_type == 'Polygon' else g.boundary) < 1.5]
+                if doors:
+                    wall = wall.difference(unary_union([q.buffer(CFG['door_m'] / 2) for q in doors]))
+                if not wall.is_empty:
+                    fill(wall, S['ink'], 'cut')
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')
@@ -658,14 +698,15 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 wt = tw(str(p['label']), fs)
                 x0_ = x if anchor == 'start' else x - wt if anchor == 'end' else x - wt / 2
                 bb = (x0_, y - fs, x0_ + wt, y + 0.2 * fs)
-                if any(bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
-                    continue                              # a label that would cover another is left out
+                if bb[0] < 0 or bb[1] < 0 or bb[2] > Wm or bb[3] > Hm or any(
+                        bb[0] < q[2] and q[0] < bb[2] and bb[1] < q[3] and q[1] < bb[3] for q in taken):
+                    continue                              # a label off the map or over another is left out
                 taken.append(bb)
                 o.append(f'<text x="{f2(x)}" y="{f2(y)}" font-size="{f2(fs)}" text-anchor="{anchor}" fill="{S["ink"]}" '
                          f'stroke="{S["paper"]}" stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(str(p["label"]))}</text>')
         # 9. storeys on the new buildings
         if kind == 'detail' or CFG.get('storeys_on_site_plan'):
-            ink_on_new = S['ink'] if lum(S['new']) > 0.55 else S['paper']   # whichever reads on the new buildings' tone
+            ink_on_new = S['ink'] if cut or lum(S['new']) > 0.55 else S['paper']   # whichever reads on the buildings' tone
             for p, g in inside(NEW):
                 if p.get('floors') is None:
                     continue
@@ -675,7 +716,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                 c = g.representative_point()
                 x, y = P(c.x, c.y)
                 o.append(f'<text x="{f2(x)}" y="{f2(y + 0.36 * fs)}" font-size="{f2(fs)}" text-anchor="middle" fill="{ink_on_new}">{s}</text>')
-                legend.setdefault('storeys', ('text', ink_on_new))
+                legend.setdefault('storeys', ('text', ink_on_new, tone))
                 taken.append((x - tw(s, fs) / 2, y - 0.5 * fs, x + tw(s, fs) / 2, y + 0.5 * fs))
         # 9b. names, so a place reads as a place: on every plan the squares, centres, parks and stops; in a detail
         #     area also the buildings' special uses and the streets. A name that would cover another, or leave the
@@ -707,6 +748,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                      f'stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(s)}</text>')
             return True
 
+        if kind == 'site':                                 # the legend's box over the bottom-left corner: no names under it
+            soon = dict(legend, **{key: None for key in ('site', 'window') if key not in legend})
+            bx = legend_box(soon, k, name, Hm / k, measure=True)[1]
+            taken.append(tuple(v * k for v in bx))
         # the detail areas' names on the site plan first, at a corner of their window clear of the buildings
         blds = unary_union([g for p, g in inside(BUILD)] or [Polygon()])
         for wname, wb in windows:
@@ -770,7 +815,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
 
         # the idea first, so its name gets the room: an area's outline in the accent over its tint, a line's name
         # along its band, a point ringed
-        idea_here = [g for g in IDEA_G if g.intersects(fr)]
+        idea_here = [g for g in IDEA_G if g.intersects(fr)] if kind == 'site' else []   # the site plan carries the idea
         for g in idea_here:
             if g.geom_type.endswith('Polygon'):
                 line(g.boundary, S['accent'], 'thick')
@@ -802,9 +847,20 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         if kind == 'detail':
             gf_uses = [g for p, g in gfd if p.get('kind') == 'use' and p.get('label')]
             for p, g in inside(NEW):
-                u = str(p.get('use') or '').strip()
-                if not u or any(u.startswith(w) for w in CFG['plain_uses']) or any(g.distance(q) < 5 for q in gf_uses):
+                if any(g.distance(q) < 5 for q in gf_uses):
                     continue                              # ground-floor's label at the door says it already
+                u = str(p.get('use') or '').strip()
+                if cut:   # a ground-floor plan: what the ground floor holds and its area, where the data says it
+                    u = str(p.get('ground_floor') or ('' if u.startswith(('housing', 'mixed')) else u)).strip()
+                    if not u or u.startswith('housing'):
+                        continue
+                    s = '%s %s m²' % (u[0].upper() + u[1:], '{:,}'.format(int(round(g.area, -1))))
+                    c = g.representative_point()
+                    x, y = P(c.x, c.y)
+                    put(x, y + 1.1 * fs, s, within=g) or put(x, y, s, within=g)   # inside, or not at all
+                    continue
+                if not u or any(u.startswith(w) for w in CFG['plain_uses']):
+                    continue
                 s = u[0].upper() + u[1:]
                 c = g.representative_point()
                 x, y = P(c.x, c.y)
@@ -830,7 +886,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
-    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name, kind)
+    boxed = kind == 'site' and bool(legend)              # the site plan's legend sits over its bottom-left corner
+    if boxed:
+        o += legend_box(legend, k, name, Hm / k)[0]
+    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name, kind, boxed)
     Hs = H_strip * k
     head = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
             f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
@@ -883,11 +942,18 @@ def shadows(items):
 def symbol(kind, x, y, k, b=None):
     ink, paper = S['ink'], S['paper']
     sw = '%.2f' % (float(S['mid']) * k)
-    if kind == 'entrance':   # a triangle outside the facade, its tip at the door; b: the way the door faces, degrees
-        a = math.radians(180 if b is None else float(b))
-        ox, oy, L, hw = math.sin(a), -math.cos(a), 2.2 * k, 1.1 * k
-        bx, by = x + ox * L, y + oy * L
-        return f'<path d="M{x:.2f},{y:.2f}L{bx - oy * hw:.2f},{by + ox * hw:.2f}L{bx + oy * hw:.2f},{by - ox * hw:.2f}Z" fill="{ink}"/>'
+    if kind == 'entrance':   # an arrow from outside into the door, its head at the door; b: the way the door faces
+        if b is None:                                    # the legend: lying flat, pointing right, centred on x
+            a = math.radians(270)
+            x += CFG['entrance_mm'] * k / 2
+        else:
+            a = math.radians(float(b))
+        ox, oy, L = math.sin(a), -math.cos(a), CFG['entrance_mm'] * k
+        h, hw = 0.45 * L, 0.25 * L                       # the head's length and half width
+        tx, ty, hx, hy = x + ox * L, y + oy * L, x + ox * h, y + oy * h
+        return (f'<line x1="{tx:.2f}" y1="{ty:.2f}" x2="{hx:.2f}" y2="{hy:.2f}" stroke="{ink}" stroke-width="{sw}"/>'
+                f'<path d="M{x:.2f},{y:.2f}L{hx - oy * hw:.2f},{hy + ox * hw:.2f}L{hx + oy * hw:.2f},{hy - ox * hw:.2f}Z" '
+                f'fill="{ink}"/>')
     if kind == 'stop':
         return (f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{2.0 * k:.2f}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
                 f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{1.0 * k:.2f}" fill="{ink}"/>')
@@ -906,7 +972,84 @@ def north_angle(window):
     return math.atan2(x - cx, y - cy)
 
 
-def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', kind='site'):
+LEG_SW, LEG_GAP, LEG_PAD = 6, 1.5, 3       # a legend swatch's width, the gap to its label, a legend box's padding, mm
+
+
+def legend_grid(legend, room):
+    """Columns for the legend's entries in `room` mm: (columns, column width, rows, row height), every label aligned."""
+    colw = max(LEG_SW + LEG_GAP + tw(LAB.get(key, key), TXT) for key in legend) + 4
+    cols = max(1, min(len(legend), int(room // colw)))
+    return cols, colw, -(-len(legend) // cols), TXT + 2
+
+
+def legend_items(legend, x0, top0, cols, colw, rows, rowh, m, Y, k, hatch_id):
+    """The legend's swatches and labels, down each column then across; top0 is the first swatch's top, in mm."""
+    ink, thin, o = S['ink'], float(S['thin']), []
+    for i, (key, spec) in enumerate(legend.items()):
+        x, top = x0 + (i // rows) * colw, top0 + (i % rows) * rowh
+        o += swatch(spec, x, top, m, Y, k, hatch_id)
+        o.append(f'<text x="{m(x + LEG_SW + LEG_GAP)}" y="{m(Y(top + 3.2))}" font-size="{TXT * k:.2f}" fill="{ink}">'
+                 f'{escape(LAB.get(key, key))}</text>')
+    return o
+
+
+def legend_box(legend, k, hatch_id, map_h_mm, cols=2, measure=False):
+    """The legend over the map's bottom-left corner, the way the winners set theirs: a bold heading, then two columns
+    of entries, each its label with the sample to its right, the samples lined up; on the paper tone, no outline.
+    Returns (svg lines, its box in mm)."""
+    keys = list(legend)
+    rows = -(-len(keys) // min(cols, len(keys)))
+    colk = [keys[i * rows:(i + 1) * rows] for i in range(-(-len(keys) // rows))]
+    labw = [max(tw(LAB.get(key, key), TXT) for key in c) for c in colk]     # each column as wide as its longest label
+    rowh, gap_c, head = TXT + 2.6, 8, TXT + 3          # airy rows, a clear gap between the columns
+    w = sum(lw_ + 3 + LEG_SW for lw_ in labw) + gap_c * (len(colk) - 1) + 2 * LEG_PAD + 1
+    h = LEG_PAD + head + rows * rowh - 2.6 + LEG_PAD
+    x0 = CFG['legend_box_mm']
+    y0 = map_h_mm - CFG['legend_box_mm'] - h
+    if measure:
+        return [], (x0, y0, x0 + w, y0 + h)
+    def m(v): return '%.2f' % (v * k)
+    ink = S['ink']
+    o = [f'<rect x="{m(x0)}" y="{m(y0)}" width="{m(w)}" height="{m(h)}" fill="{S["paper"]}" '
+         f'fill-opacity="{CFG["legend_box_opacity"]}" stroke="none"/>',
+         f'<text x="{m(x0 + LEG_PAD)}" y="{m(y0 + LEG_PAD + TXT)}" font-size="{TXT * k:.2f}" font-weight="bold" '
+         f'fill="{ink}">{escape(LAB.get("legend", "Legend"))}</text>']
+    x = x0 + LEG_PAD
+    for c, lw_ in zip(colk, labw):
+        for j, key in enumerate(c):
+            top = y0 + LEG_PAD + head + j * rowh
+            o.append(f'<text x="{m(x)}" y="{m(top + 3.2)}" font-size="{TXT * k:.2f}" fill="{ink}">'
+                     f'{escape(LAB.get(key, key))}</text>')
+            o += swatch(legend[key], x + lw_ + 3, top + 0.1, m, lambda y: y, k, hatch_id)
+        x += lw_ + 3 + LEG_SW + gap_c
+    return o, (x0, y0, x0 + w, y0 + h)
+
+
+def swatch(spec, x, top, m, Y, k, hatch_id):
+    """One legend sample, 6 x 3.5 mm, its top-left at (x, top) in mm."""
+    ink, thin = S['ink'], float(S['thin'])
+    if spec[0] == 'fill':
+        st = f' stroke="{spec[2]}" stroke-width="{m(float(S[spec[3]]))}"' if spec[2] else f' stroke="{S["path"]}" stroke-width="{m(thin)}"'
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{spec[1]}"{st}/>']
+    if spec[0] == 'line':
+        da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
+        return [f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>']
+    if spec[0] == 'band':
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["accent"]}" '
+                f'fill-opacity="{CFG["idea_tint"]}" stroke="{S["accent"]}" stroke-width="{m(thin)}"/>']
+    if spec[0] == 'hatch':
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
+                f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>']
+    if spec[0] == 'dot':
+        return [f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>']
+    if spec[0] == 'text':
+        bg = spec[2] if len(spec) > 2 else S['new']   # the buildings' tone: the roof's, or a cut plan's paper
+        return [f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{bg}" stroke="{ink}" stroke-width="{m(thin)}"/>',
+                f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>']
+    return [symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k)]
+
+
+def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', kind='site', boxed=False):
     """The title, north, scale bar, legend and source under the map. Returns (svg lines, strip height in mm).
     Placed on a panel (style marks: panel), only the legend and source: the panel writes the caption and the scale
     bar once, and the north arrow stays on the site plan, or on a plan turned from north."""
@@ -925,7 +1068,7 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', kind='site
         o.append(f'<circle cx="{m(nx)}" cy="{m(Y(ny))}" r="{m(r)}" fill="none" stroke="{ink}" stroke-width="{m(thin)}"/>'
                  f'<path d="M{m(nx)},{m(Y(ny))}L{m(nx + r * math.sin(a))},{m(Y(ny - r * math.cos(a)))}" stroke="{ink}" stroke-width="{m(thin * 2)}"/>')
     if PANEL:
-        return legend_rows(o, legend, W, k, Hm, (2 * r if north else 0) - 1, hatch_id, text, m, Y, thin, ink)
+        return legend_rows(o, legend, W, k, Hm, (2 * r if north else 0) - 1, hatch_id, text, m, Y, thin, ink, boxed)
     # title, and north at the right
     head = f'{title}, 1:{scale:,}'
     text(4, 3 + TITLE, head, TITLE, ' font-weight="bold"')
@@ -955,44 +1098,19 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', kind='site
         o.append(f'<path d="M{m(x)},{m(Y(sy - hstep))}L{m(x)},{m(Y(sy + 1.2))}" stroke="{ink}" stroke-width="{m(thin)}"/>')
         if i in show:
             text(x, sy + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
-    return legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink)
+    return legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink, boxed)
 
 
-def legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink):
-    """The legend, one swatch per colour used, and the source line, under row_y (mm) of the strip; appends to o.
+def legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink, boxed=False):
+    """The legend, one swatch per colour used, in aligned columns, and the source line, under row_y (mm) of the
+    strip; appends to o. A boxed legend sits over the map instead, and the source follows right away.
     Returns (o, strip height in mm), never less than the strip the frame keeps for it."""
-    # legend: one swatch per colour used
     y = row_y + 4
-    x = 4
-    for key, spec in legend.items():
-        lab = LAB.get(key, key)
-        wi = 6 + 1.5 + tw(lab, TXT) + 5
-        if x + wi > W - 4 and x > 4:
-            x, y = 4, y + TXT + 3
-        top = y - 3.2
-        if spec[0] == 'fill':
-            st = f' stroke="{spec[2]}" stroke-width="{m(float(S[spec[3]]))}"' if spec[2] else f' stroke="{S["path"]}" stroke-width="{m(thin)}"'
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{spec[1]}"{st}/>')
-        elif spec[0] == 'line':
-            da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
-            o.append(f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>')
-        elif spec[0] == 'band':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["accent"]}" '
-                     f'fill-opacity="{CFG["idea_tint"]}" stroke="{S["accent"]}" stroke-width="{m(thin)}"/>')
-        elif spec[0] == 'hatch':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
-                     f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>')
-        elif spec[0] == 'dot':
-            o.append(f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>')
-        elif spec[0] == 'text':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{S["new"]}"/>')
-            o.append(f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>')
-        else:
-            o.append(symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k))
-        text(x + 7.5, y, lab)
-        x += wi
-    # source line, wrapped to the width
-    y += TXT + 3
+    if not boxed and legend:
+        cols, colw, rows, rowh = legend_grid(legend, W - 8)
+        o += legend_items(legend, 4, y - 3.2, cols, colw, rows, rowh, m, Y, k, hatch_id)
+        y += (rows - 1) * rowh
+    y = y if boxed else y + TXT + 3
     words, cur = CREDIT.split(), ''
     for w_ in words:
         if cur and tw(cur + ' ' + w_, TXT) > W - 8:
@@ -1003,7 +1121,7 @@ def legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink):
     if cur:
         text(4, y, cur)
     # on a panel the strip holds no title row or scale bar: it gives back the room the panel's scale bar takes under it
-    keep = float(CFG['legend_mm']) - (float(CFG.get('panel_bar_mm', 8)) if PANEL else 0)
+    keep = 0 if boxed else float(CFG['legend_mm']) - (float(CFG.get('panel_bar_mm', 8)) if PANEL else 0)
     return o, max(keep, y + 3)
 
 
@@ -1064,6 +1182,17 @@ for name, title, scale, win, cut, a in details:
         e['weak'] = '; '.join(why)
         print('%s is weak (%s): give it the district centre or a typical neighbourhood as `at`' % (name, e['weak']),
               file=sys.stderr)
+    # a frame too small for its subject cuts the new buildings around it off: say how much, for panel-layout
+    centre = anchor_of(a.get('at'))[0].centroid      # its middle, not its outline: a neighbourhood is larger than a frame
+    near = [g for p, g in NEW if g.distance(centre) <= CFG['detail_near_m']]
+    if near:
+        w_ = box(*win)
+        e['subject_shown'] = round(sum(g.intersection(w_).area for g in near) / sum(g.area for g in near), 2)
+        if e['subject_shown'] < CFG['detail_shown_min']:
+            e['too_small'] = 'its frame shows %d %% of the new buildings within %g m of the middle of %s' % (
+                round(100 * e['subject_shown']), CFG['detail_near_m'], a.get('at'))
+            print('%s is too small: %s; panel-layout should give it a larger frame' % (name, e['too_small']),
+                  file=sys.stderr)
     made.append(e)
 
 if fig_scale:
@@ -1073,7 +1202,13 @@ if fig_scale:
     if os.path.exists(kp):
         kb = json.load(open(kp, encoding='utf8')).get('bbox')
     want = transform(TO_M, box(*kb)).bounds if kb else pad(site.bounds, CFG['fg_pad_m'])
-    fg_win, fg_cut = clamp(want, fig_scale, (site.centroid.x, site.centroid.y))
+    ffr = FRAMES.get('figure-ground')
+    if ffr:                                              # the panel's frame: its size, centred on the site
+        fg_win, fg_cut = fitted('figure-ground', LAB['figure-ground'], fig_scale, 'figure-ground',
+                                lambda m: clamp(pad(site.bounds, CFG['fg_pad_m']), fig_scale,
+                                                (site.centroid.x, site.centroid.y), m), ffr[1:])
+    else:
+        fg_win, fg_cut = clamp(want, fig_scale, (site.centroid.x, site.centroid.y))
     e = draw_plan('figure-ground', LAB['figure-ground'], fig_scale, fg_win, 'figure-ground')
     e['cropped'] = fg_cut
     made.append(e)

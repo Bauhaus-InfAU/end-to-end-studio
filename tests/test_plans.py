@@ -117,7 +117,8 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
     placed on a panel (the base's marks "panel"), 8 mm less high, the room of the scale bar the panel draws under it."""
     out, site_dir = drawn
     frames = {"site-plan": ("plans/site-plan_1-3000.svg", "1:3000", 400, 300),
-              "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180)}
+              "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180),
+              "figure-ground": ("plans/figure-ground_1-15000.svg", "1:15000", 150, 140)}
     plan = out / "panel-layout/layout-plan.json"
     plan.parent.mkdir(exist_ok=True)
     plan.write_text(json.dumps({"panels": [{"items": [{"id": k, "type": "drawing", "file": f, "scale": s, "frame": {"w": w, "h": h}}
@@ -139,6 +140,32 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 
+def test_plans_line_streets_with_trees_in_detail_areas_only(drawn):
+    """A street centreline gets a row of trees on both sides in a detail area; the site plan stays as it was."""
+    out, site_dir = drawn
+    mass = json.loads((out / "massing/massing.geojson").read_text(encoding="utf-8"))["features"]
+    sq = shape(next(f for f in mass if f["properties"].get("name") == "Square")["geometry"]).centroid
+    epsg = (32600 if sq.y >= 0 else 32700) + int((sq.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    c = transform(to_m, sq)
+    count = lambda f: len(re.findall(r"<circle", (out / f"plans/{f}.svg").read_text(encoding="utf-8")))
+    before = {f: count(f) for f in FILES[:2]}
+    streets = out / "streets/streets.geojson"
+    streets.parent.mkdir(exist_ok=True)
+    line = {"type": "LineString", "coordinates": [list(to_ll(c.x - 120, c.y)), list(to_ll(c.x + 120, c.y))]}
+    streets.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "centreline", "level": "local", "width": 10}, "geometry": line}]}),
+        encoding="utf-8")
+    try:
+        draw(out, site_dir)
+        assert count(FILES[1]) >= before[FILES[1]] + 2 * 4, (before, count(FILES[1]))   # tree and shadow, both sides
+        assert count(FILES[0]) == before[FILES[0]]
+    finally:
+        streets.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
 def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
     """With ground-floor/detail.geojson, a detail area shows the doors and bike stands; the site plan doesn't."""
     out, site_dir = drawn
@@ -154,11 +181,37 @@ def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
         detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
         assert "ground-floor" in made["detail-area-1"]["layers_used"] and ">Entrances</text>" in detail
         assert "entrances (ground-floor)" not in made["detail-area-1"]["not_shown"]   # now it has them
+        doors = sum(1 for f in json.loads((gf / "detail.geojson").read_text(encoding="utf-8"))["features"]
+                    if f["properties"]["kind"] == "entrance")
+        arrows = len(re.findall(r'<line [^>]+/><path d="M[^"]+Z" fill="[^"]+"/>', detail))   # a shaft and its head
+        assert doors and arrows >= 1, (doors, arrows)
+        assert ">Walls, cut at the ground floor</text>" in detail   # 1:1,000: a ground-floor plan, its walls cut
+        assert ">Walls, cut at the ground floor</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
         assert "ground-floor" not in made["site-plan"]["layers_used"]
         assert ">Entrances</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     finally:
         shutil.rmtree(gf)
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_flag_a_detail_area_too_small_for_its_subject(drawn):
+    """A frame that cuts off most of the new buildings around a detail area's centre is flagged too small."""
+    out, site_dir = drawn
+    plan = out / "panel-layout/layout-plan.json"
+    plan.parent.mkdir(exist_ok=True)
+    plan.write_text(json.dumps({"panels": [{"items": [{"id": "detail-area-1", "type": "drawing", "scale": "1:1000",
+                                                       "file": "plans/detail-area-1_1-1000.svg", "frame": {"w": 90, "h": 70}}]}]}),
+                    encoding="utf-8")
+    try:
+        r = draw(out, site_dir)
+        e = made_of(out)["detail-area-1"]
+        assert e["subject_shown"] < 0.7 and "too_small" in e, e
+        assert "too small" in r.stderr
+    finally:
+        plan.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+    e = made_of(out)["detail-area-1"]
+    assert "too_small" not in e and e["subject_shown"] >= 0.7, e   # the panel's own room shows it whole
 
 
 def made_of(out):
@@ -310,3 +363,16 @@ def test_plans_name_a_detail_area_with_no_free_corner(drawn, tmp_path):
     draw(full, site_dir)
     site = (full / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     assert ">Detail area 1</text>" in site and ">start</text>" not in site
+
+
+def test_plans_box_the_site_plans_legend(drawn):
+    """The site plan's legend is a two-column list on a pale box with no outline over its bottom-left corner, under a
+    bold heading; a detail area keeps its strip."""
+    out, _ = drawn
+    site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
+    assert re.search(r'<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" fill="[^"]+" fill-opacity="0.85"', site)
+    assert re.search(r'fill-opacity="0.85" stroke="none"/>\s*<text [^>]*font-weight="bold"[^>]*>Legend</text>', site)
+    assert ">New buildings</text>" in site and ">Legend</text>" not in detail   # a detail area keeps its strip
+    xs = {m for m in re.findall(r'<text x="([\d.]+)"[^>]*>(?:New buildings|Squares, shared streets|Project site)</text>', detail)}
+    assert xs   # the strip's labels sit on a few shared columns
