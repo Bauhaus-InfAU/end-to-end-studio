@@ -41,7 +41,7 @@ Paths in `spec.json` are relative to it; coordinates are metres, x east and y no
 - `style`: only what the drawing standard gives; without it, black on white with one accent (values at the top of the script). Colours: `ink`, `paper`, `accent`; `font`. Line weights in px: `outline` (site), `line` (base), `heavy`, `box` (block edges), `thin`, `hatch`, `rule`, `sign` (new arrow, rays), `sign_old`, `ghost` (removed outlines), `leader`, `tee` (bar of a stopped arrow), `halo` (behind labels). Patterns: `dash`, `ghost_dash` (SVG dash arrays), `tint_opacity`, `solid_opacity`; `min_width` (px, the narrowest a strip is drawn). Signs in px: `glyph` (their line), `figure` (a person's height), `icon` (its diameter), `vignette` (its radius). Text in px: `label_size`, `small_size` (scale, north), `title_size`, `title_weight`, `caption_size`, `footer_size`, `footer_style`.
 - `base`: site data in every frame, clipped to the site. `where` filters on properties: exact values, or a regular expression starting with `~`. Also `weight` (`heavy`), `dashed`, `label`, `only_in` (frame numbers), `margin` (metres beyond the site).
 - `field`: optional placeholder blocks for the moves to act on.
-- `frames`: 3 to 6. `file` names the drawing after what it shows; `highlight` lists base layers that are its subject.
+- `frames`: 3 to 6. `file` names the drawing after what it shows; `highlight` lists base layers that are its subject. `group` names the topic a frame belongs to; frames of one topic share it. The script writes `groups.json` for panel-layout: each topic's frames, and a sequence without `group` as one.
 - `footer` overrides the line under each caption, which otherwise names the site data and another skill's GeoJSON, and calls the rest concept.
 
 ## Elements
