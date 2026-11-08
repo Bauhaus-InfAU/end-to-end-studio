@@ -455,7 +455,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         j = CFG['idea_join_m']                           # grown and shrunk again: close lines become one band
         idea_ground = unary_union([IDEA_AREA, IDEA_LINE.buffer(j + CFG['idea_band_mm'] * k / 2).buffer(-j)
                                    if not IDEA_LINE.is_empty else Polygon()]).intersection(fr.buffer(10))
-        if not idea_ground.is_empty and kind != 'figure-ground':
+        if not idea_ground.is_empty and kind == 'site':   # the site plan only: up close the tint reads as a stain
             o.append(f'<path d="{d(idea_ground)}" fill="{S["accent"]}" fill-opacity="{CFG["idea_tint"]}" stroke="none" '
                      f'fill-rule="evenodd"/>')
             legend.setdefault('idea', ('band',))
@@ -672,8 +672,8 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
 
         # the idea first, so its name gets the room: an area's outline in the accent over its tint, a line's name
         # along its band, a point ringed
-        idea_here = [g for g in IDEA_G if g.intersects(fr)]
-        for g in (idea_here if kind != 'detail' else []):   # a detail area keeps the tint and the name, no outline
+        idea_here = [g for g in IDEA_G if g.intersects(fr)] if kind == 'site' else []   # the site plan carries the idea
+        for g in idea_here:
             if g.geom_type.endswith('Polygon'):
                 line(g.boundary, S['accent'], 'thick')
             elif g.geom_type.endswith('Point'):
@@ -960,13 +960,13 @@ for name, title, scale, win, cut, a in details:
         print('%s is weak (%s): give it the district centre or a typical neighbourhood as `at`' % (name, e['weak']),
               file=sys.stderr)
     # a frame too small for its subject cuts the new buildings around it off: say how much, for panel-layout
-    anchor = anchor_of(a.get('at'))[0]
-    near = [g for p, g in NEW if g.distance(anchor) <= CFG['detail_near_m']]
+    centre = anchor_of(a.get('at'))[0].centroid      # its middle, not its outline: a neighbourhood is larger than a frame
+    near = [g for p, g in NEW if g.distance(centre) <= CFG['detail_near_m']]
     if near:
         w_ = box(*win)
         e['subject_shown'] = round(sum(g.intersection(w_).area for g in near) / sum(g.area for g in near), 2)
         if e['subject_shown'] < CFG['detail_shown_min']:
-            e['too_small'] = 'its frame shows %d %% of the new buildings within %g m of %s' % (
+            e['too_small'] = 'its frame shows %d %% of the new buildings within %g m of the middle of %s' % (
                 round(100 * e['subject_shown']), CFG['detail_near_m'], a.get('at'))
             print('%s is too small: %s; panel-layout should give it a larger frame' % (name, e['too_small']),
                   file=sys.stderr)
