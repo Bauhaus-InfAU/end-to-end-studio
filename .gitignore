@@ -10,6 +10,9 @@
 !/competition/proposals/*/*/summary.md
 !/competition/proposals/*/jury/report.md
 !/competition/proposals/*/panel-layout/panel-*.png
+!/competition/proposals/ledger.json
+!/competition/proposals/runs.json
+/competition/proposals/site/
 /competition/proposals/test/
 /competition/proposals/preview/
 /proposals/
