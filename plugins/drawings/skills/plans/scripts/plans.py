@@ -84,7 +84,7 @@ DEFAULTS = {
     'detail_site_min': 0.6,     # a detail area with less of its window on the site is flagged as weak
     'detail_new_min': 6,        # ... and one with fewer new buildings in it
     'legend_mm': 30,            # the strip under the map for the title, legend, scale bar, north and source
-    'legend_box_mm': 4,         # the site plan's legend box sits this far in from the map's top-left corner, mm
+    'legend_box_mm': 4,         # the site plan's legend box sits this far in from the map's bottom-left corner, mm
     'legend_box_opacity': 0.85, # ... on the paper tone at this opacity, so the plan shows through
     'caption_room_mm': 60,      # panel height kept free for a caption and the legend strip
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
@@ -99,7 +99,7 @@ LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Exis
           'public': 'Squares, shared streets', 'entrance': 'Entrances', 'cut': 'Walls, cut at the ground floor', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
           'courtyard': 'Shared courtyards', 'active-gf': 'Ground floors open to the public', 'idea': 'The idea',
-          'site-plan': 'Site plan', 'figure-ground': 'Figure-ground'}
+          'site-plan': 'Site plan', 'figure-ground': 'Figure-ground', 'legend': 'Legend'}
 # the look without a drawing standard: black on white, one accent
 FALLBACK_STYLE = {'paper': '#ffffff', 'ink': '#1a1a1a', 'accent': '#d9302b', 'new': '#ffffff', 'public': '#f0b8b5',
                   'shadow': '#a8a8a8', 'shadow_len': 1.2,
@@ -625,9 +625,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                      f'stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(s)}</text>')
             return True
 
-        if kind == 'site':                                 # the legend's box over the top-left corner: no names under it
+        if kind == 'site':                                 # the legend's box over the bottom-left corner: no names under it
             soon = dict(legend, **{key: None for key in ('site', 'window') if key not in legend})
-            bx = legend_box(soon, k, name, measure=True)[1]
+            bx = legend_box(soon, k, name, Hm / k, measure=True)[1]
             taken.append(tuple(v * k for v in bx))
         # the detail areas' names on the site plan first, at a corner of their window clear of the buildings
         blds = unary_union([g for p, g in inside(BUILD)] or [Polygon()])
@@ -763,9 +763,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
-    boxed = kind == 'site' and bool(legend)              # the site plan's legend sits over its top-left corner
+    boxed = kind == 'site' and bool(legend)              # the site plan's legend sits over its bottom-left corner
     if boxed:
-        o += legend_box(legend, k, name)[0]
+        o += legend_box(legend, k, name, Hm / k)[0]
     strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name, boxed)
     Hs = H_strip * k
     head = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
@@ -870,19 +870,35 @@ def legend_items(legend, x0, top0, cols, colw, rows, rowh, m, Y, k, hatch_id):
     return o
 
 
-def legend_box(legend, k, hatch_id, cols=2, measure=False):
-    """The legend as a list in two columns on a pale box over the map's top-left corner: (svg lines, its box in mm)."""
-    _, colw, _, rowh = legend_grid(legend, 1e9)
-    cols = min(cols, len(legend))
-    rows = -(-len(legend) // cols)
-    w, h = cols * colw - 4 + 2 * LEG_PAD, rows * rowh - 2 + 2 * LEG_PAD
-    x0 = y0 = CFG['legend_box_mm']
+def legend_box(legend, k, hatch_id, map_h_mm, cols=2, measure=False):
+    """The legend over the map's bottom-left corner, the way the winners set theirs: a bold heading, then two columns
+    of entries, each its label with the sample to its right, the samples lined up; on the paper tone, no outline.
+    Returns (svg lines, its box in mm)."""
+    keys = list(legend)
+    rows = -(-len(keys) // min(cols, len(keys)))
+    colk = [keys[i * rows:(i + 1) * rows] for i in range(-(-len(keys) // rows))]
+    labw = [max(tw(LAB.get(key, key), TXT) for key in c) for c in colk]     # each column as wide as its longest label
+    rowh, gap_c, head = TXT + 2.6, 8, TXT + 3          # airy rows, a clear gap between the columns
+    w = sum(lw_ + 3 + LEG_SW for lw_ in labw) + gap_c * (len(colk) - 1) + 2 * LEG_PAD + 1
+    h = LEG_PAD + head + rows * rowh - 2.6 + LEG_PAD
+    x0 = CFG['legend_box_mm']
+    y0 = map_h_mm - CFG['legend_box_mm'] - h
     if measure:
         return [], (x0, y0, x0 + w, y0 + h)
     def m(v): return '%.2f' % (v * k)
+    ink = S['ink']
     o = [f'<rect x="{m(x0)}" y="{m(y0)}" width="{m(w)}" height="{m(h)}" fill="{S["paper"]}" '
-         f'fill-opacity="{CFG["legend_box_opacity"]}" stroke="{S["ink"]}" stroke-width="{m(float(S["thin"]))}"/>']
-    o += legend_items(legend, x0 + LEG_PAD, y0 + LEG_PAD, cols, colw, rows, rowh, m, lambda y: y, k, hatch_id)
+         f'fill-opacity="{CFG["legend_box_opacity"]}" stroke="none"/>',
+         f'<text x="{m(x0 + LEG_PAD)}" y="{m(y0 + LEG_PAD + TXT)}" font-size="{TXT * k:.2f}" font-weight="bold" '
+         f'fill="{ink}">{escape(LAB.get("legend", "Legend"))}</text>']
+    x = x0 + LEG_PAD
+    for c, lw_ in zip(colk, labw):
+        for j, key in enumerate(c):
+            top = y0 + LEG_PAD + head + j * rowh
+            o.append(f'<text x="{m(x)}" y="{m(top + 3.2)}" font-size="{TXT * k:.2f}" fill="{ink}">'
+                     f'{escape(LAB.get(key, key))}</text>')
+            o += swatch(legend[key], x + lw_ + 3, top + 0.1, m, lambda y: y, k, hatch_id)
+        x += lw_ + 3 + LEG_SW + gap_c
     return o, (x0, y0, x0 + w, y0 + h)
 
 

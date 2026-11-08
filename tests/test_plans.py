@@ -317,11 +317,13 @@ def test_plans_missing_required_stops(drawn):
 
 
 def test_plans_box_the_site_plans_legend(drawn):
-    """The site plan's legend is a two-column list on a pale box over its top-left corner; a detail area keeps its strip."""
+    """The site plan's legend is a two-column list on a pale box with no outline over its bottom-left corner, under a
+    bold heading; a detail area keeps its strip."""
     out, _ = drawn
     site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
     assert re.search(r'<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" fill="[^"]+" fill-opacity="0.85"', site)
+    assert re.search(r'fill-opacity="0.85" stroke="none"/>\s*<text [^>]*font-weight="bold"[^>]*>Legend</text>', site)
     assert ">New buildings</text>" in site and 'fill-opacity="0.85"' not in detail
     xs = {m for m in re.findall(r'<text x="([\d.]+)"[^>]*>(?:New buildings|Squares, shared streets|Project site)</text>', detail)}
     assert xs   # the strip's labels sit on a few shared columns
