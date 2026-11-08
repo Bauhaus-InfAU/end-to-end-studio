@@ -39,3 +39,13 @@ def test_log_done_without_start_and_junk():
     r = parse_log("# Log\n\nsome prose 12 of 13\n10:00 start climate\n10:05 massing done: x\n", SK)
     m = [b for b in r["bars"] if b["skill"] == "massing"][0]
     assert m["t0"] == 0 and m["t1"] == 5
+
+def test_log_start_after_done_on_same_line():
+    r = parse_log("11:50 start climate\n12:00 climate done. Round 2 started: narrative\n12:10 narrative done\n", SK)
+    n = [b for b in r["bars"] if b["skill"] == "narrative"][0]
+    assert (n["t0"], n["t1"]) == (10, 20)
+
+def test_log_start_without_time_takes_previous_time():
+    r = parse_log("10:00 start climate\n10:05 climate done\n- Started: narrative second run (end text)\n10:15 narrative second run done\n", SK)
+    n = [b for b in r["bars"] if b["skill"] == "narrative"][0]
+    assert (n["kind"], n["t0"], n["t1"]) == ("second", 5, 15)

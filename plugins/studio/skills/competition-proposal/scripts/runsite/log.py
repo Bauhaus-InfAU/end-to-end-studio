@@ -38,20 +38,24 @@ def parse_log(text, skills):
         if line.startswith("- "):
             line = line[2:]
         tm = TIME.search(line)
-        if not tm:
+        if tm:
+            label = f"{int(tm.group(1)):02d}:{tm.group(2)}"
+            minute = int(tm.group(1)) * 60 + int(tm.group(2)) + offset
+            while prev is not None and minute < prev - 600:
+                offset += 1440
+                minute += 1440
+            prev = minute
+            if first is None:
+                first, start_label = minute, label
+            end_label = label
+            body = (line[:tm.start()] + line[tm.end():]).strip()
+        elif prev is None:
             continue
-        label = f"{int(tm.group(1)):02d}:{tm.group(2)}"
-        minute = int(tm.group(1)) * 60 + int(tm.group(2)) + offset
-        while prev is not None and minute < prev - 600:
-            offset += 1440
-            minute += 1440
-        prev = minute
-        if first is None:
-            first, start_label = minute, label
-        end_label = label
+        else:
+            minute, body = prev, line  # no time: the previous timed line's time
         t = minute - first
-        body = (line[:tm.start()] + line[tm.end():]).strip()
 
+        rest = body
         d = DONE.match(body.lstrip(": "))
         if d and d.group("skill") in skills:
             skill, kind = d.group("skill"), _kind(d.group("word"), d.group("paren"))
@@ -61,15 +65,17 @@ def parse_log(text, skills):
                     t0 = open_starts.pop(i)[2]
                     break
             bars.append({"skill": skill, "kind": kind, "t0": t0, "t1": t,
-                         "line": d.group("rest").strip()[:200]})
-            continue
-        s = START.search(body)
+                         "line": d.group("rest").strip(" .:")[:200]})
+            rest = d.group("rest")  # a start may follow on the same line
+            if not START.search(rest):
+                continue
+        s = START.search(rest)
         if s:
             last_start_t = t
             for part in s.group(1).split(","):
                 skill = _first_skill(part, skills)
                 if skill:
-                    kind = "rerun" if "reruns" in body else "second" if re.search(r"second|\(end\)", part) else "first"
+                    kind = "rerun" if "reruns" in rest else "second" if re.search(r"second|\(end\)", part) else "first"
                     open_starts.append((skill, kind, t))
             continue
         for name, ev in CHECKS:
