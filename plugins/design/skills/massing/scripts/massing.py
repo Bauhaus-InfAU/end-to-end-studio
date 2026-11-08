@@ -37,6 +37,7 @@ A = argparse.ArgumentParser(description='Massing on a structure plan.')
 A.add_argument('--proposal', required=True)
 A.add_argument('--site', required=True, help='the folder with site.geojson and its layers')
 A.add_argument('--config', required=True)
+A.add_argument('--design-noise', help='the second run: noise-design.geojson from noise_at_buildings.py')
 ARGS = A.parse_args()
 RUN = os.path.join(ARGS.proposal, '')
 OUT = os.path.join(RUN, 'massing', '')
@@ -55,6 +56,7 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
             'path_reach_m': 150.0,
+            'acoustic_db': 65.0, 'commerce_db': 70.0,   # day, at the loudest facade with the design standing: homes from acoustic_db need better acoustic protection, from commerce_db the building is commerce
             'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
 CONFIG = {**OPTIONAL, **DEFAULTS, **_values}
@@ -163,6 +165,7 @@ water = [w.intersection(site) for w in water if w.intersects(site)]
 noise = load_if(RUN + 'climate/noise.geojson')   # without climate: no loud or quiet land
 loud = unary_union([m(f['geometry']) for f in noise if f['properties']['period'] == 'day' and f['properties']['db_min'] >= 65])
 quiet = unary_union([m(f['geometry']) for f in noise if f['properties']['period'] == 'day' and f['properties']['db_max'] <= 55])
+levels = [(f['properties']['noise_day_db'], m(f['geometry'])) for f in load(ARGS.design_noise)] if ARGS.design_noise else []
 
 allb = [(f['properties'], m(f['geometry'])) for f in load(os.path.join(SITE, 'buildings.geojson'))]
 kept = [(p, g) for p, g in allb if site.contains(g.representative_point())]
@@ -735,8 +738,15 @@ for b in buildings:
     if b['geom'].distance(green_u) <= CONFIG['green_minus_m']: f -= 1
     b['base'] = max(1, f)
     b['use'] = b['use0']
-    if b['geom'].representative_point().within(loud):
-        b['use'] = 'commerce'   # climate/rules.json: no homes at 65 dB(A) or more by day
+    q = b['geom'].representative_point()
+    b['db'] = next((db for db, g in levels if q.within(g)), None)
+    if b['db'] is None:
+        if q.within(loud):
+            b['use'] = 'commerce'   # the first run, on the land as it is today: no homes at 65 dB(A) or more by day
+    elif b['db'] >= CONFIG['commerce_db']:
+        b['use'] = 'commerce'
+    elif b['db'] >= CONFIG['acoustic_db'] and b['use'] != 'commerce':
+        b['acoustic'] = True
 # a height profile per neighbourhood (config figure.<name>.heights), applied to the base floors before the solver
 PROFILES = ('flat', 'to centre', 'from green', 'alternate')
 for name in {b['nb'] for b in buildings if not b.get('fixed')}:
@@ -870,6 +880,8 @@ for b in buildings:
     if b.get('landmark'): pr['landmark'] = True
     if b.get('daycare_floors'): pr['daycare_floors'] = b['daycare_floors']
     if b.get('note'): pr['note'] = b['note']
+    if b.get('db') is not None: pr['noise_day_db'] = b['db']
+    if b.get('acoustic'): pr['acoustic_protection'] = True
     if 'row' in b: pr['row'], pr['col'] = b['row'], b['col']   # the block's place in its land's grid
     add('building', b['geom'], **pr)
 for p, g in kept:
@@ -941,7 +953,7 @@ total = sum(gfa(b) for b in new)
 rows = [
     ('homes (count)', CONFIG['homes_target'], round(homes), '%s; design homes = housing floor area / %d m2 per home (%s)' % (SOURCE.get('homes_target', 'not in the brief'), CONFIG['m2_per_home'], SOURCE.get('m2_per_home', 'not in the brief'))),
     ('housing floor area', round(res_target), round(H_m2), '%d homes x %d m2 (%s)' % (CONFIG['homes_target'], CONFIG['m2_per_home'], SOURCE.get('m2_per_home', 'not in the brief'))),
-    ('commerce floor area', round(CONFIG['commerce_target']), round(C_m2), SOURCE.get('commerce_target', 'not in the brief') + '; halls, buildings in the 65 dB(A) strip, ground floors of mixed blocks'),
+    ('commerce floor area', round(CONFIG['commerce_target']), round(C_m2), SOURCE.get('commerce_target', 'not in the brief') + '; halls, buildings too loud for homes, ground floors of mixed blocks'),
     ('daycare floor area', round(CONFIG['daycare_gfa'] * CONFIG['daycares']), round(dcm), '%s, %d x %d m2' % (SOURCE.get('daycare_gfa', 'not in the brief'), CONFIG['daycares'], CONFIG['daycare_gfa'])),
     ('primary school floor area', round(CONFIG['school_gfa']), round(school), SOURCE.get('school_gfa', 'not in the brief')),
     ('schoolyard (land)', round(CONFIG['school_yard']), round(yard), SOURCE.get('school_yard', 'not in the brief')),
@@ -978,6 +990,8 @@ stats['community'] = {(e.get('use') or 'community building'): b is not None for 
 stats['assumed_sizes'] = ASSUMED
 stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
 stats['warnings'] = WARN
+stats['design_noise'] = bool(levels)
+stats['acoustic_protection'] = sum(1 for b in new if b.get('acoustic'))
 json.dump(stats, open(OUT + 'stats.json', 'w'), indent=1)
 print(json.dumps(stats, indent=1))
 

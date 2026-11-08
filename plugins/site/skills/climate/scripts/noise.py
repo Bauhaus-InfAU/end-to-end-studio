@@ -126,8 +126,8 @@ def main():
         elif "trains_per_day" in src or "trains_day" in src:
             lme, assumed = rail_emission(src)
             n = src.get("trains_per_day", src.get("trains_day", 0) + src.get("trains_night", 0))
-            rail = dict(included=True, label=f'{src["name"]}: {n:g} trains/day ({src.get("trains_source", "no source given")})',
-                        assumptions=assumed)
+            label = f'{src["name"]}: {n:g} trains/day ({src.get("trains_source", "no source given")})'
+            rail = dict(included=True, label=f'{rail["label"]}; {label}' if rail["included"] else label, assumptions=list(dict.fromkeys(rail.get("assumptions", []) + assumed)))
         else:
             md, mn, pd, pn = CLASSES[src.get("road_class", "local")]
             v = float(src.get("speed_kmh", 50))
