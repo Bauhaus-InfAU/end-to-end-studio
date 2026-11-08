@@ -5,16 +5,20 @@ description: Draws three to six concept pictograms that tell a proposal's centra
 
 # Concept diagrams
 
-Reads: narrative, structure-plan, phasing, drawing-graphics, panel-layout
+Reads: narrative, structure-plan, phasing, programme, analysis, drawing-graphics, panel-layout
 
 Turn the narrative's central idea into three to six pictograms, each showing one architectural move that reads without its caption. You translate; you don't design: take the moves from `narrative/narrative.md`, in its words and order, and their places from the site data, the structure plan's GeoJSON and any other GeoJSON other skills left in the proposal folder. The rest is conceptual geometry, as simple as the idea allows: add no use, height, position or route the narrative doesn't give; people and use signs may show a narrative move, marked illustrative. Name what you assumed in `summary.md`. With no narrative, draw nothing; with no site, draw schematically; say so.
 
-**Choose the drawing from the relationship** the move changes, the simplest that shows it:
+**Choose the diagrams from the idea**: list its ideas, the most prominent first, and give each the kind below that shows it, one per idea; a move is a plan only when its place is the point. **Choose the drawing from the relationship** the move changes, the simplest that shows it:
 - a *plan*, cut where it happens: a figure, a layout, an opening in an edge, inside meeting public space;
 - a *section* through everything the relationship links: a void, light from above, an insertion, levels joined by a stair, ramp or lift; an *elevation* when there's no inside;
 - an *axonometric* for mass, an *exploded* one for layers of one whole;
 - an *abstract pictogram* (points and arrows), or a *metaphor* of figures and things, for a relationship without a place;
-- *layers*, each move alone on the site joined by plus signs, for moves that add up to one whole. On any of them, people, trees, icons and *vignettes* (small round scenes) may show what a place is for.
+- *layers*, each move alone on the site joined by plus signs, for moves that add up to one whole;
+- an *activity* diagram, a row of vignettes, for what people do in the new places;
+- *pie charts*, up to three side by side, for a ratio the proposal's tables give (land, homes, people, trees, sealed ground), with each table as its source, never an assumed number.
+
+On any of them, people, trees, icons and *vignettes* (small round scenes) may show what a place is for.
 
 Share a viewpoint only when comparing frames is the point. Moves acting in turn on one thing are a *sequence*: earlier moves in ink, the new one in the accent, what it removes dashed where it was; draw first any move a later one depends on, and say so. Separate strategies are *separate* pictograms on one base. What exists before any move is never in the accent.
 
