@@ -1,0 +1,3 @@
+Existing streets come from the site folder's street-land.geojson (cadastre street areas), used as they are; the new ones from massing.geojson (2,140 m of new street run on existing ones and are dropped, 0.3 ha of existing street land gives way).
+Streets cover 26.2% of the plan area (existing 59.08 ha, new 14.64 ha); kept_buildings_under_new_streets is 0. Files: streets.geojson, stats.json, assumptions.md, streets_1-3000.svg/.png.
+Unsure: 2 main routes still end nowhere (massing should lead them on or link them); 223 widths are defaults, no brief widths in config; 34 square ends, 22 turning heads, 7 future links; in the preview new streets read nearly as pale as existing ones, so check the accent in the PNG.

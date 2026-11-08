@@ -48,7 +48,7 @@ def write_assumptions(scene, path, views, count_source):
               f"- Number of views: {len(views)}, {count_source}.",
               f"- Floor height: {scene.floor_height or 'none'} m ({scene.floor_height_source or 'not documented'}).",
               f"- Standing land cover, height in m: {a['tall_cover']}.",
-              f"- New trees: {a['tree_height']} m tall, crown radius {a['tree_crown_radius']} m, unless the massing or open-space gives a height.",
+              f"- New trees: {a['tree_height']} m tall, crown radius {a['tree_crown_radius']} m, unless the massing or open-space gives a height and crown.",
               f"- Existing street widths by road class: {a['street_width']}; {a['lane_width']} m a lane where lanes are given.",
               f"- Railway strip: {a['rail_width']} m wide.",
               f"- Ground: {'from terrain data' if scene.terrain else 'flat, no terrain data'}.",

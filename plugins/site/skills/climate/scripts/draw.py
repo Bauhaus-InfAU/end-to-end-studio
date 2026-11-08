@@ -22,6 +22,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 import shapely
+import shapely.ops
 from shapely.geometry import box
 
 from common import Site, read
@@ -52,6 +53,94 @@ def ramp(n, st):
         t = i / max(n - 1, 1)
         out.append(mix(st["paper"], st["accent"], 0.15 + 0.85 * t / 0.75) if t <= 0.75 else mix(st["accent"], st["ink"], (t - 0.75) * 1.6))
     return out
+
+
+def axis(g):
+    """A shape's long axis: its length, its width (area over length) and a unit vector along it."""
+    r = list(g.minimum_rotated_rectangle.exterior.coords)
+    e = max(((r[i + 1][0] - r[i][0], r[i + 1][1] - r[i][1]) for i in range(2)), key=lambda v: math.hypot(*v))
+    L = math.hypot(*e) or 1
+    return L, g.area / L, (e[0] / L, e[1] / L)
+
+
+def soft(g, n=3):
+    """A soft edge that never leaves the outline: the shape and n-1 copies shrunk inward, drawn one over the other."""
+    w = axis(g)[1]
+    return [p for p in [g] + [g.buffer(-w * 0.15 * i) for i in range(1, n)] if not p.is_empty]
+
+
+def midline(g, c, e, a, b, n=12):
+    """The middle of shape g from a to b metres along direction e from c: the centre of its cross-section at n steps,
+    so a line along it follows its curve; a straight line where g has no section."""
+    pts = []
+    for i in range(n):
+        t = a + (b - a) * i / (n - 1)
+        x, y, big = c.x + e[0] * t, c.y + e[1] * t, 1e5
+        cut = shapely.LineString([(x - e[1] * big, y + e[0] * big), (x + e[1] * big, y - e[0] * big)]).intersection(g)
+        if not cut.is_empty:
+            cut = max(getattr(cut, "geoms", [cut]), key=lambda s: s.length)
+            m = cut.interpolate(0.5, normalized=True)
+            pts.append((m.x, m.y))
+    for _ in range(3):  # smoothed, so a jagged traced outline gives a calm curve
+        pts = pts[:1] + [((a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4) for a, p, b in zip(pts, pts[1:], pts[2:])] + pts[-1:]
+    return shapely.LineString(pts) if len(pts) >= 2 else shapely.LineString([(c.x + e[0] * a, c.y + e[1] * a), (c.x + e[0] * b, c.y + e[1] * b)])
+
+
+def wavy(line, amp, waves=2.5, tail=0.15, n=48):
+    """A line drawn as a gentle wave across it (amp metres), flat at both ends; its last `tail` straight, so an
+    arrowhead keeps the line's own direction."""
+    L, run = line.length, line.length * (1 - tail)
+    pts = []
+    for i in range(n + 1):
+        d = run * i / n
+        p, q = line.interpolate(max(d - 1, 0)), line.interpolate(min(d + 1, L))
+        dx, dy = q.x - p.x, q.y - p.y
+        k = math.hypot(dx, dy) or 1
+        o = amp * math.sin(math.pi * i / n) * math.sin(2 * math.pi * waves * i / n)
+        c = line.interpolate(d)
+        pts.append((c.x - dy / k * o, c.y + dx / k * o))
+    pts += [(line.interpolate(run + (L - run) * i / 4).x, line.interpolate(run + (L - run) * i / 4).y) for i in range(1, 5)]
+    return shapely.LineString(pts)
+
+
+def heading(line):
+    (x0, y0), (x1, y1) = line.coords[0], line.coords[-1]
+    L = math.hypot(x1 - x0, y1 - y0) or 1
+    return (x1 - x0) / L, (y1 - y0) / L
+
+
+def group(lines, cell):
+    """Traced arrows grouped into one per square of `cell` metres: (centre, unit vector of their average direction).
+    A square whose arrows disagree (they cancel out) gets none."""
+    cells = {}
+    for ln in lines:
+        c = ln.interpolate(0.5, normalized=True)
+        cells.setdefault((math.floor(c.x / cell), math.floor(c.y / cell)), []).append((c, heading(ln)))
+    out = []
+    for v in cells.values():
+        sx, sy = sum(u[0] for _, u in v), sum(u[1] for _, u in v)
+        r = math.hypot(sx, sy)
+        if r / len(v) >= 0.3:
+            out.append(((sum(c.x for c, _ in v) / len(v), sum(c.y for c, _ in v) / len(v)), (sx / r, sy / r)))
+    return out
+
+
+def mark(x, y, fill, op, st, look=None, marker="arrow"):
+    """A short legend's mark, 6 x 3.2 mm with its top at y: a swatch, or an arrow ("arrow"). An optional `look` dresses it
+    like the map: stroke, width, dash, marker (its own arrowhead), wave; soft (a swatch with a soft edge, no outline)."""
+    look = look or {}
+    if fill == "arrow":
+        yc = y + 1.6
+        d = (f"M{x:.2f} {yc:.2f}q0.75 -0.7 1.5 0t1.5 0t1.5 0L{x + 6:.2f} {yc:.2f}" if look.get("wave")
+             else f"M{x:.2f} {yc:.2f}L{x + 6:.2f} {yc:.2f}")
+        dash = f' stroke-dasharray="{look["dash"]}"' if look.get("dash") else ""
+        return (f'<path d="{d}" fill="none" stroke="{look.get("stroke", st["ink"])}" stroke-width="{look.get("width", st["mid"])}"{dash} '
+                f'stroke-linecap="round" marker-end="url(#{look.get("marker", marker)})"/>')
+    if look.get("soft"):
+        return "".join(f'<rect x="{x + i * 0.6:.2f}" y="{y + i * 0.6:.2f}" width="{6 - i * 1.2:.2f}" height="{3.2 - i * 1.2:.2f}" '
+                       f'fill="{fill}" fill-opacity="{op}"/>' for i in range(3))
+    return (f'<rect x="{x:.2f}" y="{y:.2f}" width="6" height="3.2" fill="{fill}" fill-opacity="{op}" '
+            f'stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
 
 
 def browser():
@@ -192,7 +281,7 @@ class Map:
             elif kind == "line":
                 o.append(f'<line x1="{x}" y1="{y - 1}" x2="{x + 7}" y2="{y - 1}" stroke="{color}" stroke-width="{opt.get("w", st["mid"])}" stroke-dasharray="{opt.get("dash", "none")}"/>')
             elif kind == "arrow":
-                o.append(f'<line x1="{x}" y1="{y - 1}" x2="{x + 7}" y2="{y - 1}" stroke="{color}" stroke-width="{st["mid"]}" marker-end="url(#arrow)"/>')
+                o.append(f'<line x1="{x}" y1="{y - 1}" x2="{x + 7}" y2="{y - 1}" stroke="{color}" stroke-width="{st["mid"]}" marker-end="url(#{opt.get("marker", "arrow")})"/>')
             for i, ln in enumerate(lines):
                 o.append(self.text(x + 9, y + i * st["text"] * 1.25, ln))
             y += max(len(lines), 1) * st["text"] * 1.25 + 2.5
@@ -246,12 +335,10 @@ class Map:
             e += [f'<rect x="4" y="{y:.2f}" width="20" height="3.2" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>',
                   self.text(26, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip())]
             y += lh + 0.8
-        for fill, op, label in c.get("rows", []):
+        for fill, op, label, *look in c.get("rows", []):
             word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon or bracket
             lines = textwrap.wrap(f"{word}: {re.split(r': | [(]', rest)[0]}" if rest else label, wrap) or [""]
-            e.append(f'<line x1="4" y1="{y + 1.6:.2f}" x2="10" y2="{y + 1.6:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}" marker-end="url(#arrow)"/>'
-                     if fill == "arrow" else f'<rect x="4" y="{y:.2f}" width="6" height="3.2" fill="{fill}" fill-opacity="{op}" '
-                                             f'stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+            e.append(mark(4, y, fill, op, st, *look))
             e += [self.text(12, y + 2.8 + j * lh, ln) for j, ln in enumerate(lines)]
             y += len(lines) * lh + 0.8
         # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
@@ -379,18 +466,55 @@ def main():
         m = new("Fresh air", "Air corridors and flow as they are today")
         m.context()
         F = S.layer("fresh-air", out)
-        for g, p in F:
-            if p.get("kind") == "corridor":
-                m.add(g, fill=st["accent"], fill_opacity=0.35, stroke=st["accent"], stroke_width=st["thin"])
-        for g, p in F:
-            if p.get("kind") == "flow":
-                m.add(g, fill="none", stroke=st["ink"], stroke_width=st["mid"], marker_end="url(#arrow)")
+        # one soft corridor in the cool colour, a few large arrows, its name along it (the winners' way), never wider than traced
+        cool = st["cool"] if any(k in found for k in ("cool", "park", "kept", "grove", "green")) else st["water"]
+        deep, soft_ink = mix(cool, st["ink"], 0.65), mix(cool, st["ink"], 0.5)  # the corridor's arrow darkest, the others lighter
+        cell = min(m.mw, m.mh) / 6 / m.k  # one arrow per square of a sixth of the map's short side, in metres at its scale
+        for i, (big, col) in enumerate(((5, deep), (3, soft_ink))):
+            m.defs.append(f'<marker id="fa{i}" viewBox="0 0 6 6" refX="5" refY="3" markerUnits="userSpaceOnUse" markerWidth="{big}" '
+                          f'markerHeight="{big}" orient="auto"><path d="M0 0L6 3L0 6z" fill="{col}"/></marker>')
+        cors = [(g, p) for g, p in F if p.get("kind") == "corridor"]
+        flows = [g for g, p in F if p.get("kind") == "flow"]
+        named = {}
+        for g, p in cors:
+            for layer in soft(g):
+                m.add(layer, fill=cool, fill_opacity=0.42, stroke="none")
+            L, w, e = axis(g)
+            inside = [heading(f) for f in flows if f.intersects(g)]
+            if inside and sum(u[0] for u in inside) * e[0] + sum(u[1] for u in inside) * e[1] < 0:
+                e = (-e[0], -e[1])  # along the corridor, the way its arrows go
+            c, n = g.centroid, max(1, min(3, round(L / (2 * cell))))
+            for j in range(n):  # along the corridor's own curve, gently wavy
+                t, h = ((j + 0.5) / n - 0.5) * L, 0.3 * L / n
+                m.add(wavy(midline(g, c, e, t - h, t + h), 1.2 / m.k), fill="none", stroke=deep, stroke_width=st["thick"] * 2,
+                      stroke_linecap="round", stroke_linejoin="round", marker_end="url(#fa0)")
+            name = p.get("label", "corridor").split(" (")[0].strip().upper()
+            if g.area > named.get(name, (0,))[0]:
+                named[name] = (g.area, c, L, w, e)
+        for k, (name, (_, c, L, w, e)) in enumerate(named.items()):
+            off = w / 2 + 3 / m.k  # beside the corridor, not on its arrows
+            a = (c.x - e[0] * L * 0.4 + e[1] * off, c.y - e[1] * L * 0.4 - e[0] * off)
+            b = (c.x + e[0] * L * 0.4 + e[1] * off, c.y + e[1] * L * 0.4 - e[0] * off)
+            (ax, ay), (bx, by) = m.P(*a), m.P(*b)
+            if bx < ax - 0.2 * abs(by - ay) or (abs(bx - ax) <= 0.2 * abs(by - ay) and by > ay):
+                (ax, ay), (bx, by) = (bx, by), (ax, ay)  # reads left to right, or bottom to top
+            m.defs.append(f'<path id="fa-name{k}" d="M{ax:.2f} {ay:.2f}L{bx:.2f} {by:.2f}"/>')
+            m.body.append(f'<text font-family="{escape(st["font"])}" font-size="{max(st["text"] * 1.6, MIN_TEXT)}" font-weight="bold" '
+                          f'letter-spacing="{st["text"] * 0.5:.2f}" fill="{deep}"><textPath href="#fa-name{k}" startOffset="50%" '
+                          f'text-anchor="middle">{escape(name)}</textPath></text>')
+        outside = [f for f in flows if not any(f.intersects(g) for g, _ in cors)]
+        for (x, y), (ux, uy) in group(outside, cell):
+            h = 0.28 * cell
+            m.add(wavy(shapely.LineString([(x - ux * h, y - uy * h), (x + ux * h, y + uy * h)]), 0.8 / m.k), fill="none",
+                  stroke=soft_ink, stroke_width=st["mid"] * 2, stroke_dasharray="1 0.7", stroke_linecap="round", marker_end="url(#fa1)")
         m.site()
-        for lab in sorted({p.get("label", "corridor") for _, p in F if p.get("kind") == "corridor"}):
-            m.key("fill", st["accent"], lab, opacity=0.35)
-        if any(p.get("kind") == "flow" for _, p in F):
-            m.key("arrow", st["ink"], "Air flow, direction of movement")
-        m.compact = dict(rows=[[st["accent"], 0.35, "Air path"], ["arrow", 1, "Air flow, the way it moves"]])
+        for lab in sorted({p.get("label", "corridor") for _, p in cors}):
+            m.key("fill", cool, lab, opacity=0.6)
+        if flows:
+            m.key("arrow", soft_ink, "Air flow, direction of movement", marker="fa1")
+        m.compact = dict(rows=[[cool, 0.42, "Air path", {"soft": True}],  # the short legend dressed like the map
+                               ["arrow", 1, "Air flow, the way it moves", {"stroke": soft_ink, "width": st["mid"] * 2, "dash": "1 0.7",
+                                                                           "marker": "fa1", "wave": True}]])
         made.append(m.save(out / "fresh-air.svg", meta(out, "fresh-air").get("sources", [])))
 
     sun = meta(out, "sun")
@@ -568,12 +692,9 @@ def sheet(out, st, names, W=420, H=297):
     def own(k, text):  # a map's patterns, renamed so two maps' patterns never clash
         return re.sub(r'(id="|url\(#)([\w-]+)', lambda g: f"{g.group(1)}m{k}-{g.group(2)}", text)
 
-    def swatch(x, y, fill, op):  # a 6 x 3.2 mm swatch with its top at y
-        if fill == "arrow":
-            return (f'<line x1="{x:.2f}" y1="{y + 1.6:.2f}" x2="{x + 6:.2f}" y2="{y + 1.6:.2f}" stroke="{st["ink"]}" '
-                    f'stroke-width="{st["mid"]}" marker-end="url(#sheet-arrow)"/>')
-        return (f'<rect x="{x:.2f}" y="{y:.2f}" width="6" height="3.2" fill="{fill}" fill-opacity="{op}" '
-                f'stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+    def swatch(x, y, fill, op, k, look=None):  # a 6 x 3.2 mm swatch with its top at y, its own arrowhead renamed like its map's
+        look = dict(look, marker=f'm{k}-{look["marker"]}') if look and "marker" in look else look
+        return mark(x, y, fill, op, st, look, "sheet-arrow")
 
     def legend(x, y, w, c, k):
         """A compact legend with its top at (x, y), w wide; returns its elements and its height."""
@@ -586,10 +707,10 @@ def sheet(out, st, names, W=420, H=297):
             e.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{bw:.2f}" height="3.2" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
             e.append(t(x + bw + 2, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip()))
             y += lh + 0.8
-        for fill, op, label in c.get("rows", []):
+        for fill, op, label, *look in c.get("rows", []):
             fill = own(k, fill) if fill.startswith("url(") else fill
             lines = textwrap.wrap(label, int((w - 8) / (tx * 0.5))) or [""]
-            e.append(swatch(x, y, fill, op))
+            e.append(swatch(x, y, fill, op, k, *look))
             for j, ln in enumerate(lines):
                 e.append(t(x + 8, y + 2.8 + j * lh, ln))
             y += len(lines) * lh + 0.8

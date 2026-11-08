@@ -1,0 +1,226 @@
+[
+ {
+  "error": "Site outline about 200 m off",
+  "kind": "data",
+  "runs": {
+   "run-1": "x",
+   "run-2": "x",
+   "run-3": "x",
+   "run-4": "q",
+   "run-5": "x"
+  },
+  "fix": {
+   "after": "run-5",
+   "what": "outline traced again",
+   "held": true
+  }
+ },
+ {
+  "error": "Existing buildings at a default height",
+  "kind": "data",
+  "runs": {
+   "run-1": "q",
+   "run-2": "q",
+   "run-3": "q",
+   "run-4": "q",
+   "run-5": "q"
+  },
+  "fix": {
+   "after": "run-5",
+   "what": "LoD2 heights and roofs",
+   "held": true
+  }
+ },
+ {
+  "error": "Massing ignores the narrative",
+  "kind": "join",
+  "runs": {
+   "run-1": "x",
+   "run-2": "x",
+   "run-3": "x"
+  },
+  "fix": {
+   "after": "run-3",
+   "what": "massing reads narrative",
+   "held": true
+  }
+ },
+ {
+  "error": "Concept diagrams crash on multi-part shapes",
+  "kind": "method",
+  "runs": {
+   "run-2": "x",
+   "run-3": "x"
+  },
+  "fix": {
+   "after": "run-4",
+   "what": "multi-part shapes, PR #19",
+   "held": true
+  }
+ },
+ {
+  "error": "Helper's report file refused",
+  "kind": "harness",
+  "runs": {
+   "run-1": "x",
+   "run-2": "x",
+   "run-3": "x",
+   "run-4": "x",
+   "run-5": "x",
+   "run-7": "x",
+   "run-8": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": {
+   "after": "run-5",
+   "what": "workaround only",
+   "held": false
+  }
+ },
+ {
+  "error": "Jury report lost",
+  "kind": "harness",
+  "runs": {
+   "run-4": "x",
+   "run-5": "x"
+  },
+  "fix": {
+   "after": "run-5",
+   "what": "lead saves the reply",
+   "held": true
+  }
+ },
+ {
+  "error": "Drawing too big for its panel",
+  "kind": "method",
+  "runs": {
+   "run-2": "x",
+   "run-3": "x",
+   "run-5": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": {
+   "after": "run-7",
+   "what": "frames at true scale",
+   "held": false
+  }
+ },
+ {
+  "error": "Mobility hub not built or not drawn",
+  "kind": "join",
+  "runs": {
+   "run-3": "x",
+   "run-5": "x",
+   "run-7": "x",
+   "run-8": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": {
+   "after": "run-5",
+   "what": "centres hold buildings",
+   "held": false
+  }
+ },
+ {
+  "error": "Buildings under new streets",
+  "kind": "join",
+  "runs": {
+   "run-5": "x",
+   "run-7": "x"
+  },
+  "fix": {
+   "after": "run-7",
+   "what": "no building under street",
+   "held": true
+  }
+ },
+ {
+  "error": "Open space ignores the terrain",
+  "kind": "join",
+  "runs": {
+   "run-7": "x"
+  },
+  "fix": {
+   "after": "run-7",
+   "what": "open-space reads terrain",
+   "held": true
+  }
+ },
+ {
+  "error": "Phase 1 too small",
+  "kind": "join",
+  "runs": {
+   "run-7": "x"
+  },
+  "fix": {
+   "after": "run-8",
+   "what": "each phase holds homes",
+   "held": true
+  }
+ },
+ {
+  "error": "Too few or too many homes",
+  "kind": "join",
+  "runs": {
+   "run-8": "x",
+   "run-10": "x"
+  },
+  "fix": null
+ },
+ {
+  "error": "Perspective renders missing or invented",
+  "kind": "harness",
+  "runs": {
+   "run-3": "x",
+   "run-4": "x",
+   "run-5": "x",
+   "run-7": "x",
+   "run-8": "x",
+   "run-9": "x"
+  },
+  "fix": {
+   "after": "run-7",
+   "what": "render through Gemini",
+   "held": false
+  }
+ },
+ {
+  "error": "One figure, two values",
+  "kind": "join",
+  "runs": {
+   "run-3": "x",
+   "run-4": "x",
+   "run-7": "x",
+   "run-8": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": null
+ },
+ {
+  "error": "Drawn before what it shows",
+  "kind": "order",
+  "runs": {
+   "run-1": "x",
+   "run-2": "x",
+   "run-8": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": null
+ },
+ {
+  "error": "A4 text and images not made",
+  "kind": "missing skill",
+  "runs": {
+   "run-7": "x",
+   "run-8": "x",
+   "run-9": "x",
+   "run-10": "x"
+  },
+  "fix": null
+ }
+]

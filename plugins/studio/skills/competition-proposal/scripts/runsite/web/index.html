@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/deck.gl@9.0.38/dist.min.js" integrity="sha512-R306Iwv466NdydETeKnjn2TaosUQ3t++lw5u/E7kHefLMFSSJtFVHXbU3xpfpf0QX86kuAf6yuY+S9kcp7J+zw==" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="model.css">
+<link rel="stylesheet" href="panels.css">
+<link rel="stylesheet" href="loop.css">
+<link rel="stylesheet" href="dash.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Studio runs</div>
+  <nav class="tabs" aria-label="Pages">
+    <a data-page="model" href="#">Model</a>
+    <a data-page="panels" href="#">Panels</a>
+    <a data-page="loop" href="#">Loop</a>
+    <a data-page="dash" href="#all">All runs</a>
+  </nav>
+  <div class="picker">
+    <span class="project mono"></span>
+    <select id="run-picker" aria-label="Run"></select>
+  </div>
+</header>
+<main id="view"></main>
+<script type="module" src="app.js"></script>
+<script type="module" src="timeline.js"></script>
+<script type="module" src="model.js"></script>
+<script type="module" src="panels.js"></script>
+<script type="module" src="loop.js"></script>
+<script type="module" src="dash.js"></script>
+</body>
+</html>

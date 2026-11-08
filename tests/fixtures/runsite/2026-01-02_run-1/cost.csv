@@ -1,0 +1,4 @@
+skill,run,model,steps,minutes,input,cache_read,output,usd
+plans,1,sonnet,8,16,100,200,50,1.50
+lead,1,opus,20,60,100,200,50,2.00
+total,,,28,76,200,400,100,3.50

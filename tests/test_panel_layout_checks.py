@@ -165,3 +165,19 @@ def test_issues_md_is_a_report_for_the_lead_by_skill(tmp_path):
     assert "| high | required drawing cropped over the limit |" in here   # the frame is ours
     assert "| medium | disagreeing figures not named |" in here
     assert "For the studio lead: " in issues and "Fix in panel-layout: " in issues
+
+
+def test_a_group_split_across_panels_is_named(tmp_path):
+    (tmp_path / "concept-diagrams").mkdir()
+    (tmp_path / "concept-diagrams" / "groups.json").write_text(json.dumps({"groups": [
+        {"name": "the sequence", "files": ["concept-diagrams/01_a.svg", "concept-diagrams/02_b.svg"]}]}), encoding="utf-8")
+    a = {"id": "a", "type": "text", "text": "", "file": "concept-diagrams/01_a.svg"}
+    b = {"id": "b", "type": "text", "text": "", "file": "concept-diagrams/02_b.svg"}
+    out = tmp_path / "panel-layout"
+    out.mkdir()
+    results = [{"n": n, "placed": [(it, {"x": 15, "y": 15, "w": 100, "h": 50})], "unplaced": [], "checks": [], "story": "", "paths": []}
+               for n, it in ((1, a), (3, b))]
+    text = panels.write_report(out, {}, FMT, results, [], {"a", "b"}, [], {"missing": []}, None, 96)
+    assert "**concept-diagrams: the sequence**: on panels 1, 3" in text
+    results[1]["n"] = 1
+    assert "- none" in panels.write_report(out, {}, FMT, results, [], {"a", "b"}, [], {"missing": []}, None, 96).split("## Groups split across panels")[1].split("##")[0]

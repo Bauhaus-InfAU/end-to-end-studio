@@ -1,0 +1,67 @@
+{
+ "2026-11-01_run-1": {
+  "items": [
+   3,
+   9
+  ]
+ },
+ "2026-11-01_run-2": {
+  "verdict": "no award",
+  "items": [
+   1,
+   9
+  ]
+ },
+ "2026-11-02_run-3": {
+  "verdict": "no award",
+  "items": [
+   8,
+   11
+  ]
+ },
+ "2026-11-02_run-4": {
+  "verdict": "no award",
+  "items": [
+   7,
+   13
+  ]
+ },
+ "2026-11-02_run-5": {
+  "verdict": "no award",
+  "items": [
+   11,
+   13
+  ]
+ },
+ "2026-11-03_run-7": {
+  "verdict": "no award",
+  "items": [
+   10,
+   13
+  ]
+ },
+ "2026-11-03_run-8": {
+  "verdict": "no award",
+  "items": [
+   12,
+   15
+  ]
+ },
+ "2026-11-03_run-9": {
+  "verdict": "Special Mention",
+  "items": [
+   13,
+   13
+  ]
+ },
+ "2026-11-03_run-10": {
+  "verdict": "no award",
+  "items": [
+   15,
+   15
+  ]
+ },
+ "2026-11-02_mobility-lean": {
+  "kind": "variant"
+ }
+}

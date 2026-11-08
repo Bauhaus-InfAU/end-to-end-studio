@@ -10,6 +10,9 @@
 !/competition/proposals/*/*/summary.md
 !/competition/proposals/*/jury/report.md
 !/competition/proposals/*/panel-layout/panel-*.png
+!/competition/proposals/ledger.json
+!/competition/proposals/runs.json
+/competition/proposals/site/
 /competition/proposals/test/
 /competition/proposals/preview/
 /proposals/
@@ -28,3 +31,6 @@ __pycache__/
 
 # the Europan 18 winners, references for the runs: other people's work, so they stay off the public repo (zip on Moodle)
 /competition/references/winners/
+
+# mockups from brainstorming sessions
+/.superpowers/

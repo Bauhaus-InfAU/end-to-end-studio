@@ -113,7 +113,8 @@ def test_plans_reads_streets_when_present(drawn, tmp_path):
 
 
 def test_plans_take_their_frames_and_roman_storeys(drawn):
-    """A plan the panels' plan frames takes the frame's scale and is drawn to its size, its legend strip included."""
+    """A plan the panels' plan frames takes the frame's scale and is drawn to its size, its legend strip included;
+    placed on a panel (the base's marks "panel"), 8 mm less high, the room of the scale bar the panel draws under it."""
     out, site_dir = drawn
     frames = {"site-plan": ("plans/site-plan_1-3000.svg", "1:3000", 400, 300),
               "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180),
@@ -127,9 +128,10 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
     style.write_text(json.dumps({**json.loads(keep), "storey_labels": "roman"}), encoding="utf-8")
     try:
         draw(out, site_dir)
+        bar = 8 if json.loads(keep)["marks"] == "panel" else 0
         for f, s, w, h in frames.values():
             svg = (out / f).read_text(encoding="utf-8")
-            assert abs(mm(svg, "width") - w) <= 0.5 and abs(mm(svg, "height") - h) <= 0.5, (f, mm(svg, "width"), mm(svg, "height"))
+            assert abs(mm(svg, "width") - w) <= 0.5 and abs(mm(svg, "height") - (h - bar)) <= 0.5, (f, mm(svg, "width"), mm(svg, "height"))
         storeys = re.findall(r'text-anchor="middle" fill="[^"]+">([^<]+)</text>', (out / frames["detail-area-1"][0]).read_text(encoding="utf-8"))
         assert storeys and all(re.fullmatch(r"[IVXL]+", s) for s in storeys), storeys
     finally:
@@ -316,6 +318,53 @@ def test_plans_missing_required_stops(drawn):
     write_config(out, CONFIG)
 
 
+NORTH = re.compile(r'<circle[^>]*fill="none"[^>]*/><path d="M')      # the standard's north: a circle and one line
+TITLE = re.compile(r'font-weight="bold"[^>]*>[^<]*, 1:[\d,]+</text>')   # the strip's own title with its scale
+BAR = re.compile(r'>\d+ m</text>')                                     # the scale bar's last number, with its unit
+
+
+def marks(out):
+    return {f: (len(NORTH.findall(s)), len(TITLE.findall(s)), len(BAR.findall(s)))
+            for f in FILES for s in [(out / "plans" / (f + ".svg")).read_text(encoding="utf-8")]}
+
+
+def test_plans_on_a_panel_leave_caption_and_scale_bar_to_it(drawn):
+    """Issue #34: with the base's marks "panel", the panel writes each plan's caption and scale bar once; the plans
+    keep legend and source, and only the site plan keeps the north arrow (none of these plans is turned from north)."""
+    out, _ = drawn
+    assert json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))["marks"] == "panel"
+    assert marks(out) == {"site-plan_1-3000": (1, 0, 0), "detail-area-1_1-1000": (0, 0, 0), "figure-ground_1-15000": (0, 0, 0)}
+    site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    assert "Map data" in site or "OpenStreetMap" in site or "©" in site   # the source line stays
+
+
+def test_plans_shown_alone_keep_every_mark(drawn, tmp_path):
+    """A plan made to stand alone (marks "drawing") keeps its title with the scale, its north arrow and its scale bar."""
+    out, site_dir = drawn
+    alone = tmp_path / "alone"
+    shutil.copytree(out, alone)
+    style = alone / "drawing-graphics/style.json"
+    style.write_text(json.dumps({**json.loads(style.read_text(encoding="utf-8")), "marks": "drawing"}), encoding="utf-8")
+    draw(alone, site_dir)
+    assert all(m == (1, 1, 1) for m in marks(alone).values()), marks(alone)
+
+
+def test_plans_name_a_detail_area_with_no_free_corner(drawn, tmp_path):
+    """Buildings on every corner of the window: its name still goes on the site plan, as a name."""
+    out, site_dir = drawn
+    full = tmp_path / "full"
+    shutil.copytree(out, full)
+    path = full / "massing/massing.geojson"
+    gj = json.loads(path.read_text(encoding="utf-8"))
+    x0, y0, x1, y1 = shape(json.loads((site_dir / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"]).bounds
+    gj["features"].append({"type": "Feature", "geometry": mapping(box(x0 - 0.02, y0 - 0.02, x1 + 0.02, y1 + 0.02)),
+                           "properties": {"kind": "building", "use": "housing", "floors": 2, "height_m": 6}})
+    path.write_text(json.dumps(gj), encoding="utf-8")
+    draw(full, site_dir)
+    site = (full / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    assert ">Detail area 1</text>" in site and ">start</text>" not in site
+
+
 def test_plans_box_the_site_plans_legend(drawn):
     """The site plan's legend is a two-column list on a pale box with no outline over its bottom-left corner, under a
     bold heading; a detail area keeps its strip."""
@@ -324,6 +373,6 @@ def test_plans_box_the_site_plans_legend(drawn):
     detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
     assert re.search(r'<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="[\d.]+" fill="[^"]+" fill-opacity="0.85"', site)
     assert re.search(r'fill-opacity="0.85" stroke="none"/>\s*<text [^>]*font-weight="bold"[^>]*>Legend</text>', site)
-    assert ">New buildings</text>" in site and 'fill-opacity="0.85"' not in detail
+    assert ">New buildings</text>" in site and ">Legend</text>" not in detail   # a detail area keeps its strip
     xs = {m for m in re.findall(r'<text x="([\d.]+)"[^>]*>(?:New buildings|Squares, shared streets|Project site)</text>', detail)}
     assert xs   # the strip's labels sit on a few shared columns
