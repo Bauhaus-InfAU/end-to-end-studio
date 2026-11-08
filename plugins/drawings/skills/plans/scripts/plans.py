@@ -84,6 +84,8 @@ DEFAULTS = {
     'detail_site_min': 0.6,     # a detail area with less of its window on the site is flagged as weak
     'detail_new_min': 6,        # ... and one with fewer new buildings in it
     'legend_mm': 30,            # the strip under the map for the title, legend, scale bar, north and source
+    'legend_box_mm': 4,         # the site plan's legend box sits this far in from the map's top-left corner, mm
+    'legend_box_opacity': 0.85, # ... on the paper tone at this opacity, so the plan shows through
     'caption_room_mm': 60,      # panel height kept free for a caption and the legend strip
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
     'png_px_per_mm': 4,         # PNG resolution, pixels per printed mm
@@ -623,6 +625,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                      f'stroke-width="{f2(0.8 * k)}" paint-order="stroke">{escape(s)}</text>')
             return True
 
+        if kind == 'site':                                 # the legend's box over the top-left corner: no names under it
+            soon = dict(legend, **{key: None for key in ('site', 'window') if key not in legend})
+            bx = legend_box(soon, k, name, measure=True)[1]
+            taken.append(tuple(v * k for v in bx))
         # the detail areas' names on the site plan first, at a corner of their window clear of the buildings
         blds = unary_union([g for p, g in inside(BUILD)] or [Polygon()])
         for wname, wb in windows:
@@ -757,7 +763,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
-    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name)
+    boxed = kind == 'site' and bool(legend)              # the site plan's legend sits over its top-left corner
+    if boxed:
+        o += legend_box(legend, k, name)[0]
+    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name, boxed)
     Hs = H_strip * k
     head = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
             f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
@@ -840,8 +849,70 @@ def north_angle(window):
     return math.atan2(x - cx, y - cy)
 
 
-def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
-    """The title, north, scale bar, legend and source under the map. Returns (svg lines, strip height in mm)."""
+LEG_SW, LEG_GAP, LEG_PAD = 6, 1.5, 3       # a legend swatch's width, the gap to its label, a legend box's padding, mm
+
+
+def legend_grid(legend, room):
+    """Columns for the legend's entries in `room` mm: (columns, column width, rows, row height), every label aligned."""
+    colw = max(LEG_SW + LEG_GAP + tw(LAB.get(key, key), TXT) for key in legend) + 4
+    cols = max(1, min(len(legend), int(room // colw)))
+    return cols, colw, -(-len(legend) // cols), TXT + 2
+
+
+def legend_items(legend, x0, top0, cols, colw, rows, rowh, m, Y, k, hatch_id):
+    """The legend's swatches and labels, down each column then across; top0 is the first swatch's top, in mm."""
+    ink, thin, o = S['ink'], float(S['thin']), []
+    for i, (key, spec) in enumerate(legend.items()):
+        x, top = x0 + (i // rows) * colw, top0 + (i % rows) * rowh
+        o += swatch(spec, x, top, m, Y, k, hatch_id)
+        o.append(f'<text x="{m(x + LEG_SW + LEG_GAP)}" y="{m(Y(top + 3.2))}" font-size="{TXT * k:.2f}" fill="{ink}">'
+                 f'{escape(LAB.get(key, key))}</text>')
+    return o
+
+
+def legend_box(legend, k, hatch_id, cols=2, measure=False):
+    """The legend as a list in two columns on a pale box over the map's top-left corner: (svg lines, its box in mm)."""
+    _, colw, _, rowh = legend_grid(legend, 1e9)
+    cols = min(cols, len(legend))
+    rows = -(-len(legend) // cols)
+    w, h = cols * colw - 4 + 2 * LEG_PAD, rows * rowh - 2 + 2 * LEG_PAD
+    x0 = y0 = CFG['legend_box_mm']
+    if measure:
+        return [], (x0, y0, x0 + w, y0 + h)
+    def m(v): return '%.2f' % (v * k)
+    o = [f'<rect x="{m(x0)}" y="{m(y0)}" width="{m(w)}" height="{m(h)}" fill="{S["paper"]}" '
+         f'fill-opacity="{CFG["legend_box_opacity"]}" stroke="{S["ink"]}" stroke-width="{m(float(S["thin"]))}"/>']
+    o += legend_items(legend, x0 + LEG_PAD, y0 + LEG_PAD, cols, colw, rows, rowh, m, lambda y: y, k, hatch_id)
+    return o, (x0, y0, x0 + w, y0 + h)
+
+
+def swatch(spec, x, top, m, Y, k, hatch_id):
+    """One legend sample, 6 x 3.5 mm, its top-left at (x, top) in mm."""
+    ink, thin = S['ink'], float(S['thin'])
+    if spec[0] == 'fill':
+        st = f' stroke="{spec[2]}" stroke-width="{m(float(S[spec[3]]))}"' if spec[2] else f' stroke="{S["path"]}" stroke-width="{m(thin)}"'
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{spec[1]}"{st}/>']
+    if spec[0] == 'line':
+        da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
+        return [f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>']
+    if spec[0] == 'band':
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["accent"]}" '
+                f'fill-opacity="{CFG["idea_tint"]}" stroke="{S["accent"]}" stroke-width="{m(thin)}"/>']
+    if spec[0] == 'hatch':
+        return [f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
+                f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>']
+    if spec[0] == 'dot':
+        return [f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>']
+    if spec[0] == 'text':
+        bg = spec[2] if len(spec) > 2 else S['new']   # the buildings' tone: the roof's, or a cut plan's paper
+        return [f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{bg}" stroke="{ink}" stroke-width="{m(thin)}"/>',
+                f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>']
+    return [symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k)]
+
+
+def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', boxed=False):
+    """The title, north, scale bar, legend and source under the map (the legend left out when it is boxed over the
+    map). Returns (svg lines, strip height in mm)."""
     ink, paper = S['ink'], S['paper']
     o = []
     def m(v): return '%.2f' % (v * k)
@@ -883,40 +954,14 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
         o.append(f'<path d="M{m(x)},{m(Y(sy - hstep))}L{m(x)},{m(Y(sy + 1.2))}" stroke="{ink}" stroke-width="{m(thin)}"/>')
         if i in show:
             text(x, sy + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
-    # legend: one swatch per colour used
+    # legend: one swatch per colour used, in aligned columns; on a boxed plan it sits over the map instead
     y = row_y + 4
-    x = 4
-    for key, spec in legend.items():
-        lab = LAB.get(key, key)
-        wi = 6 + 1.5 + tw(lab, TXT) + 5
-        if x + wi > W - 4 and x > 4:
-            x, y = 4, y + TXT + 3
-        top = y - 3.2
-        if spec[0] == 'fill':
-            st = f' stroke="{spec[2]}" stroke-width="{m(float(S[spec[3]]))}"' if spec[2] else f' stroke="{S["path"]}" stroke-width="{m(thin)}"'
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{spec[1]}"{st}/>')
-        elif spec[0] == 'line':
-            da = f' stroke-dasharray="{m(spec[3][0])} {m(spec[3][1])}"' if spec[3] else ''
-            o.append(f'<path d="M{m(x)},{m(Y(top + 1.75))}L{m(x + 6)},{m(Y(top + 1.75))}" stroke="{spec[1]}" stroke-width="{m(float(S[spec[2]]))}"{da}/>')
-        elif spec[0] == 'band':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["accent"]}" '
-                     f'fill-opacity="{CFG["idea_tint"]}" stroke="{S["accent"]}" stroke-width="{m(thin)}"/>')
-        elif spec[0] == 'hatch':
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="{S["new"]}" stroke="{ink}" stroke-width="{m(thin)}"/>'
-                     f'<rect x="{m(x)}" y="{m(Y(top))}" width="{m(6)}" height="{m(3.5)}" fill="url(#gf-{hatch_id})"/>')
-        elif spec[0] == 'dot':
-            o.append(f'<circle cx="{m(x + 3)}" cy="{m(Y(top + 1.75))}" r="{m(1.5)}" fill="{spec[1]}"/>')
-        elif spec[0] == 'text':
-            bg = spec[2] if len(spec) > 2 else S['new']   # the buildings' tone: the roof's, or a cut plan's paper
-            o.append(f'<rect x="{m(x)}" y="{m(Y(top - 0.4))}" width="{m(6)}" height="{m(4.3)}" fill="{bg}" '
-                     f'stroke="{ink}" stroke-width="{m(thin)}"/>')
-            o.append(f'<text x="{m(x + 3)}" y="{m(Y(top + 3.0))}" font-size="{TXT * k:.2f}" text-anchor="middle" fill="{spec[1]}">{storeys(4)}</text>')
-        else:
-            o.append(symbol(spec[0], x * k + 3 * k, Y(top + 1.75) * k, k))
-        text(x + 7.5, y, lab)
-        x += wi
-    # source line, wrapped to the width
-    y += TXT + 3
+    if not boxed and legend:
+        cols, colw, rows, rowh = legend_grid(legend, W - 8)
+        o += legend_items(legend, 4, y - 3.2, cols, colw, rows, rowh, m, Y, k, hatch_id)
+        y += (rows - 1) * rowh
+    # source line, wrapped to the width; right under the title when the legend is boxed over the map
+    y = row_y + 1 + TXT if boxed else y + TXT + 3
     words, cur = CREDIT.split(), ''
     for w_ in words:
         if cur and tw(cur + ' ' + w_, TXT) > W - 8:
@@ -926,7 +971,7 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
             cur = (cur + ' ' + w_).strip()
     if cur:
         text(4, y, cur)
-    return o, max(float(CFG['legend_mm']), y + 3)
+    return o, (y + 3 if boxed else max(float(CFG['legend_mm']), y + 3))
 
 
 # ---------------- the plans ----------------
