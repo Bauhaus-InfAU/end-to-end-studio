@@ -7,15 +7,15 @@
  "margin_mm": {"value": 15, "source": "assumption: the drawing standard says nothing, 15 mm"},
  "detail_areas": {
   "value": [
-   {"name": "detail-area-1", "scale": null, "at": "<a centre name from structure-plan.geojson, or phase1, or [lon, lat]>",
+   {"name": "detail-area-1", "scale": null, "at": "<a centre or neighbourhood name from structure-plan.geojson, or phase1, or [lon, lat]>",
     "shows": "<what the brief asks the detail area to show>", "page": "<brief file> p. N"}
   ],
   "source": "<brief file> p. N"
  },
  "idea": {
   "value": {"label": "<the narrative's own word for its idea>",
-            "names": ["<the name of each feature in structure-plan, massing, open-space or mobility that carries it>"]},
-  "source": "<narrative/narrative.md: Idea; leave null when no design layer has the idea as a shape>"
+            "names": ["<the name of the shape that is the idea, in a design layer or the site's streets, rail or water>"]},
+  "source": "<narrative/narrative.md: Idea; leave null when nothing has the idea as a shape>"
  },
  "labels": {
   "value": {"new": "New buildings", "existing": "Kept buildings", "context": "Existing buildings", "site-plan": "Site plan",
