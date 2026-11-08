@@ -294,3 +294,19 @@ def test_plans_shown_alone_keep_every_mark(drawn, tmp_path):
     style.write_text(json.dumps({**json.loads(style.read_text(encoding="utf-8")), "marks": "drawing"}), encoding="utf-8")
     draw(alone, site_dir)
     assert all(m == (1, 1, 1) for m in marks(alone).values()), marks(alone)
+
+
+def test_plans_name_a_detail_area_with_no_free_corner(drawn, tmp_path):
+    """Buildings on every corner of the window: its name still goes on the site plan, as a name."""
+    out, site_dir = drawn
+    full = tmp_path / "full"
+    shutil.copytree(out, full)
+    path = full / "massing/massing.geojson"
+    gj = json.loads(path.read_text(encoding="utf-8"))
+    x0, y0, x1, y1 = shape(json.loads((site_dir / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"]).bounds
+    gj["features"].append({"type": "Feature", "geometry": mapping(box(x0 - 0.02, y0 - 0.02, x1 + 0.02, y1 + 0.02)),
+                           "properties": {"kind": "building", "use": "housing", "floors": 2, "height_m": 6}})
+    path.write_text(json.dumps(gj), encoding="utf-8")
+    draw(full, site_dir)
+    site = (full / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    assert ">Detail area 1</text>" in site and ">start</text>" not in site

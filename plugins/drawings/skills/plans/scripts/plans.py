@@ -596,7 +596,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             spots = [(sx0 + m_, sy0 + h, 'start'), (sx1 - m_, sy0 + h, 'end'), (sx0 + m_, sy1 - h, 'start'),
                      (sx1 - m_, sy1 - h, 'end'), (sx0, sy0 - h, 'start'), (sx0, sy1 + h, 'start')]
             if not any(put(x, y, wname, anchor=a, avoid=blds) for x, y, a in spots):
-                put(*spots[0], wname, force=True)
+                put(spots[0][0], spots[0][1], wname, anchor=spots[0][2], force=True)
 
         named = set()
         core = fr.buffer(-2 * fs)                         # the map less a margin as wide as two lines of text
