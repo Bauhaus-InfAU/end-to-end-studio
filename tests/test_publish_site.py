@@ -159,3 +159,35 @@ def test_publish_needs_references_or_no_references(tmp_path):
     done = subprocess.run([sys.executable, str(SCRIPT), str(site), "--remote", str(remote), "--yes"],
                           capture_output=True, text=True)
     assert done.returncode != 0 and "--no-references" in done.stdout + done.stderr
+
+
+def test_a_run_key_with_a_space_survives_another_publish(tmp_path):
+    remote = _bare(tmp_path)
+    assert _publish(make_site(tmp_path / "a", {"2026-11-08_run 12": 1}, references=False), remote, "--yes").returncode == 0
+    done = _publish(make_site(tmp_path / "b", {"2026-11-09_run-13": 1}, references=False), remote, "--yes")
+    assert done.returncode == 0, done.stdout + done.stderr
+    files = _branch_files(remote)
+    assert "img/2026-11-08_run 12/d0.jpg" in " ".join(files)
+
+
+def test_a_published_run_that_cannot_be_kept_stops_the_publish(tmp_path):
+    remote = _bare(tmp_path)
+    assert _publish(make_site(tmp_path / "a", {"r0": 1}, references=False), remote, "--yes").returncode == 0
+    clone = tmp_path / "c"
+    subprocess.run(["git", "clone", "-q", "--branch", "gh-pages", str(remote), str(clone)], check=True)
+    (clone / "data/runs/r0.json").unlink()
+    for cmd in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "break"], ["push", "-q"]):
+        subprocess.run(["git", "-C", str(clone), *cmd], check=True)
+    site = make_site(tmp_path / "b", {"r1": 1}, references=False)
+    done = _publish(site, remote, "--yes")
+    assert done.returncode != 0 and "r0" in done.stdout + done.stderr
+    assert _publish(site, remote, "--yes", "--drop", "r0").returncode == 0
+    assert not any(f.startswith("img/r0/") for f in _branch_files(remote))
+
+
+def test_drop_takes_a_run_off_even_when_the_build_has_it(tmp_path):
+    remote = _bare(tmp_path)
+    site = make_site(tmp_path / "a", {"r0": 1, "bad": 1}, references=False)
+    assert _publish(site, remote, "--yes", "--drop", "bad").returncode == 0
+    files = _branch_files(remote)
+    assert not any("bad" in f for f in files) and "img/r0/d0.jpg" in files

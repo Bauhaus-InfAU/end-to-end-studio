@@ -23,9 +23,6 @@ sys.path.insert(0, str(HERE))
 
 from runsite.safety import BANNED_PARTS, forbidden_names, scrub  # noqa: E402
 
-RUN_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-
 def _json(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -34,7 +31,9 @@ def _json(path):
 
 
 def _key_ok(key) -> bool:
-    return isinstance(key, str) and bool(RUN_KEY.match(key)) and ".." not in key
+    """A run key is one folder name: any characters a run folder can have, but no path in it."""
+    return (isinstance(key, str) and key.strip() == key and bool(key) and not key.startswith(".")
+            and ".." not in key and not any(c in key for c in "/\\:\0"))
 
 
 def _inside(base: Path, path: Path) -> bool:
@@ -62,6 +61,41 @@ def richness(site: Path, key: str) -> int:
     return n
 
 
+def _sources(published: Path, key: str) -> list[Path]:
+    return [published / "data/runs" / f"{key}.json", published / "data/geo" / f"{key}.json", published / "img" / key]
+
+
+def unkeepable(published: Path | None, drop: tuple = ()) -> list[str]:
+    """Published runs that merge can't safely carry over and nobody asked to drop: publishing would lose them."""
+    if published is None:
+        return []
+    out = []
+    for card in (_json(published / "data/index.json") or {}).get("runs", []):
+        key = card.get("key") if isinstance(card, dict) else card
+        if key in drop:
+            continue
+        if (not _key_ok(key) or not (published / "data/runs" / f"{key}.json").is_file()
+                or any(_has_link(s) for s in _sources(published, key) if s.exists() or s.is_symlink())
+                or not all(_inside(published, s) for s in _sources(published, key))):
+            out.append(str(key))
+    return out
+
+
+def drop_runs(site: Path, drop: tuple) -> None:
+    """Take runs off a built site: their card, run file, geometry and images."""
+    idx = _json(site / "data/index.json") or {"runs": []}
+    idx["runs"] = [r for r in idx.get("runs", []) if not (isinstance(r, dict) and r.get("key") in drop)]
+    (site / "data/index.json").write_text(json.dumps(idx, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    for key in drop:
+        if not _key_ok(key):
+            continue
+        for p in (site / "data/runs" / f"{key}.json", site / "data/geo" / f"{key}.json"):
+            if p.exists() and _inside(site, p):
+                p.unlink()
+        if (site / "img" / key).is_dir() and _inside(site, site / "img" / key):
+            shutil.rmtree(site / "img" / key)
+
+
 def merge(local: Path, published: Path | None, drop: tuple = ()) -> list[str]:
     """Copy into the local build each published run it lacks or has less of; the keys taken from the published site.
 
@@ -80,7 +114,7 @@ def merge(local: Path, published: Path | None, drop: tuple = ()) -> list[str]:
             continue
         if key in have and richness(local, key) >= richness(published, key):
             continue
-        sources = [published / "data/runs" / f"{key}.json", published / "data/geo" / f"{key}.json", published / "img" / key]
+        sources = _sources(published, key)
         if any(_has_link(s) for s in sources if s.exists() or s.is_symlink()):
             continue
         if not all(_inside(published, s) for s in sources) or not _inside(local, local / "img" / key):
@@ -201,7 +235,16 @@ def main():
             if got.returncode != 0:
                 sys.exit("Not published: the published site exists but couldn't be downloaded, so its runs "
                          "would be lost. Nothing was changed.")
-        published_runs = len((_json(pub / "data/index.json") or {}).get("runs", [])) if pub else 0
+        pub_idx = _json(pub / "data/index.json") if pub else {}
+        if not isinstance(pub_idx, dict):
+            sys.exit("Not published: the published site's data/index.json can't be read, so its runs would be "
+                     "lost. Nothing was changed.")
+        published_runs = len(pub_idx.get("runs", []))
+        lost = unkeepable(pub, tuple(a.drop))
+        if lost:
+            sys.exit("Not published: these published runs can't be carried over safely and would be lost: "
+                     f"{', '.join(lost)}. Publish with --drop {' '.join(lost)} to take them off. Nothing was changed.")
+        drop_runs(stage, tuple(a.drop))
         kept = merge(stage, pub, tuple(a.drop))
         problems = check(stage, names, a.no_references)
         if problems:
@@ -227,15 +270,20 @@ def main():
             if answer.strip().lower() not in ("y", "yes"):
                 print("Not published.")
                 return
-        who = [] if _run(["git", "config", "user.email"]).stdout.strip() else ["-c", "user.name=runs site", "-c", "user.email=runs-site@localhost"]
+        steps0 = _run(["git", "init", "--quiet"], cwd=stage)
+        if steps0.returncode != 0:
+            sys.exit(f"Not published: git init failed.\n{steps0.stderr.strip()}")
+        known = all(_run(["git", "config", k], cwd=stage).stdout.strip() for k in ("user.name", "user.email"))
+        who = [] if known else ["-c", "user.name=runs site", "-c", "user.email=runs-site@localhost"]
         lease = f"--force-with-lease=refs/heads/gh-pages:{head or ''}"
-        steps = [["git", "init", "--quiet"], ["git", "checkout", "--quiet", "-b", "gh-pages"], ["git", "add", "-A"],
+        steps = [["git", "checkout", "--quiet", "-b", "gh-pages"], ["git", "add", "-A"],
                  ["git", *who, "commit", "--quiet", "-m", f"Runs site, {datetime.now():%Y-%m-%d %H:%M}"],
                  ["git", "push", "--quiet", lease, a.remote, "HEAD:gh-pages"]]
         for s in steps:
             done = _run(s, cwd=stage)
             if done.returncode != 0:
-                hint = (" Someone published in the meantime: run this again." if s[1] == "push" else "")
+                stale = s[1] == "push" and re.search(r"stale info|fetch first|rejected", done.stderr)
+                hint = " Someone published in the meantime: run this again." if stale else ""
                 sys.exit(f"Not published: {' '.join(x for x in s[:2] if not x.startswith('-c'))} failed.{hint}\n"
                          f"{_shown(done.stderr.strip())}")
     url = _pages_url(a.remote)
