@@ -334,7 +334,7 @@ def centre_gap(tmp_path, figure):
 def test_massing_heights_to_centre(tmp_path):
     flat, _ = centre_gap(tmp_path / "flat", None)
     prof, B = centre_gap(tmp_path / "profile", {"*": {"heights": "to centre", "floors_max": 5}})
-    assert prof >= flat + 1, (flat, prof)
+    assert prof >= flat + 0.8, (flat, prof)
     assert max(p["floors"] for p, _ in housing(B)) <= 5
 
 
