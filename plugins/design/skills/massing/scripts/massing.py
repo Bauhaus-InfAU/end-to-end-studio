@@ -267,11 +267,26 @@ def block_buildings(T, col=0, row=0):
 
 
 def clip(q, land):
-    """a part cut to its land: the largest piece, if it keeps 60 % of the part and 150 m2 (90 % of a smaller part)"""
-    cl = q.intersection(land)
-    if cl.geom_type == 'MultiPolygon':
-        cl = max(cl.geoms, key=lambda r: r.area)
-    return cl if cl.geom_type == 'Polygon' and cl.area >= 0.6 * q.area and cl.area >= min(150, 0.9 * q.area) else None
+    """a part whole on its land, never cut: a bar that crosses the land's edge shortened in 3 m steps until it fits, if
+    it keeps 12 m and 60 % of its length or 30 m, and one deeper than 20 m also made shallower, down to 60 % of its
+    depth; the largest that fits, else None (an L or U is then tried as its arms)"""
+    inside = q.intersection(land)
+    if inside.area >= q.area - 1:
+        return q
+    x0, y0, x1, y1 = q.bounds
+    if abs(q.area - (x1 - x0) * (y1 - y0)) > 1:
+        return None
+    along_x = x1 - x0 >= y1 - y0
+    L, D = (x1 - x0, y1 - y0) if along_x else (y1 - y0, x1 - x0)
+    lens = [L] + [L - 3 * k for k in range(1, int(L // 3)) if L - 3 * k >= 12 and (L - 3 * k >= 0.6 * L or L - 3 * k >= 30)]
+    deps = [D] + ([D - 3 * k for k in range(1, int(D // 3)) if D - 3 * k >= 0.6 * D] if D > 20 else [])
+    for n, e in sorted(((n, e) for n in lens for e in deps if (n, e) != (L, D)), key=lambda t: -t[0] * t[1]):
+        for a in (3 * i for i in range(round((L - n) / 3) + 1)):
+            for b in (3 * j for j in range(round((D - e) / 3) + 1)):
+                r = box(x0 + a, y0 + b, x0 + a + n, y0 + b + e) if along_x else box(x0 + b, y0 + a, x0 + b + e, y0 + a + n)
+                if r.difference(inside).area < 1:
+                    return r
+    return None
 
 
 def bars(q, g):
