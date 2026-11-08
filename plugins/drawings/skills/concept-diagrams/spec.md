@@ -65,6 +65,7 @@ Any element can carry `label` (only in its own frame; `label_at` and `label_z` s
 | `vignette` | `at`, `scene` (sign names), `label`, `offset` | what people do at a place: a small round scene set beside it where it covers least, with a leader; `offset` ([dx, dy] px) places it |
 | `layers` | `of` (frame numbers), `labels`, `sum` | the frame is a row: each of those frames' own move alone on the site, joined by +; `sum: true` or a label adds = and all of them together. Default: every earlier frame |
 | `metaphor` | `parts`: [{`draw`: sign names, `label`}], `join`: `arrow` or `plus` | the frame is the idea as an image, without the site: two or three scenes at one size, the last in the accent |
+| `pie` | `charts`: [{`title`, `parts`: [{`value`, `label`, `accent`}], `source`}] | the frame is up to three pie charts at one size, for ratios from the proposal's tables; `source` names each table, and the footer lists them |
 
 **Signs** for `pose`, `sign`, `scene` and `draw`: `person`, `walker`, `child`, `cheer`, `sitter`, `cyclist`, `people`, `tree`, `conifer`, `bench`, `table`, `ball`, `house`, `block`, `tower`, `stall`, `bed`, `crop`, `water`, `sun`, `wind`, `heart`, `bus`; also `home`, `market`, `shop`, `garden`, `farm`, `walk`, `bike`, `sit`, `play`, `community`. People, icons and vignettes are only in their own frame (`only_here: false` keeps them); a frame with them, or a metaphor, says in its footer that they are illustrative. A `layers` or `metaphor` frame shows only itself.
 

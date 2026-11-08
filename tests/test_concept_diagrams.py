@@ -41,3 +41,21 @@ def test_vocabulary_renders(tmp_path):
     assert "illustrative" in svg["01_green-link"] and "meet and play" in svg["02_square"] and ">Ki<" in svg["02_square"]
     assert ">+<" in svg["03_layers"] and ">=<" in svg["03_layers"] and "together" in svg["03_layers"]
     assert "a room to share" in svg["04_metaphor"] and "#d0312d" in svg["04_metaphor"]   # the idea in the accent
+
+
+def test_pie_charts(tmp_path):
+    """A pie frame draws one slice per part and names its tables in the footer."""
+    (tmp_path / "site.geojson").write_text(json.dumps(SITE), encoding="utf-8")
+    pie = {"file": "05_ground", "title": "The ground, counted", "caption": "Less ground is sealed than is kept open.",
+           "elements": [{"kind": "pie", "charts": [
+               {"title": "today", "source": "analysis/comparison.csv",
+                "parts": [{"value": 14, "label": "sealed"}, {"value": 8, "label": "partly"}, {"value": 78, "label": "open", "accent": True}]},
+               {"title": "design", "source": "analysis/comparison.csv",
+                "parts": [{"value": 28, "label": "sealed"}, {"value": 12, "label": "partly"}, {"value": 60, "label": "open", "accent": True}]}]}]}
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({**SPEC, "frames": SPEC["frames"][:2] + [pie]}), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(DD), "render", str(spec), str(tmp_path)], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    svg = (tmp_path / "05_ground.svg").read_text(encoding="utf-8")
+    assert svg.count(" 0 0 1 ") + svg.count(" 0 1 1 ") == 6  # six slices
+    assert "open 78 %" in svg and "Shares from analysis/comparison.csv." in svg

@@ -213,7 +213,7 @@ def element_geom(e, base, project):
         return LineString(e["coords"])
     if k in ("label", "rays"):
         return Point(e["at"])
-    if k in ("row", "layers", "metaphor"):  # a row is cut into volumes; layers and a metaphor are whole frames
+    if k in ("row", "layers", "metaphor", "pie"):  # a row is cut into volumes; layers, a metaphor and pies are whole frames
         return None
     raise ValueError(f"unknown element kind: {k}")
 
@@ -610,6 +610,42 @@ def metaphor_svg(st, e, hot, W, DH):
     return "".join(out)
 
 
+def pies_svg(st, e, hot, W, DH):
+    """Ratios as pie charts, up to three side by side at one size, each with its title above and one line per part
+    below (its label and share); a part with `accent: true` in the accent, the others in shades of ink."""
+    cs, ls, pad = e.get("charts", [])[:3], st["label_size"], 16
+    cw = (W - 2 * pad) / max(1, len(cs))
+    most = max([len(c.get("parts", [])) for c in cs] or [1])
+    r = max(12.0, min(0.36 * cw, (DH - 2 * pad - (2.4 + 1.3 * most) * ls) / 2))
+    top = max(pad, (DH - (1.8 + 1.6 + 1.3 * most) * ls - 2 * r) / 2)  # the charts and their words centred in the frame
+    out = []
+    for i, c in enumerate(cs):
+        parts = [q for q in c.get("parts", []) if float(q.get("value", 0)) > 0]
+        tot = sum(float(q["value"]) for q in parts) or 1.0
+        cx, cy = pad + cw * (i + 0.5), top + 1.8 * ls + r
+        out.append(text_lines(st, wrap(c.get("title", ""), int(cw / (0.56 * ls)))[:1], cx, top + ls, st["ink"]))
+        a, shade = -math.pi / 2, 0
+        for j, q in enumerate(parts):
+            f = float(q["value"]) / tot
+            if hot and q.get("accent"):
+                paint = f'fill="{st["accent"]}"'
+            else:
+                paint, shade = f'fill="{st["ink"]}" fill-opacity="{(0.8, 0.5, 0.28, 0.14)[shade % 4]}"', shade + 1
+            b = a + 2 * math.pi * f
+            if f > 0.9999:
+                out.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" {paint}/>')
+            else:
+                out.append(f'<path d="M{cx:.1f},{cy:.1f}L{cx + r * math.cos(a):.1f},{cy + r * math.sin(a):.1f}'
+                           f'A{r:.1f},{r:.1f} 0 {int(f > 0.5)} 1 {cx + r * math.cos(b):.1f},{cy + r * math.sin(b):.1f}Z" {paint} '
+                           f'stroke="{st["paper"]}" stroke-width="{st["thin"]}"/>')
+            x, y = cx - 0.42 * cw, cy + r + (1.6 + 1.3 * j) * ls
+            out.append(f'<rect x="{x:.1f}" y="{y - 0.8 * ls:.1f}" width="{0.8 * ls:.1f}" height="{0.8 * ls:.1f}" {paint}/>'
+                       f'<text x="{x + 1.2 * ls:.1f}" y="{y:.1f}" font-family="{esc(st["font"])}" font-size="{ls}" fill="{st["ink"]}">'
+                       f'{esc(q.get("label", ""))} {100 * f:.0f} %</text>')
+            a = b
+    return "".join(out)
+
+
 # ---------- render ----------
 
 def render(spec_path, out_dir):
@@ -721,7 +757,7 @@ def render(spec_path, out_dir):
     def frame_svg(n, fr, alone=None, size=None, tag=None):
         """One frame's drawing. With `alone` (frame numbers) only those frames' own moves, all as new, without people,
         signs or labels, at `size`: one layer in a row of layers."""
-        comp = next((e for e in fr.get("elements", []) if e["kind"] in ("layers", "metaphor")), None)
+        comp = next((e for e in fr.get("elements", []) if e["kind"] in ("layers", "metaphor", "pie")), None)
         if comp and not alone:
             return composed(n, fr, comp)
         W, DH = size or (W_, DH_)
@@ -892,7 +928,9 @@ def render(spec_path, out_dir):
             print(f"frame {n}: a {e['kind']} frame shows only itself; its other elements are left out", file=sys.stderr)
         if e["kind"] == "metaphor":
             return v, f'{frame_defs(v, None, n, W, DH)}<g clip-path="url(#frame{n})">{metaphor_svg(st, e, hot, W, DH)}</g>'
-        whole = lambda m: any(x["kind"] in ("layers", "metaphor") for x in sp["frames"][m - 1].get("elements", []))
+        if e["kind"] == "pie":
+            return v, f'{frame_defs(v, None, n, W, DH)}<g clip-path="url(#frame{n})">{pies_svg(st, e, hot, W, DH)}</g>'
+        whole = lambda m: any(x["kind"] in ("layers", "metaphor", "pie") for x in sp["frames"][m - 1].get("elements", []))
         of = [m for m in e.get("of", range(1, n)) if 1 <= m <= len(sp["frames"]) and m != n and not whole(m)]
         names = e.get("labels") or [sp["frames"][m - 1].get("title", "") for m in of]
         cells = [({m}, names[i] if i < len(names) else "") for i, m in enumerate(of)]
@@ -931,6 +969,12 @@ def render(spec_path, out_dir):
     def footer(v, n):
         kinds = {e["kind"] for e in sp["frames"][n - 1].get("elements", [])}
         ill = " People and signs: illustrative." if kinds & {"person", "icon", "vignette", "metaphor"} else ""
+        if v.composed == "pie":
+            pie = next(e for e in sp["frames"][n - 1]["elements"] if e["kind"] == "pie")
+            srcs = list(dict.fromkeys(c.get("source", "") for c in pie.get("charts", [])[:3]))
+            if "" in srcs:
+                print(f"frame {n}: a pie chart has no `source`; every share comes from a table, say which", file=sys.stderr)
+            return "Shares from " + "; ".join(x for x in srcs if x) + "."
         if sp.get("footer"):
             return sp["footer"] + ill
         if v.composed == "metaphor":
