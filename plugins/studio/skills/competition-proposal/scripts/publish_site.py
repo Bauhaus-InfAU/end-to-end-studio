@@ -50,15 +50,20 @@ def _has_link(path: Path) -> bool:
     return path.is_dir() and any(p.is_symlink() for p in path.rglob("*"))
 
 
-def richness(site: Path, key: str) -> int:
-    """How much of a run a site holds: images, + 50 for its geometry, + 10 per drawing on its panels."""
+def _parts(site: Path, key: str) -> tuple[bool, int, int]:
+    """What a site holds of a run: has geometry, panel items, images."""
     img = site / "img" / key
-    n = sum(1 for p in img.rglob("*") if p.is_file()) if img.is_dir() else 0
-    if (site / "data/geo" / f"{key}.json").exists():
-        n += 50
+    n_img = sum(1 for p in img.rglob("*") if p.is_file()) if img.is_dir() else 0
     run = _json(site / "data/runs" / f"{key}.json") or {}
-    n += 10 * sum(len(p.get("items") or []) for p in run.get("panels") or [] if isinstance(p, dict))
-    return n
+    items = sum(len(p.get("items") or []) for p in run.get("panels") or [] if isinstance(p, dict))
+    return (site / "data/geo" / f"{key}.json").exists(), items, n_img
+
+
+def local_has_enough(local: Path, published: Path, key: str) -> bool:
+    """The local run replaces the published one only if it lacks nothing: geometry where the site has it, and no fewer items or images."""
+    lg, li, ln = _parts(local, key)
+    pg, pi, pn = _parts(published, key)
+    return (lg or not pg) and li >= pi and ln >= pn
 
 
 def _sources(published: Path, key: str) -> list[Path]:
@@ -112,7 +117,7 @@ def merge(local: Path, published: Path | None, drop: tuple = ()) -> list[str]:
         key = card.get("key") if isinstance(card, dict) else None
         if not _key_ok(key) or key in drop or not (published / "data/runs" / f"{key}.json").is_file():
             continue
-        if key in have and richness(local, key) >= richness(published, key):
+        if key in have and local_has_enough(local, published, key):
             continue
         sources = _sources(published, key)
         if any(_has_link(s) for s in sources if s.exists() or s.is_symlink()):
@@ -219,6 +224,10 @@ def main():
         sys.exit(f"--references {a.references} is not a folder")
     extra = a.references / "names.txt" if a.references and (a.references / "names.txt").exists() else None
     names = forbidden_names(a.references, extra)
+    if a.references is not None:
+        if not names:
+            sys.exit(f"--references {a.references} gives no reference names: point it at the folder of the reference entries")
+        print(f"Checking for {len(names)} reference names.")
 
     ok, head = _published_head(a.remote)
     if not ok:

@@ -151,10 +151,14 @@ def build(project, proposals, out, references, repo):
     project, proposals, out = Path(project), Path(proposals), Path(out)
     if references is not None and not Path(references).is_dir():
         sys.exit("--references %s is not a folder" % references)
-    _prepare(out)
-    overrides = _json(proposals / "runs.json") or {}
     names_file = Path(references) / "names.txt" if references is not None else None
     names = forbidden_names(references, names_file if names_file and names_file.is_file() else None)
+    if references is not None:
+        if not names:
+            sys.exit("--references %s gives no reference names: point it at the folder of the reference entries" % references)
+        print("Checking for %d reference names." % len(names))
+    _prepare(out)
+    overrides = _json(proposals / "runs.json") or {}
     ledger = _scrub_all(_json(proposals / "ledger.json") or [], names)
     head = _head_skills(repo)
 

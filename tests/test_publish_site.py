@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from publish_site import check, merge, richness
+from publish_site import check, merge
 
 SCRIPT = Path(__file__).resolve().parents[1] / "plugins/studio/skills/competition-proposal/scripts/publish_site.py"
 
@@ -29,14 +29,6 @@ def make_site(root, runs, references=True):
     return root
 
 
-def test_richness_counts_images_geo_and_items(tmp_path):
-    s = make_site(tmp_path / "s", {"r1": 3})
-    assert richness(s, "r1") == 3
-    (s / "data/geo/r1.json").write_text("{}", encoding="utf-8")
-    (s / "data/runs/r1.json").write_text(json.dumps({"panels": [{"items": [1, 2]}]}), encoding="utf-8")
-    assert richness(s, "r1") == 3 + 50 + 20
-
-
 def test_merge_keeps_richer_published_run(tmp_path):
     local, pub = make_site(tmp_path / "l", {"r1": 2}), make_site(tmp_path / "p", {"r1": 9, "r0": 3})
     kept = merge(local, pub)
@@ -50,6 +42,27 @@ def test_merge_replaces_poorer_published_run(tmp_path):
     local, pub = make_site(tmp_path / "l", {"r1": 9}), make_site(tmp_path / "p", {"r1": 2})
     assert merge(local, pub) == []
     assert len(list((local / "img/r1").iterdir())) == 9
+
+
+def test_merge_keeps_published_run_with_geometry_when_local_has_more_images_but_none(tmp_path):
+    local, pub = make_site(tmp_path / "l", {"r1": 9}), make_site(tmp_path / "p", {"r1": 2})
+    (pub / "data/geo/r1.json").write_text("{}", encoding="utf-8")
+    assert merge(local, pub) == ["r1"]
+    assert (local / "data/geo/r1.json").exists() and len(list((local / "img/r1").iterdir())) == 2
+
+
+def test_merge_keeps_published_run_with_more_items(tmp_path):
+    local, pub = make_site(tmp_path / "l", {"r1": 2}), make_site(tmp_path / "p", {"r1": 2})
+    (pub / "data/runs/r1.json").write_text(json.dumps({"panels": [{"items": [1, 2]}]}), encoding="utf-8")
+    assert merge(local, pub) == ["r1"]
+
+
+def test_publish_stops_when_references_give_no_names(tmp_path):
+    site, remote = make_site(tmp_path / "s", {"r1": 1}), _bare(tmp_path)
+    (tmp_path / "refs").mkdir()
+    done = subprocess.run([sys.executable, str(SCRIPT), str(site), "--remote", str(remote), "--references",
+                           str(tmp_path / "refs"), "--yes"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert done.returncode != 0 and "no reference names" in done.stdout + done.stderr
 
 
 def test_merge_with_nothing_published(tmp_path):

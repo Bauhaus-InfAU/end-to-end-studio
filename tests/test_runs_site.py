@@ -129,6 +129,25 @@ def test_references_must_be_a_folder(fixture_project, tmp_path):
         build(fixture_project, fixture_project / "proposals", tmp_path / "site", tmp_path / "nope", None)
 
 
+def test_references_without_names_stop_the_build(fixture_project, tmp_path, capsys):
+    (tmp_path / "refs").mkdir()
+    with pytest.raises(SystemExit) as e:
+        build(fixture_project, fixture_project / "proposals", tmp_path / "site", tmp_path / "refs", None)
+    assert "no reference names" in str(e.value)
+    w = tmp_path / "refs2" / "winners" / "1_first-prize_copper-moth"
+    w.mkdir(parents=True)
+    build(fixture_project, fixture_project / "proposals", tmp_path / "site2", tmp_path / "refs2", None)
+    out = capsys.readouterr().out
+    assert "Checking for" in out and "reference names." in out and "moth" not in out.lower()
+
+
+def test_ledger_marker_q_reads_present_not_reported():
+    from pathlib import Path
+    import runs_site
+    js = (Path(runs_site.__file__).parent / "runsite/web/dash.js").read_text(encoding="utf-8")
+    assert "present, not reported" in js and "probably" not in js
+
+
 def test_item_id_cannot_escape(fixture_project, tmp_path):
     lay = fixture_project / "proposals/2026-01-02_run-1/panel-layout/layout.json"
     d = json.loads(lay.read_text(encoding="utf-8"))
