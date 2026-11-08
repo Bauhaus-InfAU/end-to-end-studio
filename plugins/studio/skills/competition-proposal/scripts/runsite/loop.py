@@ -14,35 +14,33 @@ def _git(repo, *args):
 
 
 def _items(value):
-    """Split a Reads value into (reads, reads_end); `nothing...` means none."""
+    """Split a Reads value into (all items, items marked `(end)`); `nothing...` means none."""
     if value.strip().lower().startswith("nothing"):
         return [], []
-    now, end = [], []
+    names, marked = [], []
     for part in value.split(","):
         name = part.strip()
         if name.endswith("(end)"):
             name = name[:-5].strip()
-            target = end
-        else:
-            target = now
+            if name:
+                marked.append(name)
         if name:
-            target.append(name)
-    return now, end
+            names.append(name)
+    return names, marked
 
 
 def _parse(text):
-    reads, reads_end, model = [], [], None
+    reads, after_end, reads_end, model = [], [], [], None
     for line in text.splitlines():
         if m := re.match(r"^Reads \(end\):\s*(.*)", line):
-            a, b = _items(m.group(1))
-            reads_end += a + b
+            reads_end += _items(m.group(1))[0]
         elif m := re.match(r"^Reads:\s*(.*)", line):
-            a, b = _items(m.group(1))
-            reads += a
-            reads_end += b
+            names, marked = _items(m.group(1))
+            reads += names
+            after_end += marked
         elif m := re.match(r"^Model:\s*(\w+)", line):
             model = m.group(1)
-    return reads, reads_end, model
+    return reads, after_end, reads_end, model
 
 
 def read_loop(repo, commit, plugins_rel="plugins"):
@@ -61,9 +59,9 @@ def read_loop(repo, commit, plugins_rel="plugins"):
         if name == "competition-proposal":
             continue
         text = _git(repo, "show", f"{commit}:{path}") or ""
-        reads, reads_end, model = _parse(text)
+        reads, after_end, reads_end, model = _parse(text)
         nodes.append({"id": name, "kind": "skill", "topic": topic,
-                      "reads": reads, "reads_end": reads_end, "model": model})
+                      "reads": reads, "after_end": after_end, "reads_end": reads_end, "model": model})
     return {"commit": commit, "nodes": nodes}
 
 

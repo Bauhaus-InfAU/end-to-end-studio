@@ -34,14 +34,14 @@ def test_reads_and_end(tmp_repo):
     n = {x["id"]: x for x in loop["nodes"]}
     assert n["massing"]["reads"] == ["narrative", "brief-reader"] and n["massing"]["topic"] == "design"
     assert n["narrative"]["reads_end"] == ["everything"] and n["massing"]["model"] == "opus"
-    assert n["narrative"]["reads"] == []
+    assert n["narrative"]["reads"] == [] and n["narrative"]["after_end"] == []
     assert "competition-proposal" not in n
     assert {"brief", "site"} <= {x["id"] for x in loop["nodes"] if x["kind"] == "input"}
     assert {"side_by_side", "frames", "cost", "redraw"} <= {x["id"] for x in loop["nodes"] if x["kind"] == "lead"}
     assert skill_names(loop) == {"massing", "narrative"}
 
 
-def test_end_marker_moves_item_to_reads_end(tmp_path):
+def test_end_marker_goes_to_after_end(tmp_path):
     d = tmp_path / "plugins/delivery/skills/jury"
     d.mkdir(parents=True)
     (d / "SKILL.md").write_text(JURY, encoding="utf-8")
@@ -49,7 +49,8 @@ def test_end_marker_moves_item_to_reads_end(tmp_path):
     git(tmp_path, "add", ".")
     git(tmp_path, "commit", "-q", "-m", "x")
     n = {x["id"]: x for x in read_loop(tmp_path, "HEAD")["nodes"]}["jury"]
-    assert n["reads"] == ["brief-reader"] and n["reads_end"] == ["panel-layout", "narrative"]
+    assert n["reads"] == ["brief-reader", "panel-layout", "narrative"]
+    assert n["after_end"] == ["panel-layout", "narrative"] and n["reads_end"] == []
 
 
 def test_unknown_commit():
