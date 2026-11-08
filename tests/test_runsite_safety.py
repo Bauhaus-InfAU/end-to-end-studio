@@ -48,5 +48,24 @@ def test_is_allowed():
     assert not any(is_allowed(Path(p)) for p in bad)
 
 
+def test_other_folder_spellings(tmp_path):
+    for folder in ["2_2nd-prize_copper-moth", "3_honourable_mention_silver-weave", "4_amber-fold"]:
+        w = tmp_path / "references" / "winners" / folder
+        w.mkdir(parents=True)
+    names = forbidden_names(tmp_path / "references")
+    s = scrub("Copper Moth; the copper-moths; Silver Weave; amber_fold; Weave's plan", names)
+    assert not any(w in s.lower() for w in ["copper", "moth", "silver", "weave", "amber", "fold"])
+
+
+def test_case_of_banned_parts():
+    assert not any(is_allowed(Path(p)) for p in ["References/a.png", "Winners/a.png", ".Compare/a.jpg", ".ENV/a.png"])
+
+
+def test_names_file_line_of_only_separators(tmp_path):
+    extra = tmp_path / "names.txt"
+    extra.write_text("---\n", encoding="utf-8")
+    assert scrub("a, b. c", forbidden_names(None, extra)) == "a, b. c"
+
+
 def test_no_references_gives_no_names():
     assert forbidden_names(None) == []

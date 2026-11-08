@@ -15,13 +15,13 @@ BANNED_PARTS = {"references", "winners", ".compare"}
 COMMON = {"city", "park", "field", "fields", "green", "puzzle", "town", "house", "garden", "line", "lines",
           "river", "north", "south", "east", "west", "new", "the", "and"}
 REPLACEMENT = "a reference"
-ENTRY = re.compile(r"^\d+_[a-z]+(?:-[a-z]+)*_(.+)$", re.I)  # 3_special-mention_<name>
 
 
 def is_allowed(rel: Path) -> bool:
     """True for a run file on the allow list; never for a reference, a comparison sheet or a key."""
     p = PurePosixPath(Path(rel).as_posix())
-    if any(part in BANNED_PARTS for part in p.parts) or any(part.startswith(".env") for part in p.parts):
+    parts = [part.lower() for part in p.parts]  # Windows folders ignore case
+    if any(part in BANNED_PARTS for part in parts) or any(part.startswith(".env") for part in parts):
         return False
     for pat in ALLOWED:
         if len(p.parts) == len(PurePosixPath(pat).parts) and p.match(pat):
@@ -39,32 +39,42 @@ def _entry_folders(references: Path):
     return seen
 
 
+def _words(name: str) -> list[str]:
+    return [w for w in re.split(r"[-_\s]+", name) if w]
+
+
 def forbidden_names(references: Path | None, extra: Path | None = None) -> list[str]:
-    """Names to keep off the site, longest first: each entry's folder name, its name, and its last word."""
+    """Names to keep off the site, longest first.
+
+    For each entry folder: every '_'-suffix of its name, so any rank format before the entry's name is
+    covered (`2_2nd-prize_copper-moth` gives that, `2nd-prize_copper-moth` and `copper-moth`), and the
+    last word of the entry's name that is not a common word, alone. Then each line of the names file.
+    """
     names = set()
     if references is not None and Path(references).is_dir():
         for d in _entry_folders(Path(references)):
-            names.add(d.name)
-            m = ENTRY.match(d.name)
-            name = m.group(1) if m else d.name
-            names.add(name)
-            words = [w for w in re.split(r"[-_\s]+", name) if w]
-            last = words[-1] if words else ""
-            if len(last) >= 4 and last.lower() not in COMMON:
-                names.add(last)
+            segments = d.name.split("_")
+            for i in range(len(segments)):
+                suffix = "_".join(segments[i:])
+                if re.search(r"[A-Za-z]", suffix):
+                    names.add(suffix)
+            distinctive = [w for w in _words(segments[-1]) if len(w) >= 4 and w.lower() not in COMMON]
+            if distinctive:
+                names.add(distinctive[-1])
     if extra is not None and Path(extra).is_file():
         names.update(line.strip() for line in Path(extra).read_text(encoding="utf-8").splitlines() if line.strip())
-    return sorted(names, key=lambda s: (-len(s), s.lower()))
+    return sorted((n for n in names if _words(n)), key=lambda s: (-len(s), s.lower()))
 
 
 def _pattern(name: str) -> str:
-    """A name with any of '-', '_' or space between its words, as whole words."""
-    words = [re.escape(w) for w in re.split(r"[-_\s]+", name) if w]
-    return r"(?<![A-Za-z0-9])" + r"[-_\s]+".join(words) + r"(?![A-Za-z0-9])"
+    """A name with any of '-', '_' or space between its words, as whole words, also in the plural."""
+    words = [re.escape(w) for w in _words(name)]
+    return r"(?<![A-Za-z0-9])" + r"[-_\s]+".join(words) + r"s?(?![A-Za-z0-9])"
 
 
 def scrub(text: str, names: list[str]) -> str:
     """The text with every name, in any case and spelling of its separators, replaced by 'a reference'."""
-    if not text or not names:
+    patterns = [_pattern(n) for n in names if _words(n)]
+    if not text or not patterns:
         return text
-    return re.sub("|".join(_pattern(n) for n in names), REPLACEMENT, text, flags=re.I)
+    return re.sub("|".join(patterns), REPLACEMENT, text, flags=re.I)
