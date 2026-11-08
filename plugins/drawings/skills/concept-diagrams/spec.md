@@ -31,17 +31,18 @@ Paths in `spec.json` are relative to it; coordinates are metres, x east and y no
 ```
 
 - `mode`: `sequence` (each frame keeps the earlier moves in ink, its own in the accent) or `separate` (only its own move on the shared base).
-- `site`: the site, one polygon or several, with holes; leave it out for a schematic set. `simplify` (metres, default 30) smooths its outline.
+- `site`: the site, one polygon or several, with holes; leave it out for a schematic set. `simplify` (metres, default 30) smooths its outline. `site_line`: `solid` (default), `dotted`, `pale` or `none`.
 - `view`: `plan`, `iso` (axonometric), `section` or `elevation`; a frame's own `view` overrides it, carrying a sequence's earlier moves along.
   - `plan` with `cut_height` (metres) is a floor plan: what is cut is solid, what lies below outlined, what lies above (a roof, a void's edge, a lintel) dashed. Without it, seen from above.
   - `section` with `cut: [[x0, y0], [x1, y1]]` looks to the left of that line (from the first point toward the second): what is in front is left out, what is cut solid, what is behind in elevation.
   - `elevation` looks level from the south; `rotation` turns it (90 looks from the east).
-  - Only a `plan` on site data gets a graphic scale; otherwise the footer says "not to scale". `focus: [x0, y0, x1, y1]` frames a close-up, with an inset locating it.
+  - Pictograms carry no graphic scale: the footer says "not to scale". Only the first frame on the site gets a north sign, so frames on the site keep one turn. `focus: [x0, y0, x1, y1]` frames a close-up, with an inset locating it.
 - `size`: width and most height in px; the height shrinks to fit the site.
 - `style`: only what the drawing standard gives; without it, black on white with one accent (values at the top of the script). Colours: `ink`, `paper`, `accent`; `font`. Line weights in px: `outline` (site), `line` (base), `heavy`, `box` (block edges), `thin`, `hatch`, `rule`, `sign` (new arrow, rays), `sign_old`, `ghost` (removed outlines), `leader`, `tee` (bar of a stopped arrow), `halo` (behind labels). Patterns: `dash`, `ghost_dash` (SVG dash arrays), `tint_opacity`, `solid_opacity`; `min_width` (px, the narrowest a strip is drawn). Signs in px: `glyph` (their line), `figure` (a person's height), `icon` (its diameter), `vignette` (its radius). Text in px: `label_size`, `small_size` (scale, north), `title_size`, `title_weight`, `caption_size`, `footer_size`, `footer_style`.
-- `base`: site data in every frame, clipped to the site. `where` filters on properties: exact values, or a regular expression starting with `~`. Also `weight` (`heavy`), `dashed`, `label`, `only_in` (frame numbers), `margin` (metres beyond the site).
+- `base`: site data in every frame, clipped to the site. `where` filters on properties: exact values, or a regular expression starting with `~`. Also `weight` (`heavy`), `dashed`, `label`, `only_in` (frame numbers), `margin` (metres beyond the site). With `color` (and `opacity`) a layer is a soft mass without lines, such as woods or water around the site (`outline: true` keeps its line); `smooth` rounds it.
 - `field`: optional placeholder blocks for the moves to act on.
-- `frames`: 3 to 6. `file` names the drawing after what it shows; `highlight` lists base layers that are its subject.
+- `frames`: 3 to 6. `file` names the drawing after what it shows; `highlight` lists base layers that are its subject; `step` and `source` record which step of the argument it answers and where that comes from (the script ignores them). `hidden: true` makes a frame only a part for a row of `layers`: it gets no drawing of its own and no number. `family` puts a frame in a family.
+- `families`: `{"<name>": {"title": "...", "mode": "sequence" | "separate"}}`. A sequence carries earlier moves forward only within its family, pale; `00_sheet` puts each family on its own row under its title. The script warns when one family mixes views or turns.
 - `footer` overrides the line under each caption, which otherwise names the site data and another skill's GeoJSON, and calls the rest concept.
 
 ## Elements
@@ -59,12 +60,29 @@ Any element can carry `label` (only in its own frame; `label_at` and `label_z` s
 | `flow` | `coords`, `count`, `spread` | parallel arrows for a flow; only in its own frame |
 | `rays` | `at`, `z` | the place the story centres on |
 | `label` | `at`, `z`, `text`, `color` | a free label |
+| `note` | `at`, `z`, `text` | why, in up to eight words, italic and muted |
 | `tree` | `at`, `coords` (several), `along` (a base name or a line) with `spacing`, or `geojson` of points or lines; `crown`, `height` | trees: a crown with a trunk dot in plan, a trunk and a round crown in 3D, never smaller than a person reads |
 | `person` | `at`, or `coords` for several; `pose` | people, upright in any view and `figure` px tall: `person`, `walker`, `child`, `cheer` (arms up), `sitter`, `cyclist`, `people` (a group) |
 | `icon` | `at`, `sign` | a use or activity in a circle: a sign's name, or one or two letters |
 | `vignette` | `at`, `scene` (sign names), `label`, `offset` | what people do at a place: a small round scene set beside it where it covers least, with a leader; `offset` ([dx, dy] px) places it |
-| `layers` | `of` (frame numbers), `labels`, `sum` | the frame is a row: each of those frames' own move alone on the site, joined by +; `sum: true` or a label adds = and all of them together. Default: every earlier frame |
+| `layers` | `of` (frame numbers), `labels`, `sum`, `result`, `result_label` | the frame is a row: each of those frames' own move alone on the site, joined by +; `sum: true` or a label adds = and all of them together; `result` (a frame number) adds = and that frame's move instead, when what they add up to is a shape of its own, not their union. Default: every earlier frame |
 | `metaphor` | `parts`: [{`draw`: sign names, `label`}], `join`: `arrow` or `plus` | the frame is the idea as an image, without the site: two or three scenes at one size, the last in the accent |
+
+**Drawn like a diagram.** These change only what is drawn; every source file, area and number stays as it is.
+- `color` on any element (and on a `base` layer): a colour by meaning, by its name in the drawing standard's `style.json` (such as `park`, `kept`, `meadow`, `water`, `existing`, `context`, `public`), or `accent` / `ink`; without a standard, the script's own set of those names. An area or strip with it is a soft fill without an edge (`opacity` sets how soft); a `point` with it is a soft zone; a volume takes it on its roof; an arrow, its line and head. A name the standard doesn't have is left out, with a warning.
+- `simplify` (metres) drops detail, `smooth` (metres) rounds a shape and closes its small gaps, `curve: true` rounds a line's corners (arrows, flows, strips). The footer then says the outlines are simplified.
+- `width` on an arrow (px): one broad arrow for the main move, its head drawn to match.
+- `halo` (metres) on any element: a soft round zone behind its place, in `halo_color` (default `public`).
+- Volumes: walls on paper, the side turned from the light a step darker, the roof in `color`, the accent if new, else a pale roof. `roof: "pitched"` puts a gable along the long side of a near-rectangle. `height_from` with `geojson` takes each building's height from that property of its feature (`height` where it has none).
+- Trees: a crown in the standard's `park` green (or `color`) with a fine edge, each a little different in size; `cluster: 3` puts three trees as a group at each place.
+- `note`: `at`, `text`: one short line in italic and a muted tone that says why, kept apart from the labels.
+- In a `section`, `depth` (metres) limits what is drawn behind the cut; an area or strip the cut crosses is a band under the ground line (`band`: its height in px), labelled at its middle.
+- `sign`: `sign` (a sign's name), `at` or `coords`, `size`: any sign upright on the ground, scaled like a person (crops on a field, a bench).
+- A metaphor with `band` (a share of the height) and `text` takes the top of its frame, one sentence below it ties the idea to the place, and the frame's other elements are drawn beneath: the idea and what it becomes in one frame.
+- `carries` on a frame: the facts it explains; two frames with the same fact get a warning, never a deletion.
+- `number` on a frame: its number, or `false` for a frame titled only (one that sits on another panel). The others are numbered in order.
+- `compositions`: `[{"file": "...", "size": [w, h], "parts": [{"frame": n, "share": 1}, {"text": {"title": "...", "body": "...", "points": ["..."]}, "share": 0.8}]}]` draws one wide drawing from parts side by side: hidden frames (a metaphor, an axonometric, a section) and a text part. It is not a pictogram; make it only for a panel frame that asks for it, under that frame's `file`. `00_sheet` shows it under the families.
+- No drawing has a scale bar. Text is at least 12 px.
 
 **Signs** for `pose`, `sign`, `scene` and `draw`: `person`, `walker`, `child`, `cheer`, `sitter`, `cyclist`, `people`, `tree`, `conifer`, `bench`, `table`, `ball`, `house`, `block`, `tower`, `stall`, `bed`, `crop`, `water`, `sun`, `wind`, `heart`, `bus`; also `home`, `market`, `shop`, `garden`, `farm`, `walk`, `bike`, `sit`, `play`, `community`. People, icons and vignettes are only in their own frame (`only_here: false` keeps them); a frame with them, or a metaphor, says in its footer that they are illustrative. A `layers` or `metaphor` frame shows only itself.
 
