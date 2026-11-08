@@ -46,9 +46,11 @@ def test_merge_replaces_poorer_published_run(tmp_path):
 
 def test_merge_keeps_published_run_with_geometry_when_local_has_more_images_but_none(tmp_path):
     local, pub = make_site(tmp_path / "l", {"r1": 9}), make_site(tmp_path / "p", {"r1": 2})
-    (pub / "data/geo/r1.json").write_text("{}", encoding="utf-8")
+    (pub / "data/geo/r1.json").write_text('{"massing": {}}', encoding="utf-8")
+    (local / "data/geo/r1.json").write_text("{}", encoding="utf-8")  # a real build writes {} for a run without geometry
     assert merge(local, pub) == ["r1"]
-    assert (local / "data/geo/r1.json").exists() and len(list((local / "img/r1").iterdir())) == 2
+    assert json.loads((local / "data/geo/r1.json").read_text(encoding="utf-8")) == {"massing": {}}
+    assert len(list((local / "img/r1").iterdir())) == 2
 
 
 def test_merge_keeps_published_run_with_more_items(tmp_path):

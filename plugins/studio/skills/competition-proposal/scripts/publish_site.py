@@ -56,7 +56,7 @@ def _parts(site: Path, key: str) -> tuple[bool, int, int]:
     n_img = sum(1 for p in img.rglob("*") if p.is_file()) if img.is_dir() else 0
     run = _json(site / "data/runs" / f"{key}.json") or {}
     items = sum(len(p.get("items") or []) for p in run.get("panels") or [] if isinstance(p, dict))
-    return (site / "data/geo" / f"{key}.json").exists(), items, n_img
+    return bool(_json(site / "data/geo" / f"{key}.json")), items, n_img  # a run without geometry has an empty {} file
 
 
 def local_has_enough(local: Path, published: Path, key: str) -> bool:
