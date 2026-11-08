@@ -113,6 +113,15 @@ def summary_scale(version, file):
     return found.pop() if len(found) == 1 else None
 
 
+def asked_frame(drawing):
+    """The drawing's own request for a frame, <drawing>.frame.json next to it, else None."""
+    try:
+        r = json.loads(drawing.with_suffix(".frame.json").read_text(encoding="utf-8"))
+        return r if r["needs_mm"]["w"] and r["needs_mm"]["h"] else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def check_item(version, it):
     """What one framed drawing of the plan got: a dict with `problems`, empty when it fits its frame."""
     fw, fh = float(it["frame"]["w"]), float(it["frame"]["h"])
@@ -124,6 +133,10 @@ def check_item(version, it):
         r["problems"].append("not drawn")
         return r
     r["drawn"] = f.relative_to(version).as_posix()
+    asks = asked_frame(f)
+    if asks and want and scale_of(asks.get("scale")) == want:   # it says what it needs, and panel-layout's second run gives it: no redraw
+        r["asks"] = asks["needs_mm"]
+        return r
     if not want:
         a = aspect(f)
         if a:  # fitted to the frame at whatever scale: the share of the frame it fills
@@ -187,7 +200,11 @@ def main():
           f"(more than {100 * TOLERANCE:.0f} % hidden or empty, or another scale).")
     for r in missed:
         print(line(r))
-    fit = [r["id"] for r in results if not r["problems"]]
+    for r in results:
+        if r.get("asks"):
+            print(f"Asks for its frame, so panel-layout's second run gives it, no rerun: `{r['id']}` ({r['skill']}), "
+                  f"{r['asks']['w']} x {r['asks']['h']} mm at 1:{r['scale']:,}, planned {r['frame_mm'][0]} x {r['frame_mm'][1]} mm.")
+    fit = [r["id"] for r in results if not r["problems"] and not r.get("asks")]
     print("Fit their frames: " + (", ".join(f"`{i}`" for i in fit) or "none") + ".")
 
 
