@@ -742,6 +742,27 @@ def write_issues(out, issues):
     return text
 
 
+def split_groups(results, folder):
+    """Each group from a `groups.json` in the proposal folder ({"groups": [{"name", "files"}]}, files relative to the
+    folder) whose placed drawings sit on more than one panel: [(name, panel numbers)]."""
+    panel_of = {}
+    for r in results:
+        for it, _ in r["placed"]:
+            if it.get("file"):
+                panel_of[Path(it["file"]).as_posix()] = r["n"]
+    out = []
+    for gj in sorted(Path(folder).glob("*/groups.json")):
+        try:
+            groups = json.loads(gj.read_text(encoding="utf-8")).get("groups", [])
+        except (OSError, ValueError, AttributeError):
+            continue
+        for g in groups:
+            ns = sorted({panel_of[f] for f in map(lambda x: Path(x).as_posix(), g.get("files", [])) if f in panel_of})
+            if len(ns) > 1:
+                out.append((f"{gj.parent.name}: {g.get('name', '?')}", ns))
+    return out
+
+
 def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan=None, check=False):
     out = Path(out)
     folder = out.parent
@@ -962,6 +983,15 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
     for it in no_bar:
         add("here", "low", "drawing at a scale without a scale bar", f"`{it['id']}` ({it['file']})",
             f"printed at 1:{it['_print_scale']:,}, no scale bar of its own", "`\"scale_bars\": \"all\"` in `format`, or `scale_bar: true`")
+    lines.append("")
+    lines.append("## Groups split across panels")
+    lines.append("A skill's `groups.json` names drawings that belong together; each group goes side by side on one panel.")
+    split = split_groups(results, folder)
+    lines += [f"- **{g}**: on panels {', '.join(map(str, ns))}" for g, ns in split] or ["- none"]
+    problems += len(split)
+    for g, ns in split:
+        add("here", "medium", "a group of drawings split across panels", g, f"on panels {', '.join(map(str, ns))}",
+            "put the group's drawings side by side in one band of one panel")
     lines.append("")
     conflicts = figure_conflicts(results, L)
     lines.append("## Numbers to check")

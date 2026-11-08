@@ -1005,6 +1005,14 @@ def render(spec_path, out_dir):
         sheet = out_dir / "00_sheet.svg"
         sheet.write_text(doc(cols * W, rows * H, first_v, inner), encoding="utf-8")
         made.append(sheet)
+    # which frames belong together, for panel-layout: a frame's `group`, else a sequence is one group
+    groups = {}
+    for n, fr in enumerate(frames, 1):
+        g = fr.get("group") or (sp.get("group", "the sequence") if sequence else None)
+        if g:
+            groups.setdefault(g, []).append(f"{out_dir.name}/{fr.get('file') or f'{n:02d}'}.svg")
+    (out_dir / "groups.json").write_text(json.dumps({"groups": [{"name": g, "files": f} for g, f in groups.items() if len(f) > 1]},
+                                                    indent=1, ensure_ascii=False), encoding="utf-8")
     browser = find_browser()
     for svg in made:
         w, h = (W, H) if svg.name != "00_sheet.svg" else (cols * W, rows * H)

@@ -38,6 +38,8 @@ def test_vocabulary_renders(tmp_path):
         if find_browser():
             assert (out / f"{name}.png").exists(), name
     svg = {f["file"]: (out / f"{f['file']}.svg").read_text(encoding="utf-8") for f in SPEC["frames"]}
+    groups = json.loads((out / "groups.json").read_text(encoding="utf-8"))["groups"]
+    assert groups[0]["name"] == "the sequence" and len(groups[0]["files"]) == 4  # a sequence is one group
     assert "illustrative" in svg["01_green-link"] and "meet and play" in svg["02_square"] and ">Ki<" in svg["02_square"]
     assert ">+<" in svg["03_layers"] and ">=<" in svg["03_layers"] and "together" in svg["03_layers"]
     assert "a room to share" in svg["04_metaphor"] and "#d0312d" in svg["04_metaphor"]   # the idea in the accent
