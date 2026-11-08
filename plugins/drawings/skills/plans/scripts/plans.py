@@ -19,7 +19,12 @@ from xml.sax.saxutils import escape
 from shapely.geometry import shape, box, Point, Polygon
 from shapely.ops import transform, unary_union
 from shapely import affinity
+import numpy as np
 import pyproj
+import shapely
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from terrain import find_terrain  # noqa: E402  (this skill's own copy)
 
 
 def utm_epsg(lon, lat):
@@ -54,6 +59,9 @@ DEFAULTS = {
     'tree_shadow': 0.3,         # a crown's shadow falls this share of its diameter away, the way the buildings' fall
     'tree_plan_scale': 1500,    # at this scale and larger, trees and hedges are drawn in detail, else simply
     'tree_tones': [0, 0.18, -0.25],   # trees in these tones of the standard's grove: 0 itself, + towards ink, - towards paper
+    'contour_m': 1,             # contour lines from the site's terrain model every this many metres (0: none)
+    'contour_index': 5,         # every this many contours is stronger and carries its height
+    'contour_cell_mm': 1.0,     # the terrain is sampled this far apart on paper, mm, and smoothed, so lines run soft
     'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
     'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
@@ -112,6 +120,36 @@ EPSG = CFG.get('epsg') or utm_epsg(site_ll.centroid.x, site_ll.centroid.y)
 TO_M = pyproj.Transformer.from_crs(4326, EPSG, always_xy=True).transform
 TO_LL = pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True).transform
 site = transform(TO_M, site_ll)
+TERRAIN, TERRAIN_NOTES = find_terrain(SITE, site.buffer(500).bounds, pyproj.Transformer.from_crs(EPSG, 4326, always_xy=True))
+
+
+def contour_lines(z, x0, y0, c, level):
+    """The lines where the grid z (rows north, from y0; columns east, from x0; c metres apart) crosses level:
+    marching squares, each cell's crossings joined, then merged into lines."""
+    a, b, cc, d = z[:-1, :-1], z[:-1, 1:], z[1:, 1:], z[1:, :-1]          # a cell's corners: SW, SE, NE, NW
+    X, Y = np.meshgrid(x0 + np.arange(a.shape[1]) * c, y0 + np.arange(a.shape[0]) * c)
+    with np.errstate(all='ignore'):
+        t = lambda p, q: (level - p) / (q - p)
+        pts = [(X + t(a, b) * c, Y), (X + c, Y + t(b, cc) * c), (X + t(d, cc) * c, Y + c), (X, Y + t(a, d) * c)]
+        hit = [(p - level) * (q - level) < 0 for p, q in ((a, b), (b, cc), (d, cc), (a, d))]
+    n = sum(h.astype(int) for h in hit)
+    pairs = [((e, f), (n == 2) & hit[e] & hit[f]) for e in range(4) for f in range(e + 1, 4)]
+    pairs += [((0, 3), n == 4), ((1, 2), n == 4)]                          # a saddle: two lines through the cell
+    segs = np.concatenate([np.stack([pts[e][0][s], pts[e][1][s], pts[f][0][s], pts[f][1][s]], 1) for (e, f), s in pairs])
+    if not len(segs):
+        return []
+    merged = shapely.line_merge(shapely.multilinestrings(shapely.linestrings(segs.reshape(-1, 2, 2))))
+    return [g for g in getattr(merged, 'geoms', [merged]) if g.length > 6 * c]
+
+
+def smooth(z, times=2):
+    """A 3 x 3 mean, twice: the terrain's 1 m noise out, its form kept."""
+    for _ in range(times):
+        p = np.pad(z, 1, mode='edge')
+        z = sum(p[i:i + z.shape[0], j:j + z.shape[1]] for i in range(3) for j in range(3)) / 9
+    return z
+
+
 _src = os.path.join(SITE, 'SOURCES.md')
 CREDIT = ('Map data © OpenStreetMap contributors (ODbL, https://www.openstreetmap.org/copyright).'
           if os.path.exists(_src) and 'OpenStreetMap' in open(_src, encoding='utf8').read() else '')
@@ -362,6 +400,33 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     fill(g, S['park'], 'park')
                 elif u == 'water':
                     fill(g, S['water'], 'water')
+        # 2c. contour lines from the terrain model, over the ground and under the streets and buildings
+        if TERRAIN and CFG['contour_m']:
+            used.append('terrain (' + TERRAIN.source + ')')
+            c, step = CFG['contour_cell_mm'] * k, float(CFG['contour_m'])
+            xs, ys = np.arange(wx0, wx1 + c, c), np.arange(wy0, wy1 + c, c)
+            GX, GY = np.meshgrid(xs, ys)
+            z = smooth(TERRAIN.sample(GX.ravel(), GY.ravel()).reshape(GX.shape))
+            soft, strong, labels = [], [], []
+            for lv in np.arange(math.ceil(np.nanmin(z) / step) * step, np.nanmax(z), step):
+                idx = round(lv / step) % CFG['contour_index'] == 0
+                for g in contour_lines(z, wx0, wy0, c, lv):
+                    (strong if idx else soft).append(d(g))
+                    if idx and g.length > 60 * k:   # its height, once, at the middle of a long line, clear of others
+                        q = g.interpolate(0.5, normalized=True)
+                        X, Y = P(q.x, q.y)
+                        if all(math.hypot(X - u, Y - v) > 30 * k for u, v, _ in labels):
+                            labels.append((X, Y, f'{lv:.0f}'))
+            col = mix(S['ink'], S['paper'], 0.55)
+            o.append(f'<path d="{"".join(soft)}" fill="none" stroke="{col}" stroke-width="{f2(0.35 * lw("thin"))}"/>')
+            o.append(f'<path d="{"".join(strong)}" fill="none" stroke="{col}" stroke-width="{f2(0.8 * lw("thin"))}"/>')
+            o.append(''.join(f'<text x="{f2(x)}" y="{f2(y)}" font-size="{f2(fs)}" fill="{col}" text-anchor="middle" '
+                             f'dominant-baseline="middle" stroke="{S["paper"]}" stroke-width="{f2(0.25 * fs)}" '
+                             f'paint-order="stroke" font-family="{FONT}">{t}</text>' for x, y, t in labels))
+            LAB['contour'] = f'Contours, {CFG["contour_m"]:g} m'
+            legend.setdefault('contour', ('line', col, 'thin', None))
+        elif CFG['contour_m']:
+            missing.append('terrain (no contour lines)')
         # 3. streets: the streets skill's surface, else lines at their widths
         paths = [g for p, g in (OPEN or []) if p.get('kind') == 'path']
         if STREETS is not None:
