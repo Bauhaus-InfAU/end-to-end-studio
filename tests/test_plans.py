@@ -116,7 +116,8 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
     """A plan the panels' plan frames takes the frame's scale and is drawn to its size, its legend strip included."""
     out, site_dir = drawn
     frames = {"site-plan": ("plans/site-plan_1-3000.svg", "1:3000", 400, 300),
-              "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180)}
+              "detail-area-1": ("plans/detail-area-1_1-500.svg", "1:500", 300, 180),
+              "figure-ground": ("plans/figure-ground_1-15000.svg", "1:15000", 150, 140)}
     plan = out / "panel-layout/layout-plan.json"
     plan.parent.mkdir(exist_ok=True)
     plan.write_text(json.dumps({"panels": [{"items": [{"id": k, "type": "drawing", "file": f, "scale": s, "frame": {"w": w, "h": h}}
@@ -134,6 +135,32 @@ def test_plans_take_their_frames_and_roman_storeys(drawn):
     finally:
         plan.unlink()
         style.write_text(keep, encoding="utf-8")
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_line_streets_with_trees_in_detail_areas_only(drawn):
+    """A street centreline gets a row of trees on both sides in a detail area; the site plan stays as it was."""
+    out, site_dir = drawn
+    mass = json.loads((out / "massing/massing.geojson").read_text(encoding="utf-8"))["features"]
+    sq = shape(next(f for f in mass if f["properties"].get("name") == "Square")["geometry"]).centroid
+    epsg = (32600 if sq.y >= 0 else 32700) + int((sq.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    c = transform(to_m, sq)
+    count = lambda f: len(re.findall(r"<circle", (out / f"plans/{f}.svg").read_text(encoding="utf-8")))
+    before = {f: count(f) for f in FILES[:2]}
+    streets = out / "streets/streets.geojson"
+    streets.parent.mkdir(exist_ok=True)
+    line = {"type": "LineString", "coordinates": [list(to_ll(c.x - 120, c.y)), list(to_ll(c.x + 120, c.y))]}
+    streets.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "centreline", "level": "local", "width": 10}, "geometry": line}]}),
+        encoding="utf-8")
+    try:
+        draw(out, site_dir)
+        assert count(FILES[1]) >= before[FILES[1]] + 2 * 4, (before, count(FILES[1]))   # tree and shadow, both sides
+        assert count(FILES[0]) == before[FILES[0]]
+    finally:
+        streets.unlink()
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
 
 

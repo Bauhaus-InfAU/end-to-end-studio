@@ -59,6 +59,8 @@ DEFAULTS = {
     'gone_rail': ['abandoned', 'razed', 'dismantled'],   # rail lines no longer there, not drawn
     'tree_crown_m': 6,          # crown diameter of a tree without crown_m, metres
     'tree_shadow': 0.3,         # a crown's shadow falls this share of its diameter away, the way the buildings' fall
+    'street_tree_m': 11,        # detail areas: a street tree this often along both sides of each street, metres
+    'street_tree_kerb_m': 2,    # ... this far outside the street's edge, metres
     'shadow_az_deg': 135,       # shadows fall to the lower right of the sheet: light from the upper left, the plan convention
     'shared_street_w_m': 7,     # width of the public tone along mobility's access-only streets, metres
     'text_floor_mm': 3.2,       # no text smaller than this on paper (12 px, 9 pt)
@@ -472,6 +474,27 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         # 4c. trees at every scale, the massing's and open-space's: a crown over its soft shadow, under the buildings
         trees = [(*P(g.x, g.y), float(p.get('crown_m') or CFG['tree_crown_m']) / 2) for p, g in inside(MASS + (OPEN or []))
                  if p.get('kind') == 'tree' and g.geom_type == 'Point']
+        if kind == 'detail':
+            # a row of street trees along both sides of each street, clear of the buildings and the trees already there
+            have = [g for p, g in inside(MASS + (OPEN or [])) if p.get('kind') == 'tree' and g.geom_type == 'Point']
+            clear = unary_union([g.buffer(1.0) for p, g in inside(BUILD)] + [g.buffer(4.0) for g in have] or [Polygon()])
+            step = CFG['street_tree_m']
+            for p, g in inside([x for x in (STREETS or []) if x[0].get('kind') == 'centreline'
+                                and 'LineString' in x[1].geom_type]):
+                off = float(p.get('width') or CFG['street_w_new']) / 2 + CFG['street_tree_kerb_m']
+                for part in getattr(g, 'geoms', [g]):
+                    for side in (1, -1):
+                        try:
+                            row = part.offset_curve(side * off)
+                        except Exception:
+                            continue
+                        for ln in getattr(row, 'geoms', [row]):
+                            t = step / 2                 # the same rhythm on every run, so the plan doesn't jitter
+                            while t < ln.length:
+                                q = ln.interpolate(t)
+                                t += step
+                                if fr.contains(q) and not clear.contains(q):
+                                    trees.append((*P(q.x, q.y), CFG['tree_crown_m'] / 2))
         if trees:
             a = math.radians(CFG['shadow_az_deg'])
             dx, dy = 2 * CFG['tree_shadow'] * math.sin(a), -2 * CFG['tree_shadow'] * math.cos(a)
@@ -648,7 +671,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         # the idea first, so its name gets the room: an area's outline in the accent over its tint, a line's name
         # along its band, a point ringed
         idea_here = [g for g in IDEA_G if g.intersects(fr)]
-        for g in idea_here:
+        for g in (idea_here if kind != 'detail' else []):   # a detail area keeps the tint and the name, no outline
             if g.geom_type.endswith('Polygon'):
                 line(g.boundary, S['accent'], 'thick')
             elif g.geom_type.endswith('Point'):
@@ -936,7 +959,13 @@ if fig_scale:
     if os.path.exists(kp):
         kb = json.load(open(kp, encoding='utf8')).get('bbox')
     want = transform(TO_M, box(*kb)).bounds if kb else pad(site.bounds, CFG['fg_pad_m'])
-    fg_win, fg_cut = clamp(want, fig_scale, (site.centroid.x, site.centroid.y))
+    ffr = FRAMES.get('figure-ground')
+    if ffr:                                              # the panel's frame: its size, centred on the site
+        fg_win, fg_cut = fitted('figure-ground', LAB['figure-ground'], fig_scale, 'figure-ground',
+                                lambda m: clamp(pad(site.bounds, CFG['fg_pad_m']), fig_scale,
+                                                (site.centroid.x, site.centroid.y), m), ffr[1:])
+    else:
+        fg_win, fg_cut = clamp(want, fig_scale, (site.centroid.x, site.centroid.y))
     e = draw_plan('figure-ground', LAB['figure-ground'], fig_scale, fg_win, 'figure-ground')
     e['cropped'] = fg_cut
     made.append(e)
