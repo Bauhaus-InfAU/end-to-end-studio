@@ -5,7 +5,7 @@ How a competition entry's drawings and panels look when nothing else is decided.
 ## Type
 
 - One sans-serif family, two weights (regular and bold). No outline, shadow or condensed type.
-- Sizes as printed: labels 9 pt, body 11 pt, subheadings 14 pt, headings 20 pt, the panel title 40 to 60 pt. **Floor:** nothing below 9 pt (12 px, 3.2 mm), source lines and scale bars included.
+- Sizes as printed: labels 9 pt, body 11 pt, subheadings 14 pt, headings 20 pt, the panel title 40 to 60 pt. Inside a drawing the same sizes, set for the scale it prints at: labels at the label size, its own title (only when shown alone) at the subheading size. **Floor:** nothing below 9 pt (12 px, 3.2 mm), source lines and scale bars included.
 - Running text left-aligned, ragged right, never justified, never in capitals. Line spacing about 1.35.
 - **Floor:** a line holds 45 to 75 characters. A wider text box is set in columns, with a gutter of 6 mm.
 - Numbers with their unit and source, in the brief's language and number format.
@@ -27,7 +27,11 @@ How a competition entry's drawings and panels look when nothing else is decided.
 
 ## Every plan and section
 
-- A title with the scale, a graphic scale bar, a north arrow on plans, a legend for every colour and hatch, a source line for the data.
+- Shown alone, a plan or section carries a title with the scale, a graphic scale bar, a north arrow on plans, a legend for every colour and hatch, a source line for the data.
+- Placed on a panel (`marks: "panel"` in `style.json`), it keeps only its legend and source line, and every other mark appears once:
+  - one caption line under the drawing, its name and scale, at the label size, which the panel writes; no title inside the drawing;
+  - one north arrow per panel, on its main plan (the site plan where there is one), and another only on a plan turned from north; none on sections or diagrams;
+  - a scale bar under each plan and section where the brief asks for a graphic scale on every drawing, else under the first drawing of each scale; the panel draws them all in one style; none on diagrams.
 - The north arrow: a circle in outline and one line from its centre to the circle, pointing north. No fill, no letter.
 - The scale bar: one thin line that steps up and down, a short tick at every step, the numbers under the ticks and the unit only on the last (0 1 2 3 4 5 m).
 - Drawn at the brief's scale and printed at true size. The drawing's width at that scale fits the panel's width between the margins; crop to the area the brief asks for.

@@ -112,6 +112,7 @@ if os.path.exists(style_path):
 FONT = escape(str(S['font']), {'"': "'"})
 TXT = max(float(CFG['text_floor_mm']), float(S.get('text') or 0))       # text size on paper, mm
 TITLE = max(TXT, float(S.get('title') or 0))
+PANEL = str(S.get('marks') or 'drawing').lower() == 'panel'   # on a panel: the panel writes caption and scale bar once
 
 site_ll = shape(json.load(open(os.path.join(SITE, 'site.geojson'), encoding='utf8'))['features'][0]['geometry'])
 EPSG = CFG.get('epsg') or utm_epsg(site_ll.centroid.x, site_ll.centroid.y)
@@ -191,8 +192,11 @@ def layout_frames():
 
 def fitted(name, title, scale, kind, window_of, frame, windows=()):
     """The window of a plan in a frame (w, h mm): the frame's width, and its height less the legend strip under the
-    map, which a first drawing without its PNG measures. window_of(room in metres) gives (window, cut)."""
+    map, which a first drawing without its PNG measures. window_of(room in metres) gives (window, cut).
+    On a panel the panel draws the scale bar under the frame, so the plan fills the frame less that room."""
     k = scale / 1000.0
+    if PANEL:
+        frame = (frame[0], frame[1] - float(CFG.get('panel_bar_mm', 8)))
     e = draw_plan(name, title, scale, window_of((frame[0] * k, (frame[1] - CFG['legend_mm']) * k))[0], kind, windows, False)
     return window_of((frame[0] * k, max(frame[1] - e['height_mm'] + e['map_height_mm'], frame[1] / 2) * k))
 
@@ -650,7 +654,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     o.append('</g>')
 
     # 11. the strip under the map: title, north, scale bar, legend, source (laid out in mm, written in metres)
-    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name)
+    strip, H_strip = legend_strip(title, scale, W, legend, k, Hm, window, name, kind)
     Hs = H_strip * k
     head = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
             f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
@@ -724,8 +728,10 @@ def north_angle(window):
     return math.atan2(x - cx, y - cy)
 
 
-def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
-    """The title, north, scale bar, legend and source under the map. Returns (svg lines, strip height in mm)."""
+def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id='', kind='site'):
+    """The title, north, scale bar, legend and source under the map. Returns (svg lines, strip height in mm).
+    Placed on a panel (style marks: panel), only the legend and source: the panel writes the caption and the scale
+    bar once, and the north arrow stays on the site plan, or on a plan turned from north."""
     ink, paper = S['ink'], S['paper']
     o = []
     def m(v): return '%.2f' % (v * k)
@@ -733,14 +739,18 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
         o.append(f'<text x="{m(x)}" y="{m(Hm / k + y)}" font-size="{size * k:.2f}" fill="{ink}"{extra}>{escape(s)}</text>')
     def Y(y): return Hm / k + y
     thin = float(S['thin'])
-    # title, and north at the right
-    head = f'{title}, 1:{scale:,}'
-    text(4, 3 + TITLE, head, TITLE, ' font-weight="bold"')
     r = 4.0
     nx, ny = W - 4 - r, 3 + r
     a = north_angle(window)
-    o.append(f'<circle cx="{m(nx)}" cy="{m(Y(ny))}" r="{m(r)}" fill="none" stroke="{ink}" stroke-width="{m(thin)}"/>'
-             f'<path d="M{m(nx)},{m(Y(ny))}L{m(nx + r * math.sin(a))},{m(Y(ny - r * math.cos(a)))}" stroke="{ink}" stroke-width="{m(thin * 2)}"/>')
+    north = not PANEL or kind == 'site' or abs(math.degrees(a)) > CFG.get('north_turn_deg', 3)
+    if north:
+        o.append(f'<circle cx="{m(nx)}" cy="{m(Y(ny))}" r="{m(r)}" fill="none" stroke="{ink}" stroke-width="{m(thin)}"/>'
+                 f'<path d="M{m(nx)},{m(Y(ny))}L{m(nx + r * math.sin(a))},{m(Y(ny - r * math.cos(a)))}" stroke="{ink}" stroke-width="{m(thin * 2)}"/>')
+    if PANEL:
+        return legend_rows(o, legend, W, k, Hm, (2 * r if north else 0) - 1, hatch_id, text, m, Y, thin, ink)
+    # title, and north at the right
+    head = f'{title}, 1:{scale:,}'
+    text(4, 3 + TITLE, head, TITLE, ' font-weight="bold"')
     # scale bar: one thin line stepping up and down, a tick at every step, numbers under, the unit on the last
     L = nice(W * k / 6)
     n = 5 if L in (10, 50, 500, 5000) else 4
@@ -767,6 +777,12 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
         o.append(f'<path d="M{m(x)},{m(Y(sy - hstep))}L{m(x)},{m(Y(sy + 1.2))}" stroke="{ink}" stroke-width="{m(thin)}"/>')
         if i in show:
             text(x, sy + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
+    return legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink)
+
+
+def legend_rows(o, legend, W, k, Hm, row_y, hatch_id, text, m, Y, thin, ink):
+    """The legend, one swatch per colour used, and the source line, under row_y (mm) of the strip; appends to o.
+    Returns (o, strip height in mm), never less than the strip the frame keeps for it."""
     # legend: one swatch per colour used
     y = row_y + 4
     x = 4
@@ -805,7 +821,9 @@ def legend_strip(title, scale, W, legend, k, Hm, window, hatch_id=''):
             cur = (cur + ' ' + w_).strip()
     if cur:
         text(4, y, cur)
-    return o, max(float(CFG['legend_mm']), y + 3)
+    # on a panel the strip holds no title row or scale bar: it gives back the room the panel's scale bar takes under it
+    keep = float(CFG['legend_mm']) - (float(CFG.get('panel_bar_mm', 8)) if PANEL else 0)
+    return o, max(keep, y + 3)
 
 
 # ---------------- the plans ----------------
