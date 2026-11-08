@@ -42,6 +42,9 @@ DEFAULTS = {
     "max_crop_required": 0.25,  # the same for a drawing the brief requires; over it, it doesn't count as on the panels
     "blank_min_side_mm": 60,  # a blank block at least this wide and high and this large is named even when no drawing fits in it:
     "blank_min_cm2": 150,     # about a quarter of an A4 page; thinner strips are gutters and margins
+    "hero_share": 0.55,       # the dominant drawing should take at least this share of the content area, where it can
+    "paper_share_max": 0.40,  # more of the rendered content area than this left as paper reads as unfinished
+    "section_ratio_min": 0.15,  # a full-width section band at least this high for its width
     "unscaled": ["perspective"],  # a drawing whose path holds one of these never gets a scale bar
     # a source that is a file of the proposal folder is printed as "<skill>, <its name> <what it is>";
     # a file name here is printed as its words alone, an extension not here as the skill's name alone
@@ -309,9 +312,9 @@ def png_rows(path):
     return w, h, rows
 
 
-def largest_blank_seen(png, fmt, reserved=(), background="#fff"):
-    """The largest rectangle (x, y, w, h in mm) of the rendered panel between the margins that is all paper:
-    the empty part of a frame or a text box counts, as on the print. Reserved boxes don't."""
+def paper_seen(png, fmt, reserved=(), background="#fff"):
+    """The rendered panel between the margins as rows of True (paper) and False (ink), the reserved boxes left out,
+    with the mm a pixel takes each way and where the content starts: what the blank and paper checks read."""
     w, h, rows = png_rows(png)
     W, H = fmt["width_mm"], fmt["height_mm"]
     m, g = fmt.get("margin_mm", 15), fmt.get("gutter_mm", 8)
@@ -320,17 +323,47 @@ def largest_blank_seen(png, fmt, reserved=(), background="#fff"):
     bg = bytes(int(background.lstrip("#")[i:i + 2] if len(background) == 7 else background.lstrip("#")[i // 2] * 2, 16)
                for i in (0, 2, 4))
     x0, x1, y0, y1 = int(m / sx + 0.999), int((W - m) / sx), int(top / sy + 0.999), int((H - m) / sy)
-    heights, best = [0] * w, (0, 0, 0, 0)
-    for y in range(y0, y1):
-        row = rows[y]
+    held = lambda x, y: any(r["x"] <= (x + 0.5) * sx <= r["x"] + r["w"] and r["y"] <= (y + 0.5) * sy <= r["y"] + r["h"]
+                            for r in reserved)
+    grid = [[None if held(x, y) else all(abs(rows[y][3 * x + k] - bg[k]) <= 10 for k in range(3))
+             for x in range(x0, x1)] for y in range(y0, y1)]
+    return grid, sx, sy, x0, y0
+
+
+def section_band(it, b, fmt):
+    """A full-width section: a drawing named section (its id or file) whose box spans most of the content width."""
+    name = f"{it.get('id', '')} {it.get('file', '')}".lower()
+    return it.get("type") == "drawing" and "section" in name and b["w"] >= 0.9 * (fmt["width_mm"] - 2 * fmt.get("margin_mm", 15))
+
+
+def ink_height_seen(png, fmt, reserved, background, box):
+    """How high the drawing inside box (x, y, w, h in mm) is on the rendered panel: from its top-most to its
+    bottom-most row holding ink (two cells or more), so white sky above or below doesn't count. None if no ink."""
+    grid, sx, sy, x0, y0 = paper_seen(png, fmt, reserved, background)
+    c0, c1 = max(int(box[0] / sx) - x0, 0), int((box[0] + box[2]) / sx) - x0
+    r0, r1 = max(int(box[1] / sy) - y0, 0), min(int((box[1] + box[3]) / sy) - y0, len(grid))
+    inked = [j for j in range(r0, r1) if sum(1 for c in grid[j][c0:c1] if c is False) >= 2]
+    return (inked[-1] - inked[0] + 1) * sy if inked else None
+
+
+def paper_share_seen(png, fmt, reserved=(), background="#fff"):
+    """The share of the content area (between the margins, below the reserved boxes, without them) left as paper."""
+    cells = [c for line in paper_seen(png, fmt, reserved, background)[0] for c in line if c is not None]
+    return cells.count(True) / len(cells) if cells else 0.0
+
+
+def largest_blank_seen(png, fmt, reserved=(), background="#fff"):
+    """The largest rectangle (x, y, w, h in mm) of the rendered panel between the margins that is all paper:
+    the empty part of a frame or a text box counts, as on the print. Reserved boxes don't."""
+    grid, sx, sy, x0, y0 = paper_seen(png, fmt, reserved, background)
+    x1, heights, best = x0 + (len(grid[0]) if grid else 0), {}, (0, 0, 0, 0)
+    for j, line in enumerate(grid):
+        y = y0 + j
         for x in range(x0, x1):
-            px, mx, my = row[3 * x:3 * x + 3], (x + 0.5) * sx, (y + 0.5) * sy
-            paper = all(abs(px[k] - bg[k]) <= 10 for k in range(3)) and not any(
-                r["x"] <= mx <= r["x"] + r["w"] and r["y"] <= my <= r["y"] + r["h"] for r in reserved)
-            heights[x] = heights[x] + 1 if paper else 0
+            heights[x] = heights.get(x, 0) + 1 if line[x - x0] is True else 0
         stack = []                       # the largest rectangle under this row's histogram
         for x in range(x0, x1 + 1):
-            hx, start = (heights[x] if x < x1 else 0), x
+            hx, start = (heights.get(x, 0) if x < x1 else 0), x
             while stack and stack[-1][1] >= hx:
                 start, hs = stack.pop()
                 if (x - start) * hs * sx * sy > best[2] * best[3]:
@@ -763,6 +796,10 @@ def render(layout_path, png_dpi, check=False):
                 if small.exists():
                     try:
                         res["blank_seen"] = largest_blank_seen(small, fmt, reserved, style["background"])
+                        res["paper_seen"] = paper_share_seen(small, fmt, reserved, style["background"])
+                        res["section_ink"] = {it["id"]: ink_height_seen(small, fmt, reserved, style["background"],
+                                                                        (b["x"], b["y"], it["_img_w"], it["_img_h"]))
+                                              for it, b in placed if section_band(it, b, fmt) and "_img_w" in it}
                     except (ValueError, OSError):
                         pass
             if res["pdf"]:
@@ -877,6 +914,59 @@ def write_issues(out, issues):
     return text
 
 
+def composition(r, n, fmt, reserved, add):
+    """Report lines on one panel's hierarchy: the dominant drawing's share of the content area, the paper left on the
+    rendered panel, and how high a full-width section band is for its width. Each miss is an issue for panel-layout,
+    never a problem in the count."""
+    W, H = fmt["width_mm"], fmt["height_mm"]
+    m, g = fmt.get("margin_mm", 15), fmt.get("gutter_mm", 8)
+    top = fmt.get("content_top_mm", max([q["y"] + q["h"] for q in reserved] + [m]) + g)
+    content = (W - 2 * m) * (H - m - top)
+    get = lambda k: fmt.get(k, DEFAULTS[k])
+    size = lambda it, b: (it.get("_img_w", b["w"]), it.get("_img_h", b["h"]))  # the drawing's own box, else the placed one
+    drawings = [(it, size(it, b)) for it, b in r["placed"] if it.get("type") == "drawing" and not it.get("_empty")]
+    out = []
+    if drawings and content > 0:
+        hero, (hw, hh) = max(drawings, key=lambda d: d[1][0] * d[1][1])
+        share = hw * hh / content
+        whole = lambda it, wh: it.get("_draw_w", wh[0]) * it.get("_draw_h", wh[1])
+        can_grow = (hero.get("_hidden", 0) > 0.01 or hero.get("_auto") or not hero.get("_print_scale")
+                    or any(whole(it, wh) >= get("hero_share") * content for it, wh in drawings))
+        short = share < get("hero_share")
+        out.append(f"- dominant drawing: `{hero['id']}`, {100 * share:.0f} % of the content area"
+                   + (f"  **under {100 * get('hero_share'):.0f} %: give one drawing the full width and put the others in bands**"
+                      if short and can_grow else f" (under {100 * get('hero_share'):.0f} %, but its scale fixes its size)" if short else ""))
+        if short and can_grow:
+            add("here", "low", "no dominant drawing", f"panel {n}",
+                f"the largest drawing, `{hero['id']}`, takes {100 * share:.0f} % of the content area (aim: {100 * get('hero_share'):.0f} % or more)",
+                "give the drawing that leads this panel the full width and about 55 to 65 % of the panel; the others go in bands of one size")
+    if r.get("paper_seen") is not None:
+        p = r["paper_seen"]
+        out.append(f"- paper seen: {100 * p:.0f} % of the content area" +
+                   (f"  **over {100 * get('paper_share_max'):.0f} %**" if p > get("paper_share_max") else ""))
+        if p > get("paper_share_max"):
+            add("here", "low", "much of the panel left as paper", f"panel {n}",
+                f"{100 * p:.0f} % of the rendered content area is paper (aim: {100 * get('paper_share_max'):.0f} % or less)",
+                "enlarge the dominant drawing, close the gaps between bands, or shrink text boxes to their text")
+    for it, b in r["placed"]:
+        if section_band(it, b, fmt):
+            iw, ih = size(it, b)
+            seen = (r.get("section_ink") or {}).get(it["id"])  # measured on the render; else only the frame is known
+            shown = seen if seen is not None else ih
+            ratio = shown / iw
+            low = ratio < get("section_ratio_min")
+            out.append(f"- section band `{it['id']}`: frame {iw:.0f} x {ih:.0f} mm, "
+                       + (f"drawing seen {seen:.0f} mm high" if seen is not None else "drawing not measured (no render)")
+                       + f", {ratio:.2f} high for its width" + (f"  **under {get('section_ratio_min'):.2f}**" if low else ""))
+            if low:
+                add("here", "low", "section drawing too low", f"`{it['id']}` on panel {n}",
+                    f"frame {iw:.0f} x {ih:.0f} mm, the drawing in it {shown:.0f} mm high, {ratio:.2f} of its width "
+                    f"(aim: {get('section_ratio_min'):.2f} or more)",
+                    "plan the section at a larger scale, where the brief fixes none, so its ground, buildings and notes fill the band; "
+                    "a taller frame alone adds only sky")
+    return out
+
+
 def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi, plan=None, check=False):
     out = Path(out)
     folder = out.parent
@@ -962,6 +1052,7 @@ def write_report(out, L, fmt, results, unused, ids, notes, inv, browser, png_dpi
             else:
                 add("here", sev, "blank space where a drawing would fit" if fits else "large blank space", f"panel {n}", evidence,
                     "fill it with a drawing from the folder the storyline can use, shrink the frame or text box, or move the items together")
+        lines += composition(r, n, fmt, L.get("reserved", []), add)
         for it, b in r["placed"]:
             held, iid = "", it["id"]
             sev = "high" if iid in req_ids else "medium"

@@ -324,3 +324,77 @@ def test_thin_blank_strips_are_not_named(tmp_path):
     for seen in ((15, 742, 564, 14), (100, 619, 478, 32)):
         text, issues = panel2_after(tmp_path, seen)
         assert "large blank" not in text and "blank space" not in issues
+
+
+def hierarchy(tmp_path, placed, paper=None, section_ink=None):
+    results = [{"n": 1, "placed": placed, "unplaced": [], "checks": [], "story": "", "paths": [], "paper_seen": paper,
+                "section_ink": section_ink}]
+    text = panels.write_report(tmp_path, {}, dict(A1, content_top_mm=46), results, [], {it["id"] for it, _ in placed},
+                               [], {"missing": []}, None, 96)
+    return text, (tmp_path / "issues.md").read_text(encoding="utf-8").split("## Fix in panel-layout")[1]
+
+
+def test_a_panel_without_a_dominant_drawing_is_named(tmp_path):
+    """Issue #44: the after-run's panel 1 led with a 360 x 240 mm perspective, 20 % of the content area, beside
+    a site plan of 537 x 530 mm that would take 65 %; a panel led by such a site plan is fine."""
+    view = {"id": "view-1", "type": "drawing", "file": "perspective/view-1.png", "_img_w": 360, "_img_h": 240}
+    plan = {"id": "site-plan", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "_img_w": 537, "_img_h": 530,
+            "_draw_w": 537, "_draw_h": 530, "_print_scale": 3000, "_own": 3000, "_factor": 1.0,
+            "_auto": False, "_hidden": 0.0, "_own_bar": True}
+    text, here = hierarchy(tmp_path, [(view, {"x": 15, "y": 46, "w": 360, "h": 246})])
+    assert "dominant drawing: `view-1`, 20 %" in text and "| low | no dominant drawing | panel 1 |" in here
+    text, here = hierarchy(tmp_path, [(plan, {"x": 28, "y": 280, "w": 537, "h": 536}), (view, {"x": 15, "y": 46, "w": 300, "h": 200})])
+    assert "dominant drawing: `site-plan`, 65 %" in text and "no dominant drawing" not in here
+    assert "Problems: 0." in text
+
+
+def test_a_detail_area_its_scale_holds_small_is_not_an_issue(tmp_path):
+    """A fixed-scale drawing shown whole can't grow: 478 x 384 mm at 1:1,000 is named in the report, not in issues.md."""
+    detail = {"id": "detail-1", "type": "drawing", "file": "plans/detail-area-1_1-1000.svg", "_img_w": 478, "_img_h": 384,
+              "_draw_w": 478, "_draw_h": 384, "_print_scale": 1000, "_own": 1000, "_factor": 1.0,
+              "_auto": False, "_hidden": 0.0, "_own_bar": True}
+    text, here = hierarchy(tmp_path, [(detail, {"x": 15, "y": 46, "w": 478, "h": 390})])
+    assert "but its scale fixes its size" in text and "no dominant drawing" not in here
+
+
+def test_paper_share_of_the_rendered_panel():
+    """The after-run's first panel 1 left more than half its content area as paper; the winners' boards leave 12 to 56 %."""
+    share = panels.paper_share_seen(FIX / "issue44-after-panel-1_small.png", dict(A1, content_top_mm=46), CODE_BOX)
+    assert 0.5 < share < 0.65, share
+
+
+def test_section_ratio_counts_the_drawing_not_the_frame(tmp_path):
+    """Issue #44: what counts is how high the section shows, not its frame. Without a render only the frame is known:
+    564 x 54 mm (0.10) is named. The after-runs gave the section an 89 mm frame (0.16), but at 1:3,000 its ground,
+    buildings and notes showed only 46 mm high (0.08), the rest empty sky: named. A drawing 90 mm high (0.16) is not."""
+    sec = lambda h: {"id": "site-section", "type": "drawing", "file": "site-section/site-section_design_1-3000.svg",
+                     "_img_w": 564, "_img_h": h}
+    text, here = hierarchy(tmp_path, [(sec(54), {"x": 15, "y": 760, "w": 564, "h": 60})], paper=0.7)
+    assert "frame 564 x 54 mm, drawing not measured (no render), 0.10 high for its width  **under 0.15**" in text
+    assert "| low | section drawing too low |" in here and "a taller frame alone adds only sky" in here
+    assert "paper seen: 70 %" in text and "much of the panel left as paper" in here
+    text, here = hierarchy(tmp_path, [(sec(89), {"x": 15, "y": 725, "w": 564, "h": 95})], section_ink={"site-section": 46})
+    assert "frame 564 x 89 mm, drawing seen 46 mm high, 0.08 high for its width  **under 0.15**" in text
+    assert "| low | section drawing too low |" in here and "the drawing in it 46 mm high" in here
+    text, here = hierarchy(tmp_path, [(sec(90), {"x": 15, "y": 730, "w": 564, "h": 96})], paper=0.3, section_ink={"site-section": 90})
+    assert "section drawing too low" not in here and "left as paper" not in here
+    assert "Problems: 0." in text
+
+
+def test_ink_height_seen_ignores_empty_sky(tmp_path):
+    """The section's visible height is measured from its ink, not its frame: on a page about 2 mm a pixel, a frame
+    40 px high holding ink only in its lower 12 px reads about 12 px (24 mm), not 40; a frame of paper reads None."""
+    import struct, zlib
+    w, h = 297, 421
+    white, ink = bytes([255, 255, 255]), bytes([64, 64, 64])
+    rows = [bytes([0]) + (white * 20 + ink * 250 + white * 27 if 300 <= y < 312 else white * w) for y in range(h)]
+    chunk = lambda k, d: struct.pack(">I", len(d)) + k + d + struct.pack(">I", zlib.crc32(k + d))
+    signature = bytes([137, 80, 78, 71, 13, 10, 26, 10])
+    png = tmp_path / "band.png"
+    png.write_bytes(signature + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                    + chunk(b"IDAT", zlib.compress(b"".join(rows))) + chunk(b"IEND", b""))
+    mm = 841 / h
+    fmt = dict(A1, content_top_mm=46)
+    seen = panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 272 * mm, 564, 40 * mm))
+    assert abs(seen - 12 * mm) < 2 * mm, seen
+    assert panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 100, 564, 40)) is None
