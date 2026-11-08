@@ -22,7 +22,7 @@ def contrast(a, b):
 
 
 def problems(s):
-    out = [f"{k}: missing" for k in COLOURS + NUMBERS + ["font", "ramp", "render_style", "storey_labels", "diagram"] if k not in s]
+    out = [f"{k}: missing" for k in COLOURS + NUMBERS + ["font", "ramp", "render_style", "storey_labels", "diagram", "marks"] if k not in s]
     for k in COLOURS:
         if k in s and not re.fullmatch(r"#[0-9a-fA-F]{6}", str(s[k])):
             out.append(f"{k}: {s[k]!r} is not a colour as #rrggbb")
@@ -44,6 +44,8 @@ def problems(s):
         out.append("ramp: at least three colours, light to dark")
     if not (isinstance(s["render_style"], str) and s["render_style"].strip()):
         out.append("render_style: a sentence on how the perspectives are rendered")
+    if s["marks"] not in ("panel", "drawing"):   # panel: the panel carries caption, north arrow and scale bar once
+        out.append(f"marks: {s['marks']!r}, needs panel or drawing")
     if s["storey_labels"] not in ("roman", "arabic"):
         out.append(f"storey_labels: {s['storey_labels']!r}, needs roman or arabic")
     if not isinstance(s["diagram"], dict):
