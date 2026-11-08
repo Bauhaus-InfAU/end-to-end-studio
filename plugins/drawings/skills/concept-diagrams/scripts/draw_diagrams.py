@@ -49,6 +49,25 @@ def from_standard(spec_path):
 MM = 25.4 / 96  # mm per CSS px
 
 
+def frame_mm(spec_path, sp):
+    """The print width to draw to: the spec's `width_mm`, else the narrowest frame the panels' first plan
+    (panel-layout's layout-plan.json, else layout.json) gives these pictograms, else None (the spec's `size`)."""
+    if sp.get("width_mm"):
+        return float(sp["width_mm"])
+    names = {f.get("file") for f in sp.get("frames", [])}
+    for name in ("layout-plan.json", "layout.json"):
+        try:
+            L = json.loads((spec_path.parent.parent / "panel-layout" / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ws = [(it.get("frame") or {}).get("w") or it.get("w") for p in L.get("panels", []) for it in p.get("items", [])
+              if Path(str(it.get("file", ""))).parent.name == spec_path.parent.name and Path(str(it.get("file", ""))).stem in names]
+        ws = [float(w) for w in ws if w]
+        if ws:
+            return min(ws)
+    return None
+
+
 # ---------- data ----------
 
 def read_features(path):
@@ -618,7 +637,9 @@ def render(spec_path, out_dir):
     os.chdir(spec_path.parent)  # relative paths in the spec are relative to it
     st = {**FALLBACK_STYLE, **from_standard(spec_path), **sp.get("style", {})}   # the spec's `style` has the last word
     W, DH = sp.get("size", [600, 560])
-    # the text under the drawing: title, one-line caption, a footer of up to two lines; it grows with the standard's sizes
+    if (mm := frame_mm(spec_path, sp)):  # drawn to its frame: the drawing shrinks, the text keeps its size
+        W, DH = round(mm / MM), round(DH * mm / MM / W)
+    # the text under the drawing: title, a caption of up to two lines, a footer of up to two lines; it grows with the standard's sizes
     y1, y2, y3 = 0, 0, 0
     CAP = 0
     sequence = sp.get("mode", "sequence") == "sequence"
@@ -709,7 +730,7 @@ def render(spec_path, out_dir):
     ts, cs, fz = st["title_size"], st["caption_size"], st["footer_size"]
     y1 = DH + 1.4 * ts
     y2 = y1 + 1.65 * cs
-    y3 = y2 + 2.7 * fz
+    y3 = y2 + 1.3 * cs + 2.7 * fz  # room for a caption of two lines
     CAP = math.ceil(y3 - DH + 1.9 * fz)
 
     W_, DH_ = W, DH  # a frame's size; a layer in a row of layers is drawn smaller
@@ -969,15 +990,16 @@ def render(spec_path, out_dir):
         v, drawing = frame_svg(n, fr)
         t = f'font-family="{esc(st["font"])}" fill="{st["ink"]}"'
         cap = fr.get("caption", "")
-        fits = min(90, int((W - 40) / (0.5 * st["caption_size"])))
-        if len(cap) > fits:  # one line, so it never runs into the footer
-            print(f"frame {n}: caption is {len(cap)} characters; keep it to one line, about {fits}", file=sys.stderr)
+        lines = wrap(cap, min(90, int((W - 40) / (0.5 * st["caption_size"]))))
+        if len(lines) > 2:  # two lines at most, so it never runs into the footer
+            print(f"frame {n}: caption runs to {len(lines)} lines at this width; shorten it to two", file=sys.stderr)
+        cap = "".join(f'<tspan x="20" dy="{1.3 * st["caption_size"] if i else 0}">{esc(l)}</tspan>' for i, l in enumerate(lines[:2]))
         fs = st["footer_size"]
         foot = "".join(f'<tspan x="20" dy="{1.3 * fs if i else 0}">{esc(l)}</tspan>' for i, l in enumerate(wrap(footer(v, n), int((W - 40) / (0.5 * fs)))[:2]))
         return v, (f'<rect width="{W}" height="{DH + CAP}" fill="{st["paper"]}"/>{drawing}{north(v) if site is not None and not v.elev and not v.composed else ""}{scalebar(v)}'
                    f'<line x1="20" y1="{DH}" x2="{W - 20}" y2="{DH}" stroke="{st["ink"]}" stroke-width="{st["rule"]}"/>'
                    f'<text x="20" y="{y1}" {t} font-size="{st["title_size"]}" font-weight="{st["title_weight"]}"><tspan fill="{st["accent"]}">{n}</tspan>  {esc(fr["title"])}</text>'
-                   f'<text x="20" y="{y2}" {t} font-size="{st["caption_size"]}">{esc(cap)}</text>'
+                   f'<text x="20" y="{y2}" {t} font-size="{st["caption_size"]}">{cap}</text>'
                    f'<text y="{y3}" {t} font-size="{fs}" font-style="{st["footer_style"]}">{foot}</text>')
 
     def doc(w, h, v, inner):  # print size in mm (CSS px at 96 dpi), so the panels place it at that size
