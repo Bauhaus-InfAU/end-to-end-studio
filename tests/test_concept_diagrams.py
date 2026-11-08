@@ -61,3 +61,21 @@ def test_pie_charts(tmp_path):
     svg = (tmp_path / "05_ground.svg").read_text(encoding="utf-8")
     assert svg.count(" 0 0 1 ") + svg.count(" 0 1 1 ") == 6  # six slices
     assert "open 78 %" in svg and "Shares from analysis/comparison.csv." in svg
+
+
+def test_draws_to_its_planned_frame(tmp_path):
+    """The pictograms take the print width of the frame panel-layout's first plan gives them, and long captions wrap."""
+    (tmp_path / "site.geojson").write_text(json.dumps(SITE), encoding="utf-8")
+    cd = tmp_path / "concept-diagrams"
+    cd.mkdir()
+    frames = [dict(SPEC["frames"][0], caption="A green link crosses the whole site from the station to the river and the fields.")]
+    (cd / "spec.json").write_text(json.dumps({**SPEC, "site": "../site.geojson", "frames": frames}), encoding="utf-8")
+    (tmp_path / "panel-layout").mkdir()
+    (tmp_path / "panel-layout" / "layout-plan.json").write_text(json.dumps({"panels": [{"items": [
+        {"id": "dia-1", "type": "drawing", "file": "concept-diagrams/01_green-link.svg", "w": 100}]}]}), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(DD), "render", str(cd / "spec.json"), str(cd)], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    svg = (cd / "01_green-link.svg").read_text(encoding="utf-8")
+    import re
+    assert abs(float(re.search(r'width="([\d.]+)mm"', svg).group(1)) - 100) < 0.3, svg[:300]
+    assert svg.count('<tspan x="20" dy=') >= 2  # the caption's second line (and the footer's)
