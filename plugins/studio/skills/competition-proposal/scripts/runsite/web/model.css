@@ -1,1 +1,73 @@
 /* Model page: styles scoped under #view[data-page="model"] */
+#view[data-page="model"]{overflow:hidden;display:flex;flex-direction:column}
+#view[data-page="model"] .m-stage{position:relative;flex:1;min-height:0;background:var(--bg);overflow:hidden}
+#view[data-page="model"] .m-deck{position:absolute;inset:0;background:var(--bg)}
+#view[data-page="model"] .m-loading{position:absolute;left:0;right:0;top:45%;margin:0;text-align:center;color:var(--muted)}
+#view[data-page="model"] .m-tl{flex:none;border-top:1px solid var(--hair)}
+
+/* facts, top left */
+#view[data-page="model"] .m-facts{top:20px;left:24px;padding:16px 18px;width:250px}
+#view[data-page="model"] .m-kicker{color:var(--muted);text-transform:uppercase}
+#view[data-page="model"] .m-facts h1{margin:0 0 14px;font-size:22px;line-height:1.2;font-weight:600;letter-spacing:-.02em;overflow-wrap:anywhere}
+#view[data-page="model"] .m-kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px}
+#view[data-page="model"] .m-kv span:nth-child(odd){color:var(--muted)}
+#view[data-page="model"] .m-kv span:nth-child(even){text-align:right}
+
+/* layers, top right */
+#view[data-page="model"] .m-layers{top:20px;right:24px;width:244px;max-height:calc(100% - 40px);display:flex;flex-direction:column;overflow:hidden}
+#view[data-page="model"] .m-lhead{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 14px 4px;
+  border:0;background:none;cursor:pointer;color:var(--muted);text-align:left}
+#view[data-page="model"] .m-lhead .label{margin:0}
+#view[data-page="model"] .m-lhead svg{transform:rotate(180deg);transition:transform .2s}
+#view[data-page="model"] .m-layers.closed .m-lhead{padding-bottom:12px}
+#view[data-page="model"] .m-layers.closed .m-lhead svg{transform:none}
+#view[data-page="model"] .m-layers.closed .m-lbody{display:none}
+#view[data-page="model"] .m-lbody{overflow-y:auto;padding:2px 14px 12px;overscroll-behavior:contain}
+#view[data-page="model"] .m-grp{padding:1px 0}
+#view[data-page="model"] .m-row{display:flex;align-items:center;gap:8px;min-height:24px}
+#view[data-page="model"] .m-row .m-nm{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+#view[data-page="model"] .m-grp.later .m-grow .m-nm{color:var(--muted)}
+#view[data-page="model"] .m-when{color:var(--muted)}
+#view[data-page="model"] .m-open,#view[data-page="model"] .m-open-sp{flex:none;width:20px;height:20px}
+#view[data-page="model"] .m-open{display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:none;color:var(--muted);cursor:pointer}
+#view[data-page="model"] .m-open:hover{color:var(--ink);background:var(--hair2)}
+#view[data-page="model"] .m-open svg{transition:transform .2s}
+#view[data-page="model"] .m-open[aria-expanded="true"] svg{transform:rotate(180deg)}
+#view[data-page="model"] .m-sub{padding-left:18px;margin:0 0 4px 5px;border-left:1px solid var(--hair)}
+#view[data-page="model"] .m-lrow{min-height:22px;color:var(--ink2)}
+
+/* switch */
+#view[data-page="model"] .m-sw{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:24px;height:14px;margin:0;
+  border-radius:7px;border:1px solid var(--muted);background:var(--paper);cursor:pointer;transition:background .15s,border-color .15s}
+#view[data-page="model"] .m-sw::before{content:"";position:absolute;top:2px;left:2px;width:8px;height:8px;border-radius:50%;
+  background:var(--muted);transition:transform .15s,background .15s}
+#view[data-page="model"] .m-sw:checked{background:var(--sel);border-color:var(--sel)}
+#view[data-page="model"] .m-sw:checked::before{transform:translateX(10px);background:var(--paper)}
+#view[data-page="model"] .m-sw:indeterminate::before{transform:translateX(5px)}
+
+/* legend under a classed layer */
+#view[data-page="model"] .m-legend{padding-left:32px}
+#view[data-page="model"] .m-legend:not(:empty){padding-top:2px;padding-bottom:6px}
+#view[data-page="model"] .m-key{display:flex;align-items:center;gap:7px;font-size:11.5px;line-height:18px;color:var(--ink2)}
+#view[data-page="model"] .m-key i{flex:none;width:14px;height:9px;border-radius:2px;border:1px solid rgba(0,0,0,.08)}
+#view[data-page="model"] .m-key span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#view[data-page="model"] .m-periods{display:flex;flex-wrap:wrap;gap:2px;margin:0 0 4px;min-width:0}
+#view[data-page="model"] .m-periods button{max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:0;background:none;padding:1px 7px;border-radius:4px;font-size:11.5px;color:var(--muted);cursor:pointer}
+#view[data-page="model"] .m-periods button:hover{color:var(--ink)}
+#view[data-page="model"] .m-periods button[aria-pressed="true"]{color:var(--ink);background:var(--hair2)}
+
+/* caption, bottom centre of the stage */
+#view[data-page="model"] .m-caption{left:50%;bottom:16px;transform:translateX(-50%);padding:8px 14px;max-width:min(680px,calc(100% - 48px));
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+#view[data-page="model"] .m-caption .mono{margin-right:10px}
+
+/* phone width */
+@media (max-width:720px){
+  #view[data-page="model"] .m-facts{top:12px;left:12px;width:auto;max-width:calc(100% - 140px);padding:10px 12px}
+  #view[data-page="model"] .m-facts h1{font-size:17px;margin-bottom:8px}
+  #view[data-page="model"] .m-kv{font-size:12px;gap:3px 10px}
+  #view[data-page="model"] .m-layers{top:12px;right:12px;width:min(244px,calc(100% - 24px));max-height:calc(100% - 24px)}
+  #view[data-page="model"] .m-layers.closed{width:auto}
+  #view[data-page="model"] .m-layers.closed .m-lhead{gap:10px}
+  #view[data-page="model"] .m-caption{bottom:10px;max-width:calc(100% - 24px);font-size:12px}
+}
