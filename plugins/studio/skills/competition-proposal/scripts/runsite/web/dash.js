@@ -238,7 +238,7 @@ function summary(el, run) {
     return `<div class="cs-row" data-tip="${tip}"><span class="cs-nm">${esc(k)}</span><span class="cs-tr"><i class="${model === "opus" ? "opus" : model === "sonnet" ? "sonnet" : "unk"}" style="width:${(v / mx * 100).toFixed(1)}%"></i></span><span class="cs-v mono num">${money(v)}</span></div>`;
   }).join("");
   const links = [["Model", "model", true], ["Panels", "panels", run.has && run.has.panels], ["Loop", "loop", run.has && run.has.loop]]
-    .map(([t, p, on]) => on ? `<a href="${href(run.key, p)}">${t}</a>` : `<span class="off">${t}</span>`).join("");
+    .map(([t, p, on]) => on ? `<a class="btn" href="${href(run.key, p)}">${t}</a>` : `<span class="btn btn-off">${t}</span>`).join("");
   const jv = run.jury && run.jury.verdict || run.verdict;
   el.innerHTML = `<div class="dash-wrap sum">
     <a class="back" href="#all">← All runs</a>
@@ -248,7 +248,7 @@ function summary(el, run) {
     <div class="dash-facts num">${facts.map(([k, v]) => `<div class="kpi"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
     ${run.new_in_run ? `<section class="blk"><div class="label">New in this run</div><div class="md">${md(run.new_in_run)}</div></section>` : ""}
     <section class="blk"><div class="label">Cost per skill</div>
-      <div class="cs-key muted"><span><i class="opus"></i>Opus</span><span><i class="sonnet"></i>Sonnet</span>${run.usd_lead != null ? `<span>lead ${money(run.usd_lead)}</span>` : ""}<span>${esc(split)}</span></div>
+      <div class="cs-key key"><span><i class="opus"></i>Opus</span><span><i class="sonnet"></i>Sonnet</span>${run.usd_lead != null ? `<span>lead ${money(run.usd_lead)}</span>` : ""}<span>${esc(split)}</span></div>
       ${rows ? `<div class="cs">${rows}</div>` : `<p class="muted">No cost per skill for this run.</p>`}</section>
     <section class="blk tlblk"><div class="label">Timeline</div><div class="dash-tl" id="d-tl"></div></section>
     <section class="blk"><div class="label">Jury</div>
@@ -257,7 +257,7 @@ function summary(el, run) {
     ${run.open_problems_md ? `<section class="blk"><div class="label">Open problems</div><div class="md">${md(run.open_problems_md)}</div></section>` : ""}
     ${run.handed_on_md ? `<section class="blk"><div class="label">Handed on</div><div class="md">${md(run.handed_on_md)}</div></section>` : ""}
   </div>`;
-  Site.timeline(el.querySelector("#d-tl"), run, { detailed: true });
+  Site.timeline(el.querySelector("#d-tl"), run, { detailed: true, grip: "bottom" });
 }
 
 Site.page("dash", {

@@ -41,6 +41,11 @@ def test_reads_and_end(tmp_repo):
     assert skill_names(loop) == {"massing", "narrative"}
 
 
+def test_a_skill_keeps_its_text_without_the_front_matter(tmp_repo):
+    n = {x["id"]: x for x in read_loop(tmp_repo.path, tmp_repo.sha)["nodes"]}
+    assert n["massing"]["text"] == "Reads: narrative, brief-reader\nModel: opus\nbody"
+
+
 def test_end_marker_goes_to_after_end(tmp_path):
     d = tmp_path / "plugins/delivery/skills/jury"
     d.mkdir(parents=True)

@@ -117,7 +117,7 @@ function md(src) {
 
 /* ---------- data ---------- */
 async function getJSON(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-cache" });   // ask each time, so a new build shows at once
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.json();
 }
@@ -130,7 +130,7 @@ function run(key) {
 }
 function geo(key) {
   if (!geoCache[key]) {
-    geoCache[key] = fetch(`data/geo/${encodeURIComponent(key)}.json`)
+    geoCache[key] = fetch(`data/geo/${encodeURIComponent(key)}.json`, { cache: "no-cache" })
       .then(res => res.ok ? res.json() : null);
     geoCache[key].catch(() => delete geoCache[key]);
   }

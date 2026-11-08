@@ -1,7 +1,7 @@
 /*
  * Shared timeline. Adds Site.timeline to window.Site (app.js loads first).
  *
- * Site.timeline(el, run, {detailed, onTime(t), onPick(skill)})
+ * Site.timeline(el, run, {detailed, onTime(t), onPick(skill), grip})
  *     -> { set(t), highlight(skill | null) }
  *
  * el        an empty element; the timeline fills its width (class "tl" is
@@ -20,10 +20,14 @@
  * onTime(t) called when the cursor moves: drag, play, arrow keys, or set(t).
  * onPick(s) called with the skill name when a bar (or, detailed, a row name)
  *           is clicked.
+ * grip      which edge resizes it: "top" (default, for a timeline pinned to the
+ *           bottom of the page) or "bottom" (for one inside a scrolling page).
  * set(t)    moves the cursor to t (clamped to the run) and calls onTime(t).
  *           Does nothing when detailed.
  * highlight(skill|null)  marks that skill's row in --sel; null clears.
  *
+ * Every timeline can be resized by dragging that edge (double-click for the usual
+ * size) and hidden with its button; the two are one setting, kept between pages.
  * Hovering a bar shows skill, times, model and its log line in a tooltip.
  * Play stops by itself when the timeline leaves the page or is rebuilt. A run with no bars renders
  * "No timeline: this run's log has no times." and returns no-op methods.
@@ -75,6 +79,73 @@ const MODEL = { opus: "Opus", sonnet: "Sonnet" };
 const ICON_PLAY = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z" fill="currentColor"/></svg>';
 const ICON_PAUSE = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2v8H2zM6 1h2v8H6z" fill="currentColor"/></svg>';
 
+/* ---------- size and hiding: one setting for every timeline, kept between pages and visits ---------- */
+const PREFS_KEY = "runs-site.timeline";
+const MIN_ROW = 4, MIN_ROW_DETAILED = 11.5;   // px; a detailed row must still fit its text
+const STAGE_MIN = 340;                        // px the page keeps for what sits beside the timeline
+const KEY_STEP = 0.1;
+const prefs = { scale: 1, hidden: false };
+try {
+  const saved = JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+  if (saved.scale > 0) prefs.scale = +saved.scale;
+  prefs.hidden = saved.hidden === true;
+} catch { /* no storage here: the setting lasts until the page is closed */ }
+function savePrefs() {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* as above */ }
+}
+
+function sizing(el, lanes, nRows, detailed, edge) {
+  const base = parseFloat(getComputedStyle(el).getPropertyValue("--rh")) || 7;
+  const least = (detailed ? MIN_ROW_DETAILED : MIN_ROW) / base;
+  const grip = el.querySelector(".tl-grip");
+  const toggle = el.querySelector(".tl-toggle");
+  const most = () => {
+    const view = document.getElementById("view");
+    const room = edge === "bottom" ? view.clientHeight : view.clientHeight - STAGE_MIN;   // a scrolling page keeps nothing beside it
+    return Math.max(1, (room - (el.offsetHeight - lanes.offsetHeight)) / (nRows * base));
+  };
+  const fit = s => Math.min(most(), Math.max(least, s));
+  const apply = () => {
+    if (prefs.hidden) return;
+    const s = fit(prefs.scale);
+    el.style.setProperty("--s", s);
+    grip.setAttribute("aria-valuenow", Math.round(s * 100));
+  };
+  const resize = s => { prefs.scale = fit(s); apply(); };
+  const showState = () => {
+    el.classList.toggle("tl-hidden", prefs.hidden);
+    toggle.textContent = prefs.hidden ? "Show timeline" : "Hide timeline";
+    toggle.setAttribute("aria-expanded", String(!prefs.hidden));
+    apply();
+  };
+  toggle.addEventListener("click", () => { prefs.hidden = !prefs.hidden; showState(); savePrefs(); });
+
+  const sign = edge === "bottom" ? 1 : -1;     // dragging away from the rows makes them taller
+  let from = null;
+  grip.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    hideTip();
+    grip.setPointerCapture(e.pointerId);
+    from = { y: e.clientY, h: lanes.offsetHeight };
+  });
+  grip.addEventListener("pointermove", e => {
+    if (from) resize((from.h + sign * (e.clientY - from.y)) / (nRows * base));
+  });
+  const end = () => { if (from) savePrefs(); from = null; };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => { resize(1); savePrefs(); });
+  grip.addEventListener("keydown", e => {
+    const step = { ArrowUp: -sign * KEY_STEP, ArrowDown: sign * KEY_STEP }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    resize(fit(prefs.scale) + step);
+    savePrefs();
+  });
+  showState();
+  return apply;
+}
+
 function timeline(el, run, opts = {}) {
   const { esc } = window.Site;
   const detailed = !!opts.detailed;
@@ -96,11 +167,14 @@ function timeline(el, run, opts = {}) {
   const T = Math.max(run.minutes || 0, ...rows.flatMap(r => r.s.runs.map(b => b.t1)), ...Object.keys(checks).map(Number)) || 1;
   const pct = t => `${(t / T) * 100}%`;
 
+  const edge = opts.grip === "bottom" ? "bottom" : "top";
   el.innerHTML = `
+    <div class="tl-grip${edge === "bottom" ? " bottom" : ""}" role="separator" aria-orientation="horizontal" aria-label="Timeline height" tabindex="0" title="Drag to resize. Double-click for the usual size."></div>
     <div class="tl-head">
-      ${detailed ? "" : `<button class="tl-play" type="button" aria-label="Play">${ICON_PLAY}</button>`}
+      ${detailed ? "" : `<button class="tl-play btn btn-icon" type="button" aria-label="Play">${ICON_PLAY}</button>`}
       <span class="tl-now mono num">${detailed ? esc(run.start ? `${clock(run, 0)}–${clock(run, T)}` : `${Math.round(T)} min`) : ""}</span>
-      <span class="tl-key"><span><i class="k-opus"></i>Opus</span><span><i class="k-sonnet"></i>Sonnet</span><span><i class="k-rerun"></i>rerun</span><span><i class="k-check"></i>check</span></span>
+      <span class="tl-key key"><span><i class="k-opus"></i>Opus</span><span><i class="k-sonnet"></i>Sonnet</span><span><i class="k-rerun"></i>rerun</span><span><i class="k-check"></i>check</span></span>
+      <button class="tl-toggle btn" type="button"></button>
     </div>
     <div class="tl-axis mono num"></div>
     ${detailed ? `<div class="tl-evlabels"></div>` : ""}
@@ -112,6 +186,8 @@ function timeline(el, run, opts = {}) {
   // Ticks about every 60 px of track, redrawn when the width changes.
   let shownMost = 0;
   new ResizeObserver(() => {
+    if (!axis.clientWidth) return;       // hidden
+    applySize();
     const most = Math.max(2, Math.min(6, Math.floor(axis.clientWidth / 60)));
     if (most === shownMost) return;
     shownMost = most;
@@ -159,6 +235,8 @@ function timeline(el, run, opts = {}) {
     lbl.addEventListener("pointerleave", hideTip);
     labels.appendChild(lbl);
   });
+
+  const applySize = sizing(el, lanes, rows.length, detailed, edge);
 
   const api = {
     set() {},

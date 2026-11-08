@@ -43,6 +43,11 @@ def _parse(text):
     return reads, after_end, reads_end, model
 
 
+def _body(text):
+    """A SKILL.md without its front matter."""
+    return re.sub(r"\A---\n.*?\n---\n+", "", text.replace("\r\n", "\n"), flags=re.S).strip()
+
+
 def read_loop(repo, commit, plugins_rel="plugins"):
     if not commit:
         return None
@@ -61,7 +66,8 @@ def read_loop(repo, commit, plugins_rel="plugins"):
         text = _git(repo, "show", f"{commit}:{path}") or ""
         reads, after_end, reads_end, model = _parse(text)
         nodes.append({"id": name, "kind": "skill", "topic": topic,
-                      "reads": reads, "after_end": after_end, "reads_end": reads_end, "model": model})
+                      "reads": reads, "after_end": after_end, "reads_end": reads_end, "model": model,
+                      "text": _body(text)})
     return {"commit": commit, "nodes": nodes}
 
 
