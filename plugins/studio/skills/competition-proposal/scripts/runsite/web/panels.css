@@ -27,14 +27,11 @@
   padding:7px 14px;color:var(--ink2);font-size:12.5px;text-align:center;pointer-events:none}
 
 /* the card */
-#view[data-page="panels"] .pp-card{grid-column:2;grid-row:1/3;min-width:0;overflow:auto;padding:22px;
-  background:var(--paper);border-left:1px solid var(--hair)}
-#view[data-page="panels"] .pp-card h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;overflow-wrap:anywhere}
+#view[data-page="panels"] .pp-card{grid-column:2;grid-row:1/3}
 #view[data-page="panels"] .pp-card h3{display:flex;align-items:center;gap:8px;margin:0;font-size:15px;font-weight:600;overflow-wrap:anywhere}
-#view[data-page="panels"] .pp-card .meta{margin-top:2px;color:var(--muted);overflow-wrap:anywhere}
 #view[data-page="panels"] .pp-empty{margin:0}
 #view[data-page="panels"] .pp-img{display:block;width:100%;max-height:150px;object-fit:contain;margin:12px 0 8px;
-  background:var(--bg);border:1px solid var(--hair);border-radius:6px}
+  background:var(--bg);border:1px solid var(--hair);border-radius:var(--r);cursor:zoom-in}
 #view[data-page="panels"] .pp-shows{margin:0;color:var(--ink2);font-size:12.5px}
 #view[data-page="panels"] .pp-gl{margin-top:18px}
 #view[data-page="panels"] .pp-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--issue)}
@@ -63,8 +60,7 @@
 #view[data-page="panels"] .pg-name{font-size:11px;fill:var(--ink)}
 #view[data-page="panels"] .pg-sub{font-family:var(--mono);font-size:9.5px;fill:var(--muted)}
 #view[data-page="panels"] .pg-none{margin:6px 0 0;font-size:12px}
-#view[data-page="panels"] .pp-key{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;color:var(--muted);font-size:11px}
-#view[data-page="panels"] .pp-key span{white-space:nowrap}
+#view[data-page="panels"] .pp-key{margin-top:8px}
 #view[data-page="panels"] .pp-key i{display:inline-block;width:16px;height:0;margin-right:6px;vertical-align:middle;border-top:1px solid var(--sonnet)}
 #view[data-page="panels"] .pp-key .k-end{border-top-style:dashed}
 #view[data-page="panels"] .pp-key .k-red{width:7px;height:7px;border:0;border-radius:50%;background:var(--issue)}
@@ -88,6 +84,13 @@
 /* the detailed timeline under the boards */
 #view[data-page="panels"] .pp-tl{grid-column:1;grid-row:2;min-width:0;border-top:1px solid var(--hair)}
 
+/* one drawing, full screen: on the body, above everything */
+.pp-full{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:var(--paper)}
+.pp-full-bar{flex:none;display:flex;align-items:center;gap:12px;height:52px;padding:0 28px;border-bottom:1px solid var(--hair);cursor:default}
+.pp-full-bar b{font-weight:600;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pp-full-bar .btn{margin-left:auto}
+.pp-full img{flex:1;min-height:0;width:100%;padding:24px;object-fit:contain;cursor:zoom-out}
+
 /* phone width: boards, then the card, then the timeline */
 @media (max-width:720px){
   #view[data-page="panels"] .pp{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:min(62vh,320px) auto auto}
@@ -95,4 +98,6 @@
   #view[data-page="panels"] .pp-graph{margin:0 -16px;padding:0 16px 4px}
   #view[data-page="panels"] .pp-tl{grid-row:3}
   #view[data-page="panels"] .pp-hint{display:none}
+  .pp-full-bar{padding:0 16px}
+  .pp-full img{padding:12px}
 }

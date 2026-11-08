@@ -546,13 +546,47 @@ function highlight(svg, key) {
   if (loopG) loopG.classList.toggle("on", loopOn);
 }
 
+/* A SKILL.md as html: headings and code fences here, the rest by Site.md. */
+function skillHtml(text) {
+  const out = [];
+  let chunk = [], code = null;
+  const flush = () => { if (chunk.length) out.push(window.Site.md(chunk.join("\n"))); chunk = []; };
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      if (code) { out.push(`<pre>${esc(code.join("\n"))}</pre>`); code = null; } else { flush(); code = []; }
+      continue;
+    }
+    if (code) { code.push(line); continue; }
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) { flush(); out.push(`<h3>${esc(h[1])}</h3>`); continue; }
+    chunk.push(line);
+  }
+  if (code) out.push(`<pre>${esc(code.join("\n"))}</pre>`);
+  flush();
+  return out.join("");
+}
+
+/* The node behind a box, from the other run's loop when the skill exists only there. */
+function nodeOf(key) {
+  if (key.startsWith("lead:")) return null;
+  const gone = key.startsWith("gone:");
+  const loop = gone ? state.other && state.other.loop : state.run.loop;
+  const id = key.replace(/^gone:/, "").replace(/@2$/, "");
+  return loop ? loop.nodes.find(n => n.id === id) || null : null;
+}
+
 function pinPanel() {
-  const box = state.el.querySelector(".lp-pin");
+  const card = state.el.querySelector(".lp-card");
   const svg = state.el.querySelector(".lp-svg");
-  if (!box) return;
+  if (!card) return;
+  const lbl = card.querySelector(".lp-lbl"), title = card.querySelector("h2"), body = card.querySelector(".lp-body"), clear = card.querySelector(".lp-unpin");
   const key = state.pin;
+  card.scrollTop = 0;
+  clear.hidden = !key || !svg;
   if (!key || !svg) {
-    box.innerHTML = '<span class="muted">Click a box, or press Enter on it, to keep its lines lit while you scroll. Escape clears it.</span>';
+    lbl.textContent = "Skill";
+    title.hidden = true;
+    body.innerHTML = '<p class="muted lp-hint">Click a box, or press Enter on it, to read that skill and keep its lines lit while you scroll. Escape clears it.</p>';
     return;
   }
   let reads = "", by = "";
@@ -580,10 +614,20 @@ function pinPanel() {
     if (second && !state.G.end.has(second.key)) reads += `; at the end: ${readsOf(state.G, second.key)}`;
     by = readBy(state.G, key, svg);
   }
-  box.innerHTML = `<b>${esc(nameOf(key.replace(/^gone:/, "")))}</b>
-    <span><span class="muted">Reads</span> ${esc(reads || "nothing")}</span>
-    <span><span class="muted">Read by</span> ${esc(by || "nobody")}</span>
-    <button type="button" class="lp-unpin">Clear</button>`;
+  const node = nodeOf(key);
+  const isSkill = !!node && node.kind === "skill";
+  const name = nameOf(key.replace(/^gone:/, ""));
+  lbl.textContent = isSkill ? `Skill${node.topic ? ` · ${node.topic}` : ""}` : key.startsWith("lead:") ? "Lead's step" : "Input";
+  if (title.textContent !== name) title.textContent = name;
+  title.hidden = false;
+  const commit = key.startsWith("gone:") ? state.other.loop.commit : state.run.loop.commit;
+  const meta = isSkill ? [node.model === "opus" ? "Opus" : "Sonnet", commit ? `SKILL.md at ${commit}` : ""].filter(Boolean).join(" · ") : "";
+  const text = !isSkill ? `<p class="muted">${key.startsWith("lead:") ? "A step the lead runs itself, so it has no skill text of its own." : "An input to the run, not a skill."}</p>`
+    : node.text ? `<div class="md lp-text">${skillHtml(node.text)}</div>`
+    : '<p class="muted">This build has no text for this skill.</p>';
+  body.innerHTML = `${meta ? `<div class="meta mono">${esc(meta)}</div>` : ""}
+    <dl class="lp-rel"><dt>Reads</dt><dd>${esc(reads || "nothing")}</dd><dt>Read by</dt><dd>${esc(by || "nobody")}</dd></dl>
+    ${isSkill ? '<div class="label lp-tl">Skill text</div>' : ""}${text}`;
 }
 
 function setPin(key) {
@@ -776,13 +820,13 @@ window.Site.page("loop", {
     const waves = P.waves;
     const others = Site.index.runs.filter(r => r.key !== run.key && r.has && r.has.loop).slice().reverse();
     const picker = others.length ? `<label class="lp-cmp"><span>Compare with</span>
-        <select><option value="">no other run</option>${others.map(r => `<option value="${esc(r.key)}">${esc(r.title && r.title !== r.label ? `${r.label} · ${r.title}` : r.label)}</option>`).join("")}</select>
+        <select class="select"><option value="">no other run</option>${others.map(r => `<option value="${esc(r.key)}">${esc(r.title && r.title !== r.label ? `${r.label} · ${r.title}` : r.label)}</option>`).join("")}</select>
         <span class="lp-cmp-note bad" aria-live="polite"></span></label>` : "";
-    el.innerHTML = `<div class="lp">${head(`${skills.length} skills in ${waves} waves; ${ran} of them ran in this run.`)}
-      <div class="lp-bar"><div class="lp-key"></div>${picker}</div>
-      <div class="lp-pin" aria-live="polite"></div>
+    el.innerHTML = `<div class="lp-wrap"><div class="lp">${head(`${skills.length} skills in ${waves} waves; ${ran} of them ran in this run.`)}
+      <div class="lp-bar"><div class="lp-key key"></div>${picker}</div>
       <div class="lp-scroll" tabindex="-1"></div>
-      <section class="lp-diff" aria-live="polite"></section></div>`;
+      <section class="lp-diff" aria-live="polite"></section></div>
+      <aside class="lp-card side"><div class="lp-chead"><div class="label lp-lbl"></div><button type="button" class="lp-unpin btn" hidden>Clear</button></div><h2 aria-live="polite" hidden></h2><div class="lp-body"></div></aside></div>`;
     const tip = document.createElement("div");
     tip.className = "tip lp-tip";
     document.body.appendChild(tip);

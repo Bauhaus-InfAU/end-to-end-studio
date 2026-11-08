@@ -1,7 +1,7 @@
 /* All runs page: styles scoped under #view[data-page="dash"] */
 
 #view[data-page="dash"] .dash-wrap{max-width:1180px;margin:0 auto;padding:36px 48px 60px}
-#view[data-page="dash"] h1{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:0}
+#view[data-page="dash"] h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0}
 #view[data-page="dash"] .dash-sub{color:var(--muted);margin:4px 0 28px}
 #view[data-page="dash"] .back{color:var(--muted);text-decoration:none;display:inline-block;margin-bottom:14px}
 #view[data-page="dash"] .back:hover{color:var(--ink)}
@@ -58,13 +58,10 @@
 
 /* run summary */
 #view[data-page="dash"] .dash-links{display:flex;gap:8px;margin:0 0 22px}
-#view[data-page="dash"] .dash-links a,#view[data-page="dash"] .dash-links .off{padding:5px 12px;border:1px solid var(--hair);border-radius:6px;background:var(--paper);color:var(--ink);text-decoration:none}
-#view[data-page="dash"] .dash-links a:hover{border-color:var(--sel);color:var(--sel)}
-#view[data-page="dash"] .dash-links .off{color:var(--muted);background:none;border-style:dashed}
 #view[data-page="dash"] .blk{margin:0 0 34px;max-width:880px}
 #view[data-page="dash"] .blk.tlblk{max-width:none}
-#view[data-page="dash"] .dash-tl{border:1px solid var(--hair);border-radius:8px;overflow:hidden}
-#view[data-page="dash"] .cs-key{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 10px;font-size:11.5px}
+#view[data-page="dash"] .dash-tl{border:1px solid var(--hair);border-radius:var(--r-lg);overflow:hidden}
+#view[data-page="dash"] .cs-key{margin:0 0 10px}
 #view[data-page="dash"] .cs-key i{display:inline-block;width:14px;height:6px;border-radius:3px;margin-right:6px;vertical-align:middle;background:var(--opus)}
 #view[data-page="dash"] .cs-key i.sonnet{background:var(--sonnet)}
 #view[data-page="dash"] .cs-row{display:grid;grid-template-columns:140px 1fr 60px;align-items:center;gap:12px;padding:3px 0}

@@ -1,6 +1,7 @@
 /*
  * Panels page: the run's boards side by side (wheel zooms, drag moves,
- * double-click fits), every drawing a button at its place on the panel. A
+ * double-click on the background fits, on a drawing shows it full screen),
+ * every drawing a button at its place on the panel. A
  * drawing opens the card on the right: its image, then a provenance graph
  * (drawing -> skill -> what that skill read -> ...) and a story of the
  * picked node. The detailed timeline sits under the boards; a drawing marks
@@ -248,10 +249,10 @@ function mount(el, run) {
     <div class="pp">
       <section class="pp-boards" aria-label="Panels">
         <div class="pp-stage"></div>
-        ${panels.length ? `<div class="pp-hint mono">Scroll to zoom · drag to move · double-click to fit</div>` : ""}
+        ${panels.length ? `<div class="pp-hint mono">Scroll to zoom · drag to move · double-click a drawing for full screen, the background to fit</div>` : ""}
         ${line ? `<div class="pp-line float">${esc(line)}</div>` : ""}
       </section>
-      <aside class="pp-card"><div class="label pp-lbl"></div><h2 aria-live="polite" hidden></h2><div class="pp-body"></div></aside>
+      <aside class="pp-card side"><div class="label pp-lbl"></div><h2 aria-live="polite" hidden></h2><div class="pp-body"></div></aside>
       <div class="pp-tl"></div>
     </div>`;
   const boards = el.querySelector(".pp-boards");
@@ -321,6 +322,8 @@ function mount(el, run) {
   }, { passive: false });
   boards.addEventListener("dblclick", e => {
     e.preventDefault();
+    const hot = e.target.closest && e.target.closest(".pp-hot");
+    if (hot && hot._item.img) { openFull(hot._item); return; }
     touched = false;
     view = { ...fit };
     apply();
@@ -398,6 +401,39 @@ function mount(el, run) {
   }
   function hideTip() { if (st.tip) st.tip.classList.remove("on"); }
 
+  /* one drawing, full screen; where the browser refuses real full screen it still fills the window */
+  function openFull(item) {
+    if (st.full) return;
+    hideTip();
+    const back = document.activeElement;
+    const box = document.createElement("div");
+    const title = item.caption || item.id;
+    box.className = "pp-full";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", title);
+    box.innerHTML = `<div class="pp-full-bar"><b>${esc(title)}</b><span class="mono muted">${esc(item.skill)}</span><button class="btn" type="button">Close</button></div>` +
+      `<img src="${esc(item.img)}" alt="${esc(title)}">`;
+    const onKey = e => { if (e.key === "Escape") close(); };
+    const onScreen = () => { if (!document.fullscreenElement) close(); };
+    function close() {
+      if (st.full !== close) return;
+      st.full = null;
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("fullscreenchange", onScreen);
+      if (document.fullscreenElement === box) document.exitFullscreen().catch(() => {});
+      box.remove();
+      if (back && back.isConnected) back.focus({ preventScroll: true });
+    }
+    box.addEventListener("click", e => { if (!e.target.closest(".pp-full-bar") || e.target.closest(".btn")) close(); });
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("fullscreenchange", onScreen);
+    st.full = close;
+    document.body.appendChild(box);
+    box.querySelector(".btn").focus({ preventScroll: true });
+    if (box.requestFullscreen) box.requestFullscreen().catch(() => {});
+  }
+
   /* card: a label, the title (the only live part, so a pick is announced once) and the body */
   const loopNodes = loopIndex(run);
   const lblEl = cardEl.querySelector(".pp-lbl"), titleEl = cardEl.querySelector("h2"), bodyEl = cardEl.querySelector(".pp-body");
@@ -424,7 +460,7 @@ function mount(el, run) {
     const selId = ctx.sel === "§item" ? ctx.skill : ctx.sel;
     bodyEl.innerHTML = head +
       `<div class="label pp-gl">Made from</div><div class="pp-graph"></div>` +
-      `<div class="pp-key"><span><i class="k-read"></i>reads</span><span><i class="k-end"></i>reads at the end</span><span><i class="k-red"></i>has problems</span></div>` +
+      `<div class="pp-key key"><span><i class="k-read"></i>reads</span><span><i class="k-end"></i>reads at the end</span><span><i class="k-red"></i>has problems</span></div>` +
       `<div class="label pp-gl">Story</div>` + storyHtml(run, selId, selId === ctx.skill ? it : null, loopNodes);
     const box = cardEl.querySelector(".pp-graph");
     drawGraph(box, run, ctx, loopNodes);
@@ -443,6 +479,9 @@ function mount(el, run) {
     if (!node.dataset.more) cardEl.querySelector(".pp-graph").scrollLeft = left;
     const again = cardEl.querySelector(node.dataset.more ? ".pg-more" : `.pg-node[data-id="${CSS.escape(node.dataset.id)}"]`);
     if (again) again.focus({ preventScroll: true });
+  });
+  cardEl.addEventListener("dblclick", e => {
+    if (e.target.classList.contains("pp-img") && ctx && ctx.item) openFull(ctx.item);
   });
   cardEl.addEventListener("keydown", e => {
     if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("pg-node")) {
@@ -472,6 +511,7 @@ function mount(el, run) {
 
 function unmount() {
   if (!state) return;
+  if (state.full) state.full();
   if (state.ro) state.ro.disconnect();
   if (state.tip) state.tip.remove();
   state = null;

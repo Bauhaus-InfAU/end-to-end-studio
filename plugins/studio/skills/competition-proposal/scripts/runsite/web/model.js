@@ -351,7 +351,7 @@ function legendHtml(L) {
   if (!entries) return "";
   const periods = L.variants
     ? `<div class="m-periods" role="group" aria-label="Period">${L.variants.map((v, i) =>
-      `<button type="button" data-v="${i}" aria-pressed="${i === L.variant}">${esc(v.name)}</button>`).join("")}</div>`
+      `<button type="button" class="seg seg-sm" data-v="${i}" aria-pressed="${i === L.variant}">${esc(v.name)}</button>`).join("")}</div>`
     : "";
   return periods + entries.map(e =>
     `<div class="m-key" title="${esc(e.label)}"><i style="background:${rgba(e.color)}"></i><span>${esc(e.label)}</span></div>`).join("");
@@ -371,16 +371,16 @@ function panelHtml(st) {
     const when = st.at[g.name] ? clock(st.run, st.at[g.name]) : "";
     const gid = `m-g${gi}`;
     const head = `<div class="m-row m-grow">
-        <input type="checkbox" class="m-sw" data-g="${gi}" id="${gid}">
+        <input type="checkbox" class="switch m-sw" data-g="${gi}" id="${gid}">
         <label for="${gid}" class="m-nm">${esc(g.name)}${single && g.layers[0].name !== g.name ? ` <span class="muted">› ${esc(g.layers[0].name)}</span>` : ""}</label>
         <span class="m-when mono num">${esc(when)}</span>
-        ${single ? `<span class="m-open-sp"></span>` : `<button type="button" class="m-open" data-g="${gi}" aria-expanded="false" aria-label="Show the layers of ${esc(g.name)}">${CHEVRON}</button>`}
+        ${single ? `<span class="m-open-sp"></span>` : `<button type="button" class="m-open btn btn-icon btn-ghost btn-sm" data-g="${gi}" aria-expanded="false" aria-label="Show the layers of ${esc(g.name)}">${CHEVRON}</button>`}
       </div>`;
     const legendSingle = single ? `<div class="m-legend" data-l="${esc(g.layers[0].id)}"></div>` : "";
     const rows = single ? "" : `<div class="m-sub" hidden>${g.layers.map((L, li) => {
       const lid = `m-l${gi}-${li}`;
       return `<div class="m-row m-lrow">
-          <input type="checkbox" class="m-sw" data-l="${esc(L.id)}" id="${lid}">
+          <input type="checkbox" class="switch m-sw" data-l="${esc(L.id)}" id="${lid}">
           <label for="${lid}" class="m-nm">${esc(L.name)}</label>
         </div>
         <div class="m-legend" data-l="${esc(L.id)}"></div>`;
@@ -570,6 +570,17 @@ async function mount(el, run) {
     },
   });
   deckEl.addEventListener("pointerleave", () => tip.classList.remove("on"));
+  // deck.gl's camera lags its box by one update when only the box changes (the timeline resized), which stretches
+  // the view: repeat over a few frames until the camera has the box's size
+  const follow = frames => {
+    const width = deckEl.clientWidth, height = deckEl.clientHeight;
+    if (!st.deck || !width || !height) return;
+    st.deck.setProps({ width, height });
+    const v = st.deck.getViewports()[0];
+    if (frames > 0 && !(v && v.width === width && v.height === height)) requestAnimationFrame(() => follow(frames - 1));
+  };
+  st.ro = new ResizeObserver(() => follow(8));
+  st.ro.observe(deckEl);
 
   // timeline: the cursor starts at the end without calling onTime
   Site.timeline(el.querySelector(".m-tl"), run, {
@@ -582,6 +593,7 @@ function unmount() {
   const st = cur;
   cur = null;
   if (!st) return;
+  if (st.ro) st.ro.disconnect();
   if (st.deck) {
     // deck.gl 9.0 finalize() leaves the WebGL context alive: lose it by hand
     const cv = st.el.querySelector(".m-deck canvas");

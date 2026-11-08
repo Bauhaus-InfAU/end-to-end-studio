@@ -5,6 +5,7 @@
   /* --issue as text: the same red, dark enough for WCAG AA on --paper and --bg */
   --issue-text:#cc2f35;
   --bar:52px;
+  --r:6px;--r-lg:10px;
   --sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
@@ -12,7 +13,15 @@
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   font:13px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
 button,select{font:inherit;color:inherit}
+[hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+
+/* scrollbars: slim and grey everywhere */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:5px;background:var(--sonnet) padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted) padding-box}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--sonnet) transparent}}
 
 /* small shared text styles */
 .mono{font-family:var(--mono);font-size:11px;letter-spacing:-.01em}
@@ -21,17 +30,46 @@ button,select{font:inherit;color:inherit}
 .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:500}
 .bad{color:var(--issue-text)}
 
+/* shared controls: every page uses these and none restyles them.
+   .btn        a bordered button or link; add .btn-icon for a square with only an icon,
+               .btn-ghost for no border, .btn-sm for the small size, .btn-off for a dead one
+   .select     a dropdown
+   .switch     an on/off checkbox
+   .seg        one of a row of choices; aria-pressed="true" or aria-current="page" marks the chosen; .seg-sm is small
+   .key        a legend row (each page draws its own swatches) */
+.btn{--ctl:28px;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--ctl);padding:0 10px;
+  border:1px solid var(--hair);border-radius:var(--r);background:var(--paper);color:var(--ink2);
+  font-size:12px;line-height:1;white-space:nowrap;text-decoration:none;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.btn:hover{border-color:var(--muted);color:var(--ink)}
+.btn svg{display:block}
+.btn-sm{--ctl:20px;border-radius:4px}
+.btn-icon{width:var(--ctl);flex:none;padding:0}
+.btn-ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn-ghost:hover{border-color:transparent;background:var(--hair2)}
+.btn-off,.btn-off:hover{border-style:dashed;border-color:var(--hair);background:none;color:var(--muted);cursor:default}
+.select{height:28px;max-width:260px;padding:0 8px;border:1px solid var(--hair);border-radius:var(--r);background:var(--paper);color:var(--ink);cursor:pointer;transition:border-color .15s}
+.select:hover{border-color:var(--muted)}
+.switch{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:24px;height:14px;margin:0;
+  border-radius:7px;border:1px solid var(--muted);background:var(--paper);cursor:pointer;transition:background .15s,border-color .15s}
+.switch::before{content:"";position:absolute;top:2px;left:2px;width:8px;height:8px;border-radius:50%;
+  background:var(--muted);transition:transform .15s,background .15s}
+.switch:checked{background:var(--sel);border-color:var(--sel)}
+.switch:checked::before{transform:translateX(10px);background:var(--paper)}
+.switch:indeterminate::before{transform:translateX(5px)}
+.seg{padding:6px 12px;border:0;border-radius:var(--r);background:none;color:var(--muted);text-decoration:none;white-space:nowrap;cursor:pointer}
+.seg:hover{color:var(--ink)}
+.seg[aria-current="page"],.seg[aria-pressed="true"]{color:var(--ink);background:var(--hair2)}
+.seg-sm{padding:1px 7px;border-radius:4px;font-size:11.5px}
+.key{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--muted);font-size:11.5px}
+.key span{white-space:nowrap}
+
 /* top bar */
 .topbar{position:fixed;top:0;left:0;right:0;height:var(--bar);z-index:20;display:flex;align-items:center;gap:28px;padding:0 28px;
   background:rgba(250,250,249,.86);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--hair)}
 .brand{font-weight:600;letter-spacing:-.01em;white-space:nowrap}
 .tabs{display:flex;gap:4px}
-.tabs a{color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:6px;white-space:nowrap}
-.tabs a:hover{color:var(--ink)}
-.tabs a[aria-current="page"]{color:var(--ink);background:var(--hair2)}
 .picker{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--ink2);min-width:0}
 .picker .project{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
-.picker select{border:1px solid var(--hair);background:var(--paper);border-radius:6px;padding:4px 8px;color:var(--ink);max-width:260px;cursor:pointer}
 
 /* the view every page mounts into */
 #view{position:absolute;top:var(--bar);left:0;right:0;bottom:0;overflow:auto}
@@ -39,7 +77,12 @@ button,select{font:inherit;color:inherit}
 
 /* floating boxes over a full-bleed view */
 .float{position:absolute;background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
-  border:1px solid var(--hair);border-radius:10px}
+  border:1px solid var(--hair);border-radius:var(--r-lg)}
+
+/* the card beside a page's main view: Panels' drawing, Loop's skill */
+.side{min-width:0;overflow:auto;padding:22px;background:var(--paper);border-left:1px solid var(--hair)}
+.side h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em;overflow-wrap:anywhere}
+.side .meta{margin-top:2px;color:var(--muted);overflow-wrap:anywhere}
 
 /* tooltip: one element with class tip, moved to the pointer */
 .tip{position:fixed;z-index:50;pointer-events:none;max-width:280px;padding:6px 9px;border-radius:6px;
@@ -58,16 +101,18 @@ button,select{font:inherit;color:inherit}
 .md th{font-weight:500;color:var(--muted)}
 
 /* timeline (Site.timeline). Pages place the container; it only fills its width. */
-.tl{--lw:0px;--rw:0px;--rh:7px;background:var(--paper);padding-bottom:10px}
+.tl{--lw:0px;--rw:0px;--rh:7px;position:relative;background:var(--paper);padding-bottom:10px}
 .tl.detailed{--lw:132px;--rw:254px;--rh:12.5px}
 .tl-head{display:flex;align-items:center;gap:14px;padding:10px 24px 4px;min-height:42px}
-.tl-play{width:28px;height:28px;flex:none;border-radius:50%;border:1px solid var(--hair);background:var(--paper);cursor:pointer;
-  display:grid;place-items:center;padding:0;color:var(--ink)}
-.tl-play:hover{border-color:var(--muted)}
-.tl-play svg{display:block}
+/* the edge you drag to resize; size and hiding are one setting for every timeline */
+.tl-grip{position:absolute;left:0;right:0;top:-5px;height:10px;z-index:6;cursor:ns-resize;touch-action:none}
+.tl-grip.bottom{top:auto;bottom:0}
+.tl-grip::after{content:"";position:absolute;left:50%;top:7px;width:32px;height:3px;margin-left:-16px;border-radius:2px;background:var(--sonnet);transition:background .15s}
+.tl-grip:hover::after{background:var(--muted)}
+.tl.tl-hidden{padding-bottom:6px}
+.tl.tl-hidden .tl-grip,.tl.tl-hidden .tl-axis,.tl.tl-hidden .tl-evlabels,.tl.tl-hidden .tl-lanes{display:none}
 .tl-now{font-weight:500;white-space:nowrap}
-.tl-key{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 16px;color:var(--muted);font-size:11.5px}
-.tl-key span{white-space:nowrap}
+.tl-key{margin-left:auto;justify-content:flex-end}
 .tl-key i{display:inline-block;width:14px;height:6px;border-radius:3px;margin-right:6px;vertical-align:middle}
 .tl-key .k-opus{background:var(--opus)}
 .tl-key .k-sonnet{background:var(--sonnet)}
@@ -80,7 +125,7 @@ button,select{font:inherit;color:inherit}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
 .tl-evlbl.end{transform:translateX(-100%);padding:0 4px 0 0}
 .tl-lanes{position:relative;margin:0 24px}
-.tl-lane{display:flex;align-items:center;height:var(--rh)}
+.tl-lane{display:flex;align-items:center;height:calc(var(--rh) * var(--s,1))}
 .tl-nm{width:var(--lw);flex:none;font-size:11.5px;line-height:1;color:var(--ink2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
 .tl-tr{position:relative;flex:1;height:100%}
 .tl-cost{width:64px;flex:none;font-size:10.5px;line-height:1;text-align:right;color:var(--muted)}
@@ -106,10 +151,11 @@ button,select{font:inherit;color:inherit}
   .topbar{flex-wrap:wrap;align-content:center;gap:8px 16px;padding:0 16px}
   .tabs{order:3;width:100%;margin:0 -12px;overflow-x:auto}
   .picker .project{display:none}
-  .picker select{max-width:58vw}
+  .picker .select{max-width:58vw}
   .view-msg{padding:32px 16px}
   .tl-head{padding:8px 16px 4px}
   .tl-key{display:none}
+  .tl-toggle{margin-left:auto}
   .tl-axis,.tl-evlabels{margin-left:calc(16px + var(--lw));margin-right:calc(16px + var(--rw))}
   .tl-lanes{margin:0 16px}
   .tl.detailed{--lw:96px;--rw:52px}
