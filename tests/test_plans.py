@@ -153,11 +153,77 @@ def test_plans_draw_ground_floors_in_detail_areas_only(drawn):
         made = {e["name"]: e for e in json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))}
         detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
         assert "ground-floor" in made["detail-area-1"]["layers_used"] and ">Entrances</text>" in detail
+        assert "entrances (ground-floor)" not in made["detail-area-1"]["not_shown"]   # now it has them
         assert "ground-floor" not in made["site-plan"]["layers_used"]
         assert ">Entrances</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
     finally:
         shutil.rmtree(gf)
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def made_of(out):
+    return {e["name"]: e for e in json.loads((out / "plans/drawings.json").read_text(encoding="utf-8"))}
+
+
+def test_plans_name_places_streets_and_detail_areas(drawn):
+    """Every plan names its squares; a detail area also its streets; each name once, on a halo."""
+    out, _ = drawn
+    detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
+    site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    assert re.search(r'font-weight="bold"[^>]*>Square</text>', detail)
+    assert ">Main road</text>" in detail                                # the massing's street, by its name
+    assert ">Square</text>" in site
+    names = re.findall(r'paint-order="stroke">([^<]+)</text>', detail)
+    assert len(names) == len(set(names)), names
+    assert re.search(r'paint-order="stroke">Detail area 1</text>', site)   # the window's name, on a halo
+
+
+def test_plans_flag_overlapping_detail_areas(drawn):
+    out, site_dir = drawn
+    assert "overlaps" not in made_of(out)["detail-area-1"]
+    two = {**CONFIG, "detail_areas": CONFIG["detail_areas"] + [{"name": "detail-area-2", "scale": 1000, "at": "Corner"}]}
+    try:
+        r = draw(out, site_dir, two)
+        made = made_of(out)
+        assert made["detail-area-2"]["overlaps"][0]["with"] == "detail-area-1"
+        assert made["detail-area-1"]["overlaps"][0]["with"] == "detail-area-2"
+        assert "another `at`" in r.stderr
+    finally:
+        for f in (out / "plans").glob("detail-area-2_*"):
+            f.unlink()
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_hatch_public_ground_floors_in_detail_areas_only(drawn):
+    out, _ = drawn
+    mass = json.loads((out / "massing/massing.geojson").read_text(encoding="utf-8"))["features"]
+    assert any(str(f["properties"].get("ground_floor", "housing")) != "housing" for f in mass
+               if f["properties"].get("kind") == "building")             # the synthetic massing has some
+    detail = (out / "plans/detail-area-1_1-1000.svg").read_text(encoding="utf-8")
+    assert 'fill="url(#gf-detail-area-1)"' in detail and ">Ground floors open to the public</text>" in detail
+    assert 'fill="url(#gf-site-plan)"' not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+
+
+def test_plans_draw_the_idea_or_say_it_is_missing(drawn):
+    out, site_dir = drawn
+    accent = json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))["accent"]
+    try:
+        draw(out, site_dir, {**CONFIG, "idea": {"label": "The green strip", "names": ["Strip"]}})
+        site = (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+        assert made_of(out)["site-plan"]["idea"].startswith("drawn")
+        assert ">The green strip</text>" in site and 'stroke="%s"' % accent in site
+        assert ">Strip</text>" not in site                                 # named once, as the idea
+        draw(out, site_dir, {**CONFIG, "idea": {"label": "Nothing", "names": ["Nowhere"]}})
+        assert made_of(out)["site-plan"]["idea"].startswith("missing")
+        assert ">Nothing</text>" not in (out / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    finally:
+        draw(out, site_dir)   # leave the module's drawings as the other tests expect them
+
+
+def test_plans_say_what_a_detail_area_cannot_show(drawn):
+    """Without ground-floor/, the detail area names the entrances as missing instead of inventing them."""
+    out, _ = drawn
+    assert "entrances (ground-floor)" in made_of(out)["detail-area-1"]["not_shown"]
 
 
 def test_plans_missing_required_stops(drawn):
