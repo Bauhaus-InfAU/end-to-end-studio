@@ -47,7 +47,7 @@ def test_rules_map_fills_its_frame(tmp_path):
     svg = draw(tmp_path, {"panels": [{"items": [{"file": "climate/rules.svg", "scale": "1:5000", "frame": {"w": 160, "h": 120}}]}]})
     assert 'width="160.0mm" height="120.0mm" viewBox="0 0 160.0 120.0"' in svg
     assert min(float(s) for s in re.findall(r'font-size="([\d.]+)"', svg)) >= 3.2 - 1e-6
-    assert "1:5,000" in svg and "Sources" in svg
+    assert "1:5,000" not in svg and "Sources" not in svg   # marks "panel": the panel writes caption and scale bar
 
 
 def test_maps_take_the_standards_existing_grey_and_green(tmp_path):

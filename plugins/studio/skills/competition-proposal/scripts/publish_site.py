@@ -214,7 +214,7 @@ def main():
     ap.add_argument("--references", type=Path, help="the reference images folder, to check no entry's name is in the site")
     ap.add_argument("--no-references", action="store_true", help="the project has no reference images")
     ap.add_argument("--drop", nargs="*", default=[], help="run keys to take off the published site")
-    ap.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)  # for tests only
+    ap.add_argument("--yes", action="store_true", help="don't ask: the user has already said yes")
     a = ap.parse_args()
     if not (a.site / "data/index.json").exists():
         sys.exit(f"{a.site} is not a built runs site")

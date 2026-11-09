@@ -1,0 +1,1850 @@
+[
+ {
+  "n": 1,
+  "text": "good render style\nnot realistic\nmore illustration",
+  "kind": "praise",
+  "issue": 10,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "drawing": "perspective-1",
+  "at": [
+   0.0767,
+   0.1637
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425469441"
+ },
+ {
+  "n": 2,
+  "text": "clear ideas shown in diagrams",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "drawing": "concept-diagrams-1",
+  "at": [
+   0.8195,
+   0.2107
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425285524"
+ },
+ {
+  "n": 3,
+  "text": "clear and well formed idea to introduce the project",
+  "kind": "praise",
+  "issue": 2,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "violet",
+  "miro": "3458764689425469448"
+ },
+ {
+  "n": 4,
+  "text": "better color choice in general and consisted",
+  "kind": "praise",
+  "issue": 1,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.2431,
+   0.4599
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425996598"
+ },
+ {
+  "n": 5,
+  "text": "good built area and open space ratio",
+  "kind": "praise",
+  "issue": 8,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.1699,
+   0.5246
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689425628122"
+ },
+ {
+  "n": 6,
+  "text": "the open park space looks more meaningful and well thought",
+  "kind": "praise",
+  "issue": 8,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.3696,
+   0.6026
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689425628807"
+ },
+ {
+  "n": 7,
+  "text": "Color palette",
+  "kind": "praise",
+  "issue": 1,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689426433228"
+ },
+ {
+  "n": 8,
+  "text": "Nicely defined street grid and building placements",
+  "kind": "praise",
+  "issue": 7,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689426673327"
+ },
+ {
+  "n": 9,
+  "text": "simple and clear",
+  "kind": "praise",
+  "issue": 12,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "mobility",
+  "at": [
+   0.1969,
+   0.0697
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689425469031"
+ },
+ {
+  "n": 10,
+  "text": "Great ideation behind the design",
+  "kind": "praise",
+  "issue": 2,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "isometric",
+  "at": [
+   0.5262,
+   0.2232
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "red",
+  "miro": "3458764689425628856"
+ },
+ {
+  "n": 11,
+  "text": "names of the elements, areas on the map",
+  "kind": "praise",
+  "issue": 5,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.3853,
+   0.4787
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "cyan",
+  "miro": "3458764689425469561"
+ },
+ {
+  "n": 12,
+  "text": "simple shadows showing the overhead bridge",
+  "kind": "praise",
+  "issue": 9,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.917,
+   0.5445
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689425996522"
+ },
+ {
+  "n": 13,
+  "text": "the landscaping is organic and trees look natural",
+  "kind": "praise",
+  "issue": 8,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.7306,
+   0.555
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689425995987"
+ },
+ {
+  "n": 14,
+  "text": "The building is diverse and adapted to site",
+  "kind": "praise",
+  "issue": 6,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.5266,
+   0.6164
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425628318"
+ },
+ {
+  "n": 15,
+  "text": "this is a good level of detail for this scale/type of the drawing",
+  "kind": "praise",
+  "issue": 9,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.3684,
+   0.622
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689425469498"
+ },
+ {
+  "n": 16,
+  "text": "clear accesses",
+  "kind": "praise",
+  "issue": 9,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.7482,
+   0.6778
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689425628683"
+ },
+ {
+  "n": 17,
+  "text": "Nice variety of typologies",
+  "kind": "praise",
+  "issue": 6,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "detail-area-1",
+  "at": [
+   0.6073,
+   0.6999
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689425628120"
+ },
+ {
+  "n": 18,
+  "text": "Nice way to  show different parts of section",
+  "kind": "praise",
+  "issue": 11,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 2,
+  "drawing": "site-section-1",
+  "at": [
+   0.2244,
+   0.9737
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689425628857"
+ },
+ {
+  "n": 19,
+  "text": "good ratio of views/diagrams in layout",
+  "kind": "praise",
+  "issue": 11,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "board",
+  "at": [
+   0.1045,
+   0.0896
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689426433582"
+ },
+ {
+  "n": 20,
+  "text": "different visualization technique",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "activity-pictograms",
+  "at": [
+   0.4205,
+   0.3128
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "red",
+  "miro": "3458764689425827499"
+ },
+ {
+  "n": 21,
+  "text": "Cute pie charts",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "pie-charts",
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689425826973"
+ },
+ {
+  "n": 22,
+  "text": "useful piktograms to understand the concept",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "building-types",
+  "at": [
+   0.7811,
+   0.4934
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689425628700"
+ },
+ {
+  "n": 23,
+  "text": "Main areas shown with 3Ds masses",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "programme-axos",
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689425996455"
+ },
+ {
+  "n": 24,
+  "text": "different patterns of green for usage explaination",
+  "kind": "praise",
+  "issue": 8,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "detail-area-2",
+  "at": [
+   0.2659,
+   0.6361
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689425628030"
+ },
+ {
+  "n": 25,
+  "text": "Good scale of analysis",
+  "kind": "praise",
+  "issue": 9,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "building-types",
+  "at": [
+   0.749,
+   0.643
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425628883"
+ },
+ {
+  "n": 26,
+  "text": "I like that the section display the topography and the way its continous in the panel\ntrees are well illustrated",
+  "kind": "praise",
+  "issue": 11,
+  "entry": "1_prize_zam-wachsn",
+  "panel": 3,
+  "drawing": "site-section-2",
+  "arrow": false,
+  "beside": true,
+  "colour": "light_yellow",
+  "miro": "3458764689426672931"
+ },
+ {
+  "n": 27,
+  "text": "dont like the font",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.5231,
+   0.2373
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689426433243"
+ },
+ {
+  "n": 28,
+  "text": "the small details like birds, humans, trees and canopies give character",
+  "kind": "praise",
+  "issue": 8,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 2,
+  "drawing": "isometric-1",
+  "at": [
+   0.4581,
+   0.4394
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689426433614"
+ },
+ {
+  "n": 29,
+  "text": "all zones clearly identified",
+  "kind": "praise",
+  "issue": 5,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 2,
+  "drawing": "open-space-types",
+  "at": [
+   0.7267,
+   0.8144
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689426433176"
+ },
+ {
+  "n": 30,
+  "text": "Macro to Micro Planning Layout",
+  "kind": "praise",
+  "issue": 11,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 2,
+  "drawing": "board",
+  "arrow": false,
+  "beside": true,
+  "colour": "light_yellow",
+  "miro": "3458764689426673210"
+ },
+ {
+  "n": 31,
+  "text": "users and citizens analysis in diagrams.",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 3,
+  "drawing": "users",
+  "at": [
+   0.648,
+   0.234
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689426208161"
+ },
+ {
+  "n": 32,
+  "text": "easy to understand overall zone plan",
+  "kind": "praise",
+  "issue": 5,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 3,
+  "drawing": "programme-diagram",
+  "at": [
+   0.7009,
+   0.6341
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689426929597"
+ },
+ {
+  "n": 33,
+  "text": "great representation of different housing blocks showing the windows/courts/leveling/roofs/better details",
+  "kind": "praise",
+  "issue": 6,
+  "entry": "2_runner-up_greencitypuzzle",
+  "panel": 3,
+  "drawing": "building-types",
+  "at": [
+   0.4734,
+   0.7649
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425628806"
+ },
+ {
+  "n": 34,
+  "text": "doesn't shows anything about our idea",
+  "kind": "problem",
+  "issue": 2,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 1,
+  "drawing": "figure-ground",
+  "at": [
+   0.027,
+   0.1482
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425628713"
+ },
+ {
+  "n": 35,
+  "text": "what does the pink arrows means ?",
+  "kind": "question",
+  "issue": 3,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 1,
+  "drawing": "structure-plan",
+  "at": [
+   0.8015,
+   0.2168
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425996185"
+ },
+ {
+  "n": 36,
+  "text": "clear, easy to the eye layout",
+  "kind": "praise",
+  "issue": 11,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.5337,
+   0.3197
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689426929348"
+ },
+ {
+  "n": 37,
+  "text": "Its good that the representation of the buildings its in a softer color so the context (vegetation, lakes, parks) can popup more",
+  "kind": "praise",
+  "issue": 1,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 1,
+  "drawing": "site-plan",
+  "at": [
+   0.3896,
+   0.6925
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425469567"
+ },
+ {
+  "n": 38,
+  "text": "It would work better to group related diagrams (mobility, climate, site analysis, etc.) into cohesive clusters rather than spreading them across the layout. The overall composition could also feel more atmospheric, with a stronger visual presence of vegetation and landscape elements",
+  "kind": "idea",
+  "issue": 11,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 2,
+  "drawing": "board",
+  "arrow": true,
+  "beside": false,
+  "colour": "blue",
+  "miro": "3458764689426433708"
+ },
+ {
+  "n": 39,
+  "text": "Its good that the concept diagrams add notes, arrows to show the intentions of the project",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 2,
+  "drawing": "concept-section",
+  "at": [
+   0.4295,
+   0.31
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "blue",
+  "miro": "3458764689426208649"
+ },
+ {
+  "n": 40,
+  "text": "Good Conceptual Section",
+  "kind": "praise",
+  "issue": 3,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 2,
+  "drawing": "concept-section",
+  "at": [
+   0.0125,
+   0.3747
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689426208715"
+ },
+ {
+  "n": 41,
+  "text": "It would be good to incorporate the fading to differentiate the site from the existing",
+  "kind": "idea",
+  "issue": 4,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 2,
+  "drawing": "isometric",
+  "arrow": true,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689423999634"
+ },
+ {
+  "n": 42,
+  "text": "good level of approxination/stylization",
+  "kind": "praise",
+  "issue": 10,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "perspective-1",
+  "at": [
+   0.3692,
+   0.1397
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689426208422"
+ },
+ {
+  "n": 43,
+  "text": "shots from different views and functions",
+  "kind": "praise",
+  "issue": 6,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "building-types",
+  "at": [
+   0.213,
+   0.3153
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425469888"
+ },
+ {
+  "n": 44,
+  "text": "Nice comments to the axos",
+  "kind": "praise",
+  "issue": 6,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "building-types",
+  "at": [
+   0.2807,
+   0.4024
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689426208795"
+ },
+ {
+  "n": 45,
+  "text": "Detailed plans",
+  "kind": "praise",
+  "issue": 9,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "detail-area-2",
+  "at": [
+   0.9287,
+   0.6911
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425996278"
+ },
+ {
+  "n": 46,
+  "text": "The vegetation should be shown as well in our 3d diagrams",
+  "kind": "idea",
+  "issue": 8,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "building-types",
+  "arrow": true,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425827623"
+ },
+ {
+  "n": 47,
+  "text": "Drawinglike representation for the perspectives could work better",
+  "kind": "idea",
+  "issue": 10,
+  "entry": "3_special-mention_regensburger-nordstern",
+  "panel": 3,
+  "drawing": "perspective-2",
+  "at": [
+   0.2369,
+   0.7978
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689425996715"
+ },
+ {
+  "n": 48,
+  "text": "Architectural elements or areas that will be integrated",
+  "kind": "idea",
+  "issue": 4,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689423020665"
+ },
+ {
+  "n": 49,
+  "text": "unnecessary number",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.9375,
+   0.0256
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422701519"
+ },
+ {
+  "n": 50,
+  "text": "more information about the idea and conept",
+  "kind": "problem",
+  "issue": 2,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "title",
+  "skill": "narrative",
+  "src": null,
+  "at": [
+   0.2848,
+   0.0899
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689421808229"
+ },
+ {
+  "n": 51,
+  "text": "unneccessary amount of numbers of north arrrows",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "idea",
+  "skill": "narrative",
+  "src": null,
+  "at": [
+   0.9652,
+   0.1156
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689421227977"
+ },
+ {
+  "n": 52,
+  "text": "the concept/main idea is unclear",
+  "kind": "problem",
+  "issue": 2,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "dia-2",
+  "skill": "concept-diagrams",
+  "src": "concept-diagrams/02_no-build-strips.svg",
+  "at": [
+   0.3543,
+   0.16
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689424186736"
+ },
+ {
+  "n": 53,
+  "text": "unnecessary free space",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "dia-3",
+  "skill": "concept-diagrams",
+  "src": "concept-diagrams/03_one-field.svg",
+  "at": [
+   0.693,
+   0.16
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424430892"
+ },
+ {
+  "n": 54,
+  "text": "Concept schemes are to big, we need more efficient way to display concept",
+  "kind": "problem",
+  "issue": 3,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "dia-1",
+  "skill": "concept-diagrams",
+  "src": "concept-diagrams/01_field-today.svg",
+  "at": [
+   0.048,
+   0.1889
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689421054564"
+ },
+ {
+  "n": 55,
+  "text": "narrative can take more space, and be throughout all pages",
+  "kind": "problem",
+  "issue": 2,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "dia-2",
+  "skill": "concept-diagrams",
+  "src": "concept-diagrams/02_no-build-strips.svg",
+  "at": [
+   0.3992,
+   0.2637
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689424186288"
+ },
+ {
+  "n": 56,
+  "text": "DEVELOPMENT PHASES\nConcept development stage is not clear enough. How did we arrive at a solution? Descriptions per stage is not explanatory enough.",
+  "kind": "problem",
+  "issue": 2,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": true,
+  "beside": false,
+  "colour": "cyan",
+  "miro": "3458764689421054299"
+ },
+ {
+  "n": 57,
+  "text": "more diagrams, better articulation and flexibility to show more ideas.",
+  "kind": "problem",
+  "issue": 3,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "figure-ground",
+  "skill": "plans",
+  "src": "plans/figure-ground_1-15000.svg",
+  "at": [
+   0.6492,
+   0.409
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421227979"
+ },
+ {
+  "n": 58,
+  "text": "CURRENT DATA\nThe current data (existing buildings and elements) is not shown clearly",
+  "kind": "problem",
+  "issue": 4,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689421626077"
+ },
+ {
+  "n": 59,
+  "text": "add skills:  activity /transformation diagrams\na skill to decide which diagrams to use based on which ideas are the more prominent in our proposal",
+  "kind": "idea",
+  "issue": 3,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "figure-ground",
+  "skill": "plans",
+  "src": "plans/figure-ground_1-15000.svg",
+  "at": [
+   0.6492,
+   0.4763
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421228753"
+ },
+ {
+  "n": 60,
+  "text": "+ what we plan to build or which parts will be developed, can be shown on the map",
+  "kind": "idea",
+  "issue": 4,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689422065191"
+ },
+ {
+  "n": 61,
+  "text": "inconsistent layout",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.6051,
+   0.6349
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689421417066"
+ },
+ {
+  "n": 62,
+  "text": "doesnt say anything about the project",
+  "kind": "problem",
+  "issue": 10,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "view-1",
+  "skill": "perspective",
+  "src": "perspective/view-1.png",
+  "at": [
+   0.7254,
+   0.7148
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422214471"
+ },
+ {
+  "n": 63,
+  "text": "is it suitable render? People in the field?!!",
+  "kind": "problem",
+  "issue": 10,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "view-1",
+  "skill": "perspective",
+  "src": "perspective/view-1.png",
+  "at": [
+   0.5621,
+   0.824
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689422065149"
+ },
+ {
+  "n": 64,
+  "text": "Too much text, the schemes should speak for them selfs",
+  "kind": "problem",
+  "issue": 12,
+  "entry": "run-10",
+  "panel": 1,
+  "drawing": "rules",
+  "skill": "climate",
+  "src": "climate/rules.svg",
+  "at": [
+   0.3617,
+   0.866
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424883187"
+ },
+ {
+  "n": 65,
+  "text": "Table should be used only when absolutely necessary, otherwise dont",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "light_yellow",
+  "miro": "3458764689425098982"
+ },
+ {
+  "n": 66,
+  "text": "too much information about the sources, taking up alot of place",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 1,
+  "arrow": false,
+  "beside": true,
+  "colour": "orange",
+  "miro": "3458764689421626000"
+ },
+ {
+  "n": 67,
+  "text": "No site section :')",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 2,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689424670757"
+ },
+ {
+  "n": 68,
+  "text": "unnecessary number",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.9445,
+   0.0223
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422883941"
+ },
+ {
+  "n": 69,
+  "text": "The updated skill detects missing or unplaced drawings, excessive cropping, scale mismatches, and conflicting figures. It also generates a separate report identifying issues that need attention from other skills.",
+  "kind": "note",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.2449,
+   0.1387
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "red",
+  "miro": "3458764689421626648"
+ },
+ {
+  "n": 70,
+  "text": "Buildings are not adapted to the climate\ntoo monolithic and very griddy",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.5945,
+   0.1561
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421808213"
+ },
+ {
+  "n": 71,
+  "text": "https://github.com/Bauhaus-InfAU/end-to-end-studio/pull/33?utm_source=chatgpt.com",
+  "kind": "note",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.1422,
+   0.1655
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "red",
+  "miro": "3458764689421625999"
+ },
+ {
+  "n": 72,
+  "text": "Contrast between site and the rest of the city is too strong and abrupt",
+  "kind": "problem",
+  "issue": 4,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.9074,
+   0.168
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421626343"
+ },
+ {
+  "n": 73,
+  "text": "no shadows",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.3883,
+   0.1917
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689424670221"
+ },
+ {
+  "n": 74,
+  "text": "No functional analysis of the zones, no clear division of the areas on map",
+  "kind": "problem",
+  "issue": 5,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.0437,
+   0.2736
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "cyan",
+  "miro": "3458764689423313807"
+ },
+ {
+  "n": 75,
+  "text": "all buildings are same color, impossible to tell what is what",
+  "kind": "problem",
+  "issue": 5,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.7336,
+   0.2791
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689421626808"
+ },
+ {
+  "n": 76,
+  "text": "no good way to work with existing",
+  "kind": "problem",
+  "issue": 7,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.3289,
+   0.3354
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689421417346"
+ },
+ {
+  "n": 77,
+  "text": "detail areas are to close to each other, and they do not have to be in paper size",
+  "kind": "problem",
+  "issue": 9,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.4414,
+   0.3519
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689426673782"
+ },
+ {
+  "n": 78,
+  "text": "Architecture should be more integrated with nature and the plans should feel more atmospheric, with a stronger presence of landscape elements",
+  "kind": "problem",
+  "issue": 8,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.6586,
+   0.3955
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421626572"
+ },
+ {
+  "n": 79,
+  "text": "Contrast between Site and City .....Too rigid",
+  "kind": "problem",
+  "issue": 4,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.8898,
+   0.4137
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689422370057"
+ },
+ {
+  "n": 80,
+  "text": "The buildings should not be cut like that by the borders",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.5516,
+   0.4727
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424186897"
+ },
+ {
+  "n": 81,
+  "text": "better illustration in general trees etc",
+  "kind": "problem",
+  "issue": 8,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.0719,
+   0.5576
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689424185992"
+ },
+ {
+  "n": 82,
+  "text": "could provide more useful info",
+  "kind": "problem",
+  "issue": 5,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.2973,
+   0.5866
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421416965"
+ },
+ {
+  "n": 83,
+  "text": "Why are all buildings directed towards the north?",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.5152,
+   0.602
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421417151"
+ },
+ {
+  "n": 84,
+  "text": "weird scale size",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "site-plan",
+  "skill": "plans",
+  "src": "plans/site-plan_1-3000.svg",
+  "at": [
+   0.1379,
+   0.7245
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422370573"
+ },
+ {
+  "n": 85,
+  "text": "so empty and sad",
+  "kind": "problem",
+  "issue": 10,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "view-2",
+  "skill": "perspective",
+  "src": "perspective/view-2.png",
+  "at": [
+   0.8195,
+   0.8216
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689424670887"
+ },
+ {
+  "n": 86,
+  "text": "Facades look unrealistic. where are the windows?",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "isometric",
+  "skill": "isometric",
+  "at": [
+   0.0078,
+   0.8516
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421228443"
+ },
+ {
+  "n": 87,
+  "text": "realistic render is not the best fit for this types of projects",
+  "kind": "problem",
+  "issue": 10,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "view-2",
+  "skill": "perspective",
+  "src": "perspective/view-2.png",
+  "at": [
+   0.8605,
+   0.9509
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689420849513"
+ },
+ {
+  "n": 88,
+  "text": "Not a good view for 3D render, doesn't explain what we achieved",
+  "kind": "problem",
+  "issue": 10,
+  "entry": "run-10",
+  "panel": 2,
+  "drawing": "view-2",
+  "skill": "perspective",
+  "at": [
+   0.6941,
+   0.9755
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "cyan",
+  "miro": "3458764689424430835"
+ },
+ {
+  "n": 89,
+  "text": "Panel layout example",
+  "kind": "note",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 2,
+  "arrow": false,
+  "beside": true,
+  "colour": "red",
+  "miro": "3458764689426208396"
+ },
+ {
+  "n": 90,
+  "text": "Ratios (population,planted trees and so forth) can be shown with pie charts",
+  "kind": "idea",
+  "issue": 3,
+  "entry": "run-10",
+  "panel": 3,
+  "arrow": false,
+  "beside": true,
+  "colour": "cyan",
+  "miro": "3458764689425099074"
+ },
+ {
+  "n": 91,
+  "text": "unnecessary number",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.9258,
+   0.0223
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422884136"
+ },
+ {
+  "n": 92,
+  "text": "I feel mobility plan should be bigger a bit",
+  "kind": "problem",
+  "issue": 12,
+  "entry": "run-10",
+  "panel": 3,
+  "arrow": false,
+  "beside": true,
+  "colour": "light_yellow",
+  "miro": "3458764689421417019"
+ },
+ {
+  "n": 93,
+  "text": "There are blank parts of the plans that dont show any useful information",
+  "kind": "problem",
+  "issue": 9,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-1",
+  "skill": "plans",
+  "src": "plans/detail-area-1_1-1000.svg",
+  "at": [
+   0.673,
+   0.1371
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424670594"
+ },
+ {
+  "n": 94,
+  "text": "weird scale size",
+  "kind": "problem",
+  "issue": 12,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "mobility",
+  "skill": "mobility",
+  "src": "mobility/mobility_1-15000.svg",
+  "at": [
+   0.9691,
+   0.2206
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689422065333"
+ },
+ {
+  "n": 95,
+  "text": "dont need to waste so much space for the diagram key",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 3,
+  "arrow": false,
+  "beside": true,
+  "colour": "light_yellow",
+  "miro": "3458764689423999730"
+ },
+ {
+  "n": 96,
+  "text": "Buildings is inconsistent + strange corners",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.0246,
+   0.3144
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689421054078"
+ },
+ {
+  "n": 97,
+  "text": "Trees throught the street!!",
+  "kind": "problem",
+  "issue": 8,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.2871,
+   0.4377
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424430273"
+ },
+ {
+  "n": 98,
+  "text": "landscaping could be better. are the green dots trees? why are there trees on the road?",
+  "kind": "problem",
+  "issue": 8,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.0418,
+   0.4749
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689422065372"
+ },
+ {
+  "n": 99,
+  "text": "i want countour lines on the lerge scale place",
+  "kind": "problem",
+  "issue": 8,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.2117,
+   0.476
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "yellow",
+  "miro": "3458764689424430086"
+ },
+ {
+  "n": 100,
+  "text": "no entry arrows",
+  "kind": "problem",
+  "issue": 9,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.3016,
+   0.5
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689426208784"
+ },
+ {
+  "n": 101,
+  "text": "no shadows",
+  "kind": "problem",
+  "issue": 1,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.4367,
+   0.5314
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689426673178"
+ },
+ {
+  "n": 102,
+  "text": "If we change the scale of the drawing we dont see more detail",
+  "kind": "problem",
+  "issue": 9,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.2812,
+   0.5576
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689422015066"
+ },
+ {
+  "n": 103,
+  "text": "incorrect way of demonstrating number of floors",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "detail-2",
+  "skill": "plans",
+  "src": "plans/detail-area-2_1-1000.svg",
+  "at": [
+   0.3734,
+   0.6379
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689426433621"
+ },
+ {
+  "n": 104,
+  "text": "dont like this part",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   1.0,
+   0.6415
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689424429970"
+ },
+ {
+  "n": 105,
+  "text": "need isometric views to show circulation",
+  "kind": "idea",
+  "issue": 12,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "margin",
+  "skill": "panel-layout",
+  "at": [
+   0.7488,
+   0.7664
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689422370547"
+ },
+ {
+  "n": 106,
+  "text": "The models dont show the intentions of the project",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "building-types",
+  "skill": "building-types",
+  "src": "building-types/building-types_1-500.svg",
+  "at": [
+   0.4098,
+   0.8254
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "light_yellow",
+  "miro": "3458764689424430069"
+ },
+ {
+  "n": 107,
+  "text": "don't like illustrations of building as blocks",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "building-types",
+  "skill": "building-types",
+  "src": "building-types/building-types_1-500.svg",
+  "at": [
+   0.0613,
+   0.8351
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689424430474"
+ },
+ {
+  "n": 108,
+  "text": "need more diverse building types.",
+  "kind": "problem",
+  "issue": 6,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "building-types",
+  "skill": "building-types",
+  "src": "building-types/building-types_1-500.svg",
+  "at": [
+   0.841,
+   0.9175
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "violet",
+  "miro": "3458764689425099034"
+ },
+ {
+  "n": 109,
+  "text": "too big",
+  "kind": "problem",
+  "issue": 11,
+  "entry": "run-10",
+  "panel": 3,
+  "drawing": "building-types",
+  "skill": "building-types",
+  "src": "building-types/building-types_1-500.svg",
+  "at": [
+   0.423,
+   0.9592
+  ],
+  "arrow": false,
+  "beside": false,
+  "colour": "orange",
+  "miro": "3458764689420849220"
+ }
+]

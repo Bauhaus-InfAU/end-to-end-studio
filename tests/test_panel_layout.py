@@ -139,24 +139,6 @@ def test_planned_frame_without_its_drawing_is_an_empty_frame(tmp_path):
     assert "EMPTY FRAME" in text and "Required items missing: 1 of 1" in text
 
 
-def test_planned_item_left_out_is_named(tmp_path):
-    """The second run keeps the first run's plan: a planned drawing it left out, or that didn't fit, is a problem."""
-    it = {"id": "plan", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "_img_w": 100, "_img_h": 100}
-    big = {"id": "iso", "type": "drawing", "file": "isometric/iso_1-1000.svg"}
-    results = [{"n": 1, "placed": [(it, {"x": 15, "y": 15, "w": 100, "h": 100})], "unplaced": [(big, "would cover plan")],
-                "checks": [], "story": "", "paths": []}]
-    plan = {"panels": [{"items": [{"id": "plan", "type": "drawing", "file": it["file"]},
-                                  {"id": "section", "type": "drawing", "file": "site-section/section_1-3000.svg"},
-                                  {"id": "iso", "type": "drawing", "file": "isometric/iso_1-5000.svg"}]}]}
-    report = lambda plan: panels.write_report(tmp_path, {}, {"width_mm": 594, "height_mm": 841}, results, [], {"plan"}, [],
-                                              {"missing": []}, None, 96, plan)
-    text = report(plan)
-    assert "`section`** (site-section/section_1-3000.svg): left out of layout.json" in text
-    assert "`iso`** (isometric/iso_1-5000.svg): not placed, would cover plan" in text and "`plan`**" not in text
-    assert "Problems: 2." in text                                     # the one that did not fit is counted once
-    assert "Planned items not on the panels" not in report(None)
-
-
 def test_drawing_smaller_than_its_frame_is_named(tmp_path):
     f = drawing(tmp_path, "plan_1-1000.svg", 150, 100, font_mm=3.2)
     it = measured(tmp_path, {"id": "p", "type": "drawing", "file": f, "scale": "1:1000", "frame": {"w": 300, "h": 200}})
@@ -398,3 +380,11 @@ def test_ink_height_seen_ignores_empty_sky(tmp_path):
     seen = panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 272 * mm, 564, 40 * mm))
     assert abs(seen - 12 * mm) < 2 * mm, seen
     assert panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 100, 564, 40)) is None
+
+
+def test_smaller_drawing_sits_in_the_middle_of_its_frame(tmp_path):
+    """Issue #45: a map smaller than its frame keeps the frame and is centred in it, not pushed to its top left."""
+    f = drawing(tmp_path, "map_1-1000.svg", 200, 100, font_mm=3.2)
+    it = measured(tmp_path, {"id": "m", "type": "drawing", "file": f, "scale": "1:1000", "frame": {"w": 300, "h": 300}})
+    assert (it["_img_w"], it["_img_h"], it["_ox"], it["_oy"]) == (300, 300, -50, -100)
+    assert abs(it["_fills"] - 200 * 100 / (300 * 300)) < 1e-6

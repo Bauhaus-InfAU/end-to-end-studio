@@ -32,5 +32,9 @@ __pycache__/
 # the Europan 18 winners, references for the runs: other people's work, so they stay off the public repo (zip on Moodle)
 /competition/references/winners/
 
+# Europan jury reports and their Markdown: other people's work. Only the digest goes to git
+/competition/jury-reports/*
+!/competition/jury-reports/jury-lessons.md
+
 # mockups from brainstorming sessions
 /.superpowers/

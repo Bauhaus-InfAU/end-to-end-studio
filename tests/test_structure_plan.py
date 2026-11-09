@@ -39,7 +39,7 @@ def test_example_design_builds(tmp_path):
     out = prop / "structure-plan"
     kinds = {f["properties"]["kind"] for f in
              json.loads((out / "structure-plan.geojson").read_text(encoding="utf-8"))["features"]}
-    assert kinds == {"neighbourhood", "centre", "green", "route", "gateway"}
+    assert {"neighbourhood", "centre", "green", "route", "gateway"} <= kinds <= {"neighbourhood", "centre", "green", "route", "gateway", "existing"}
     checks = (out / "checks.txt").read_text(encoding="utf-8")
     lines = checks.splitlines()
     for head in ("NEIGHBOURHOODS", "GREEN", "CENTRES"):
@@ -197,3 +197,61 @@ def test_green_on_low_ground(tmp_path):
     assert not any(l.strip().startswith("Lawn") and "low ground" in l for l in lines)
     prop, checks = checks_of(tmp_path / "flat", design)
     assert "no terrain model in the site folder" in checks
+
+
+def test_loose_route_end_is_short(tmp_path):
+    design = PLAN + ("F.add('route', 'Stub', F.line([(100, 600), (100, 420)]), 'new', 'hypothesis', 'test', level='local')\n"
+                     "F.add('route', 'Through', F.line([(300, 300), (300, 600)]), 'new', 'hypothesis', 'test', level='main')\n")
+    prop, checks = checks_of(tmp_path, design)
+    line = next(l for l in checks.splitlines() if "loose ends" in l)
+    assert line.rstrip().endswith("SHORT: lead each on to a street, a centre or the site edge") and ": 1" in line
+    assert "Stub ends at (100,420)" in checks and "Through ends" not in checks   # Through runs from the square to the edge
+
+
+def test_existing_buildings_need_a_decision(tmp_path):
+    from shapely.geometry import box as sbox, LineString as L
+    houses = [({"id": "b1", "building": "farm"}, sbox(100, 400, 120, 420)),
+              ({"id": "b2", "building": "barn"}, sbox(500, 500, 530, 530)),
+              ({"id": "b3", "building": "house"}, sbox(100, 100, 120, 120))]     # b3 is not on new land
+    prop, checks = checks_of(tmp_path, PLAN, buildings=houses)
+    assert "on changed land: 2; kept: 0; demolished: 0" in checks
+    line = next(l for l in checks.splitlines() if "undecided" in l)
+    assert ": 2" in line and "SHORT" in line
+    design = PLAN + ("F.add('existing', 'Farm', F.box(95, 395, 125, 425), 'keep', 'mapped', 'test', reason='a use worth keeping')\n"
+                     "F.add('existing', 'Barn', F.box(495, 495, 535, 535), 'demolish', 'mapped', 'test', reason='in the way')\n")
+    prop, checks = checks_of(tmp_path / "decided", design, buildings=houses)
+    assert "on changed land: 2; kept: 1; demolished: 1" in checks
+    assert "undecided: 0" in checks and "Barn: demolish 1 building(s), because in the way" in checks
+    line = next(l for l in checks.splitlines() if "kept but more than" in l)
+    assert ": 1" in line and "SHORT" in line and "b1" in checks          # no street or route reaches the farm
+    reached = design + "F.add('route', 'Farm lane', F.line([(110, 600), (110, 425)]), 'new', 'hypothesis', 'test', level='local')\n"
+    prop, checks = checks_of(tmp_path / "reached", reached, buildings=houses)
+    line = next(l for l in checks.splitlines() if "kept but more than" in l)
+    assert line.rstrip().endswith(": 0")
+
+
+def test_demolish_without_reason_stops(tmp_path):
+    design = PLAN + "F.add('existing', 'Barn', F.box(495, 495, 535, 535), 'demolish', 'mapped', 'test')\n"
+    site_dir = made_site(tmp_path / "site")
+    prop = tmp_path / "proposal"; prop.mkdir()
+    (prop / "design.py").write_text(design, encoding="utf-8")
+    r = run(SCRIPTS / "build.py", prop / "design.py", "--site", site_dir, "--proposal", prop)
+    assert r.returncode != 0 and "say why" in r.stderr
+    (prop / "design.py").write_text(PLAN + "F.add('existing', 'Barn', F.box(495, 495, 535, 535), 'new', 'mapped', 'test', reason='x')\n",
+                                    encoding="utf-8")
+    r = run(SCRIPTS / "build.py", prop / "design.py", "--site", site_dir, "--proposal", prop)
+    assert r.returncode != 0 and "keep, demolish" in r.stderr
+
+
+def test_demolishing_what_the_analysis_keeps_is_short(tmp_path):
+    from shapely.geometry import box as sbox
+    barn = sbox(500, 500, 530, 530)
+    design = PLAN + "F.add('existing', 'Barn', F.box(495, 495, 535, 535), 'demolish', 'mapped', 'test', reason='in the way')\n"
+    prop, checks = checks_of(tmp_path, design, buildings=[({"id": "b2", "building": "barn"}, barn)])
+    assert "the analysis keeps them" not in checks                  # no keep list: nothing to compare with
+    (prop / "analysis").mkdir()
+    (prop / "analysis/keep.geojson").write_text(fc([({"layer": "buildings", "reason": "third parties' property"}, barn)]), encoding="utf-8")
+    r = run(SCRIPTS / "build.py", prop / "design.py", "--site", tmp_path / "site", "--proposal", prop)
+    assert r.returncode == 0, r.stderr[-2000:]
+    line = next(l for l in (prop / "structure-plan/checks.txt").read_text(encoding="utf-8").splitlines() if "the analysis keeps them" in l)
+    assert ": 1" in line and "SHORT" in line and "third parties' property" in line

@@ -18,6 +18,7 @@ from terrain import find_terrain  # noqa: E402  (this skill's own copy)
 
 import numpy as np
 import shapely
+import shapely.ops
 from pyproj import Transformer
 from shapely import shortest_line, unary_union
 from shapely.geometry import LineString, Point, mapping, shape
@@ -64,6 +65,12 @@ DEFAULTS = {
     "path_inset_m": (12, "a park's loop path runs this far inside its edge, m"),
     "path_width_m": (3, "width of a path, partly sealed, m"),
     "min_loop_park_m2": (8000, "smallest park that gets a loop path, m²"),
+    "walk_reach_m": (120, "a loose path end or a street end at a park is joined to the nearest park path or path this close, m"),
+    "bridge_max_m": (35, "a footbridge spans at most this much water; wider water is not crossed, m"),
+    "rail_bridge_max_m": (80, "a footbridge over the railway is at most this long, end to end, m"),
+    "promenade_max_m": (250, "the loops of two parks this close are joined by a promenade, m"),
+    "promenade_gap_m": (60, "a promenade runs at most this far outside the parks, as across a street, m"),
+    "strip_crossing_max_m": (25, "a new path may cross a kept-free strip (a pipe, a power line) over at most this length, square to it, m"),
     "tree_sizes": ({"avenue": [8, 14, 12], "courtyard": [7, 10, 12], "grove": [8, 15, 9], "park": [10, 15, 8]},
                    "planted trees by group: crown diameter, height, spacing, m"),
     "canopy_landuse": ({"forest": ["wood", 10, 20], "natural:wood": ["wood", 10, 20], "natural:scrub": ["wood", 5, 5],
@@ -89,7 +96,7 @@ DEFAULTS = {
     "scale": (3000, "scale of the check plan, 1:n"),
 }
 
-FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "existing": "#d0d0d0", "street": "#f2f2f2",
+FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "new": "#fff", "existing": "#d0d0d0", "street": "#f2f2f2",
                   "park": "#dcdcdc", "kept": "#b5b5b5", "water": "#7f7f7f", "accent": "#1f6fb2",
                   "lawn": "#ececec", "meadow": "#dcdcdc", "wet-meadow": "#cfd6dc", "grove": "#bdbdbd", "path": "#fff",
                   "font": "Helvetica, Arial, sans-serif", "line": 0.25, "outline": 0.6, "text": 3.2, "title": 4.2,
@@ -146,9 +153,8 @@ def main():
         cfg[k] = cfg_in[k]
     std = load_json(a.style) if a.style else {}   # the standard's keys this plan has, by name, never merged
     style = {k: std.get(k, v) for k, v in FALLBACK_STYLE.items()}
-    dg = std.get("diagram") if isinstance(std.get("diagram"), dict) else {}   # a thematic plan's weights and text sizes, px
-    style.update({k: dg[d] * 25.4 / 96 for k, d in (("line", "line"), ("outline", "outline"), ("text", "label_size"),
-                                                    ("title", "title_size")) if d in dg})
+    dg = std.get("diagram") if isinstance(std.get("diagram"), dict) else {}   # text sizes as the diagrams', px; lines the plans'
+    style.update({k: dg[d] * 25.4 / 96 for k, d in (("text", "label_size"), ("title", "title_size")) if d in dg}, marks=std.get("marks"))
 
     site_ll = unary_union([shape(f["geometry"]) for f in load(a.site)])
     to_m, to_ll = utm_for(site_ll.centroid.x, site_ll.centroid.y)
@@ -370,6 +376,11 @@ def main():
                 links.append((ln, "landscape"))
                 starts.append(Point(ln.coords[0]))
     linked = {i for i, p in enumerate(parks) for ln, _ in links if ln.distance(p) < 0.5}
+    rail = unary_union([g for p, g in layer("rail") if p.get("railway") == "rail" and g.intersects(site.buffer(200))])
+    walks = {"connections": [], "bridges": [], "boardwalks": [], "promenades": [], "entrances": []}
+    if a.streets and os.path.exists(a.streets):
+        walks = walk_network(cfg, a.streets, m, paths, boardwalks, parks, buildings, unary_union(water + [water_u]),
+                             rail, covers.get("wet-meadow", shapely.Polygon()), site, keep_free)
     alone = sum(1 for i, p in enumerate(parks) if i not in linked and not any(p.intersects(q) for q in parks if q is not p))
 
     # Trees: no trunk on a street, building or path; no crown over a kept-free strip, water, a pool, a playground, a
@@ -428,6 +439,13 @@ def main():
         add(g, kind="path", width_m=cfg["path_width_m"], length_m=round(g.length))
     for g in boardwalks:
         add(g, kind="path", type="boardwalk", width_m=cfg["path_width_m"], length_m=round(g.length))
+    names = {"connections": "connection", "promenades": "promenade", "bridges": "bridge", "boardwalks": "boardwalk"}
+    for t, name in names.items():
+        for g, crossing in walks[t]:
+            add(g, kind="path", type=name, width_m=cfg["path_width_m"], length_m=round(g.length),
+                **({"crosses": crossing} if crossing else {}))
+    for pt, ok in walks["entrances"]:
+        add(pt, kind="park-entrance", connected=ok)
     for g, to in links:
         add(g, kind="green-link", to=to, length_m=round(g.length),
             crosses_street=bool(g.intersects(streets)))
@@ -528,10 +546,114 @@ def main():
                       "covers_m2": {n: round(g.area) for n, g in covers.items()},
                       "paths_m": round(sum(g.length for g in paths)),
                       "boardwalks_m": round(sum(g.length for g in boardwalks)),
+                      "walk_connections": len(walks["connections"]), "promenades": len(walks["promenades"]),
+                      "footbridges": len(walks["bridges"]), "new_boardwalks": len(walks["boardwalks"]),
+                      "park_entrances": len(walks["entrances"]),
+                      "park_entrances_connected": sum(1 for _, ok in walks["entrances"] if ok),
                       "fully_sealed_pct": pct(full, site_a), "partly_sealed_pct": pct(part, site_a),
                       "verge_m2": round(verge.area), "terrain": ter.source if ter else None,
                       "rain_drains_pct": {k: pct(v, sum(drains.values())) for k, v in drains.items()} if ter else None},
                      indent=1, ensure_ascii=False))
+
+
+def walk_network(cfg, streets_path, m, loops, boardwalks, parks, buildings, water, rail, wet, site, keep_free=None):
+    """The pedestrian layer, kept apart from the streets and joined to them at defined nodes. The loops of parks close
+    to each other are joined by a promenade; a street end at a park (a park threshold, a turning head, a square end)
+    and every loose path end near a park are joined to the nearest park path or path within walk_reach_m. A piece that
+    crosses water becomes a footbridge where the water is at most bridge_max_m wide, a piece over the railway a
+    footbridge at most rail_bridge_max_m long, a piece through wet meadow a boardwalk; without a barrier it is a plain
+    path, never a bridge. Nothing crosses a building. Returns the new pieces with what they cross, and each park
+    entrance with whether a path reaches it."""
+    feats = [(f["properties"], m(shape(f["geometry"]))) for f in load(streets_path) if f.get("geometry")]
+    surface = unary_union([g for p, g in feats if p.get("kind") == "street" and g.geom_type.endswith("Polygon")]
+                          + [g for p, g in feats if p.get("kind") == "path" and p.get("type") == "park threshold"])
+    lines = lambda g: [q for q in getattr(g, "geoms", [g]) if q.geom_type == "LineString" and q.length > 0.5]
+    street_paths = [q for p, g in feats if p.get("kind") == "path" for q in lines(g)]
+    park_u = unary_union(parks) if parks else shapely.Polygon()
+    out = {"connections": [], "bridges": [], "boardwalks": [], "promenades": [], "entrances": []}
+    if park_u.is_empty:
+        return out
+    near_park = park_u.buffer(30)
+    loop_lines = [q for g in loops + boardwalks for q in lines(g)]
+    ends = [g for p, g in feats if p.get("kind") == "street-end" and p.get("type") != "future link" and near_park.contains(g)]
+    built_all = lambda: [g for t in ("connections", "promenades", "bridges", "boardwalks") for g, _ in out[t]]
+    slot = {"path": "connections", "bridge": "bridges", "boardwalk": "boardwalks"}
+
+    def place(seg):
+        """a new piece split by what it crosses, as (line, kind, crossing); None where it may not be built"""
+        if seg.length < 1 or seg.intersects(buildings):
+            return None
+        if keep_free is not None and not keep_free.is_empty and                 seg.intersection(keep_free).length > cfg["strip_crossing_max_m"]:
+            return None
+        if not rail.is_empty and seg.crosses(rail):
+            return [(seg, "bridge", "railway")] if seg.length <= cfg["rail_bridge_max_m"] else None
+        pieces = []
+        over = seg.intersection(water) if not water.is_empty else shapely.Polygon()
+        if not over.is_empty:
+            if water.contains(Point(seg.coords[0])) or water.contains(Point(seg.coords[-1])) \
+                    or max((q.length for q in lines(over)), default=0) > cfg["bridge_max_m"]:
+                return None
+            pieces += [(q, "bridge", "water") for q in lines(over)]
+        dry = seg.difference(water) if not water.is_empty else seg
+        if not wet.is_empty:
+            pieces += [(q, "boardwalk", "wet meadow") for q in lines(dry.intersection(wet))]
+            dry = dry.difference(wet)
+        return pieces + [(q, "path", None) for q in lines(dry)]
+
+    def keep(built, promenade=False):
+        for g, kind, crossing in built:
+            out["promenades" if promenade and kind == "path" else slot[kind]].append((g, crossing))
+
+    def join(pt, exclude=None):
+        """the nearest park path or path from pt within walk_reach_m, built; True if pt is reached"""
+        target = unary_union(loop_lines + street_paths + built_all())
+        if exclude is not None:
+            target = target.difference(exclude.buffer(1))
+        if target.is_empty or target.distance(pt) > cfg["walk_reach_m"]:
+            return False
+        if target.distance(pt) < 1.5:
+            return True
+        built = place(LineString([pt, shapely.ops.nearest_points(pt, target)[1]]))
+        if not built:
+            return False
+        keep(built)
+        return True
+
+    # 1. promenades: one tree through the parks, the shortest joins first, each pair of park loops at most once and
+    #    only where they aren't joined yet, so the parks read as one walk and not as a fan of lines
+    rings = [unary_union([q for q in loop_lines if q.distance(g) < 1]) for g in loops if not g.is_empty]
+    rings = [r for r in rings if not r.is_empty]
+    group = list(range(len(rings)))
+    root = lambda i: i if group[i] == i else root(group[i])
+    for i in range(len(rings)):
+        for j in range(len(rings)):
+            if i < j and rings[i].distance(rings[j]) < 1.5:
+                group[root(i)] = root(j)
+    pairs = sorted((rings[i].distance(rings[j]), i, j) for i in range(len(rings)) for j in range(i + 1, len(rings))
+                   if 1.5 <= rings[i].distance(rings[j]) <= cfg["promenade_max_m"])
+    for d, i, j in pairs:
+        if root(i) == root(j):
+            continue
+        seg = shortest_line(rings[i], rings[j])
+        built = place(seg)
+        if built and seg.difference(park_u.buffer(5)).length <= cfg["promenade_gap_m"]:
+            keep(built, promenade=True)
+            group[root(i)] = root(j)
+    # 2. park entrances: every street end at a park reaches a park path
+    for pt in ends:
+        out["entrances"].append((pt, join(pt)))
+    # 3. loose path ends near a park: the streets' paths, and the park loops where a strip or water cut them open
+    allp = unary_union(street_paths + loop_lines)
+    for ln in street_paths + loop_lines:
+        for c in (ln.coords[0], ln.coords[-1]):
+            pt = Point(c)
+            if not site.contains(pt) or not near_park.contains(pt) or surface.distance(pt) < 2:
+                continue
+            others = allp.difference(ln.buffer(0.5))
+            if not others.is_empty and others.distance(pt) < 1.5:
+                continue
+            join(pt, exclude=ln)
+    return out
 
 
 def load_json(p):
@@ -959,7 +1081,7 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
         els.append(f'<circle cx="{pt.x - x0:.1f}" cy="{y1 - pt.y:.1f}" r="{crown / 2:.1f}" fill="{tree_fill}" '
                    f'fill-opacity="0.8" stroke="{s["ink"]}" stroke-width="{lw(s["line"] / 2)}"/>')
     shape_el(unary_union(old_bld).intersection(site.buffer(80)) if old_bld else None, s["existing"], s["ink"], s["line"])
-    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["building"], s["ink"], s["line"])
+    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["new"], s["ink"], s["line"])   # new buildings in the standard's colour for new, as on every plan
     for g, _ in links:
         shape_el(g, "none", s["accent"], s["outline"] * 1.5, extra=f'stroke-dasharray="{lw(2)} {lw(1.2)}"')
     shape_el(keep_free, "none", s["ink"], s["line"], extra=f'stroke-dasharray="{lw(0.6)} {lw(0.6)}"')
@@ -973,14 +1095,15 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
               ("green link", None, "")] + ([("kept free", "none", "")] if not keep_free.is_empty else []) \
         + ([("tree", tree_fill, "")] if trees else [])
     credit = textwrap.wrap(cfg.get("map_credit", ""), 32) if frame else []
+    panel = frame and s.get("marks") == "panel"   # on a panel, the panel writes the caption, scale bar and north arrow
     if frame:   # a box in the corner where it hides least of the site: the title, one entry a row, the scale, the credit
-        bw, bh = 66 * k, (s["title"] + 18 + 5.5 * len(legend) + 4.5 * len(credit)) * k
+        bw, bh = 66 * k, ((4 if panel else s["title"] + 18) + 5.5 * len(legend) + 4.5 * len(credit)) * k
         bx, by = min(((a_, b_) for b_ in (y0, y1 - bh) for a_ in (x0, x1 - bw)),
                      key=lambda c_: shapely.box(c_[0], c_[1], c_[0] + bw, c_[1] + bh).intersection(site).area)
-        lx, ly = bx - x0 + 4 * k, y1 - by - bh + (s["title"] + 7) * k
+        lx, ly = bx - x0 + 4 * k, y1 - by - bh + (4 if panel else s["title"] + 7) * k
         els.append(f'<rect x="{bx - x0:.1f}" y="{y1 - by - bh:.1f}" width="{bw:.1f}" height="{bh:.1f}" fill="{s["paper"]}"/>'
-                   f'<text x="{lx:.1f}" y="{y1 - by - bh + (s["title"] + 3) * k:.1f}" font-size="{max(fs, s["title"] * k):.1f}" '
-                   f'font-weight="bold" font-family="{s["font"]}">Open space, 1:{scale:,}</text>')
+                   + ('' if panel else f'<text x="{lx:.1f}" y="{y1 - by - bh + (s["title"] + 3) * k:.1f}" font-size="{max(fs, s["title"] * k):.1f}" '
+                   f'font-weight="bold" font-family="{s["font"]}">Open space, 1:{scale:,}</text>'))
     else:
         lx, ly = 6 * k, (y1 - y0) + 8 * k
     for name, fill, extra in legend:
@@ -996,12 +1119,14 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
     # graphic scale: a thin line stepping up and down, a tick at every step, the numbers under, the unit on the last
     bar = min((b for b in (50, 100, 200, 250, 500, 1000, 2000) if b >= (bw / 3 if frame else (x1 - x0) / 6)), default=1000)
     sx, sy, sg = (lx if frame else 6 * k), ly + (2 if frame else 14) * k, bar / 4
-    els.append(f'<path d="{"".join(f"M{sx + i * sg:.1f},{sy + 1.5 * k * (i % 2):.1f}h{sg:.1f}" for i in range(4))}'
+    if panel:
+        sx, sy = lx, ly - 7.2 * k   # only the credit, under the legend
+    els.append('' if panel else f'<path d="{"".join(f"M{sx + i * sg:.1f},{sy + 1.5 * k * (i % 2):.1f}h{sg:.1f}" for i in range(4))}'
                f'{"".join(f"M{sx + i * sg:.1f},{sy:.1f}v{1.5 * k:.1f}" for i in range(5))}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
-    for v, t in ((0, "0"), (bar, f"{bar} m")):
+    for v, t in () if panel else ((0, "0"), (bar, f"{bar} m")):
         els.append(f'<text x="{sx + v:.1f}" y="{sy + 1.5 * k + fs + 0.5 * k:.1f}" font-size="{fs}" font-family="{s["font"]}" text-anchor="middle">{t}</text>')
     nx, ny = sx + bar + 12 * k, sy + 1 * k   # north: a circle in outline, a line from its centre to the circle, pointing north
-    els.append(f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="{3 * k:.1f}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>'
+    els.append('' if panel else f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="{3 * k:.1f}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>'
                f'<line x1="{nx:.1f}" y1="{ny:.1f}" x2="{nx:.1f}" y2="{ny - 3 * k:.1f}" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
     for i, t in enumerate(credit or [f'1:{scale:,}   {cfg.get("map_credit", "")}']):
         els.append(f'<text x="{sx if frame else nx + 6 * k:.1f}" y="{(sy + (10.5 + 4.5 * i) * k) if frame else ny + 1 * k:.1f}" '

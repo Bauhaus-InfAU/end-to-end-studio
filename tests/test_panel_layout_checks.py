@@ -39,7 +39,8 @@ def problems(text):
 
 
 def test_a_planned_drawing_that_is_gone_is_named(tmp_path):
-    first = {"panels": [{"items": [{"id": "section", "type": "drawing", "file": "site-section/section_1-1000.svg",
+    """The second run keeps the first run's plan: a planned drawing it left out, or that didn't fit, is a problem."""
+    first ={"panels": [{"items": [{"id": "section", "type": "drawing", "file": "site-section/section_1-1000.svg",
                                     "scale": "1:1000", "frame": {"w": 560, "h": 120}},
                                    {"id": "plan", "type": "drawing", "file": "plans/plan_1-3000.svg", "scale": "1:3000"}]}]}
     second = {"panels": [{"items": [{"id": "plan", "type": "drawing", "file": "plans/plan_1-3000.svg", "scale": "1:2000"}]}]}
@@ -47,6 +48,19 @@ def test_a_planned_drawing_that_is_gone_is_named(tmp_path):
     assert "`section`** (site-section/section_1-1000.svg): left out of layout.json" in text
     assert "`plan`: scale planned as 1:3000, now 1:2000" in text          # a change is named, not counted
     assert problems(text) == 1 and "Planned items dropped: 1." in text
+
+    it = {"id": "plan", "type": "drawing", "file": "plans/site-plan_1-3000.svg", "_img_w": 100, "_img_h": 100}
+    big = {"id": "iso", "type": "drawing", "file": "isometric/iso_1-1000.svg"}
+    results = [{"n": 1, "placed": [(it, {"x": 15, "y": 15, "w": 100, "h": 100})], "unplaced": [(big, "would cover plan")],
+                "checks": [], "story": "", "paths": []}]
+    plan = {"panels": [{"items": [{"id": "plan", "type": "drawing", "file": it["file"]},
+                                  {"id": "section", "type": "drawing", "file": "site-section/section_1-3000.svg"},
+                                  {"id": "iso", "type": "drawing", "file": "isometric/iso_1-5000.svg"}]}]}
+    with_plan = lambda plan: panels.write_report(tmp_path, {}, FMT, results, [], {"plan"}, [], {"missing": []}, None, 96, plan)
+    text = with_plan(plan)
+    assert "`iso`** (isometric/iso_1-5000.svg): not placed, would cover plan" in text and "`plan`**" not in text
+    assert problems(text) == 2                                            # the one that did not fit is counted once
+    assert "Planned items not on the panels" not in with_plan(None)
 
 
 def test_a_required_drawing_cropped_over_25_percent_is_not_on_the_panels(tmp_path):
