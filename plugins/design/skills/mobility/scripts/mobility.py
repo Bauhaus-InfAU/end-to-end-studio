@@ -701,7 +701,7 @@ for kind_ in ('open-space', 'ground-cover', 'retention'):
         if isinstance(c, str) and g.geom_type.endswith('Polygon'):
             fill(g, c)
 for p, g in inside([x for x in OPEN if x[0].get('kind') == 'open-space' and x[0].get('use') == 'playground']):
-    fill(g, 'none', None, S['ink'], sw='mid')
+    fill(g, 'none', None, S['ink'])
 # 3. the streets: the existing outlined grey, the new in ink, the paths dashed; the public ground in its tone
 paths = [g for p, g in OPEN if p.get('kind') == 'path']
 if STREETS is not None and any(p.get('kind') == 'street' for p, g in STREETS):
@@ -765,7 +765,7 @@ if S.get('shadow') and S.get('shadow_len'):
 hed = inside([x for x in OPEN if x[0].get('kind') == 'hedge'])
 if hed and S.get('grove'):
     o.append(f'<path d="{" ".join(d(g) for _, g in hed)}" fill="none" stroke="{mix(S["grove"], S["ink"], 0.35)}" '
-             f'stroke-width="{f2(max(float(hed[0][0].get("width_m") or 1.2), 0.35 * k))}" stroke-linecap="round" stroke-linejoin="round"/>')
+             f'stroke-width="{f2(min(max(float(hed[0][0].get("width_m") or 1.2), 0.35 * k), lw("mid")))}" stroke-linecap="round" stroke-linejoin="round"/>')
 trees = [(*P(g.x, g.y), float(p.get('crown_m') or PL['tree_crown_m']) / 2) for p, g in inside(MASS + OPEN)
          if p.get('kind') == 'tree' and g.geom_type == 'Point']
 if trees and S.get('grove'):

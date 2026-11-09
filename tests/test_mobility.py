@@ -78,6 +78,10 @@ def test_mobility_fills_its_frame(massed):
     assert f'stroke="{bus}" stroke-width="{style["mid"] * k:.2f}"' in svg   # every main route one weight, the plans' mid
     assert f'fill="{bus}"/><g transform' in svg and ">Bus<" not in svg   # the bus in the legend: its icon in its colour, no word
     assert "Mobility plan, 1:5,000" not in svg   # on a panel, the panel writes the caption and scale
+    # a small site plan with the mobility on top: each new building its own shape in the standard's `new`, no line over `mid`
+    assert svg.count(f'fill="{style["new"]}" stroke="{style["ink"]}"') >= 2
+    lines = re.findall(r'<(?:path|circle|rect|g) [^>]*stroke-width="([\d.]+)"', svg)   # not the white halo behind a label
+    assert max(float(w) for w in lines) <= style["mid"] * k + 0.01
 
 
 def test_mobility_without_hub_runs(massed):
