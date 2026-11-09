@@ -437,21 +437,18 @@ def choose_scale(own, size_mm, frame_mm, text_mm, defaults=DEFAULTS):
 
 
 def crop_window(size_mm, frame_mm, crop=None):
-    """What a frame shows of a drawing printed at size_mm: the frame (shrunk to the drawing where the
-    drawing is smaller), the drawing's offset in it, and the share of the drawing's area hidden.
+    """What a frame shows of a drawing printed at size_mm: the frame, the drawing's offset in it (negative where
+    the drawing is smaller than the frame: it sits in the frame's middle), the share of the drawing's area hidden
+    and the share of the frame it fills.
     crop: {"focus": [fx, fy]}, the point of the drawing (fractions of its width and height) at the
-    frame's centre, default the centre; or {"offset_mm": [dx, dy]}, how far the drawing's top-left
-    corner sits left of and above the frame's."""
+    frame's centre, default the centre."""
     (w, h), (fw, fh) = size_mm, frame_mm
     vw, vh = min(w, fw), min(h, fh)
-    crop = crop or {}
-    if "offset_mm" in crop:
-        ox, oy = crop["offset_mm"]
-    else:
-        fx, fy = crop.get("focus", [0.5, 0.5])
-        ox, oy = fx * w - vw / 2, fy * h - vh / 2
+    fx, fy = (crop or {}).get("focus", [0.5, 0.5])
+    ox, oy = fx * w - vw / 2, fy * h - vh / 2
     ox, oy = min(max(ox, 0), w - vw), min(max(oy, 0), h - vh)  # the frame never shows past the drawing's edge
-    return {"w": vw, "h": vh, "ox": ox, "oy": oy, "hidden": 1 - vw * vh / (w * h)}
+    ox, oy = ox if w >= fw else (w - fw) / 2, oy if h >= fh else (h - fh) / 2
+    return {"w": fw, "h": fh, "ox": ox, "oy": oy, "hidden": 1 - vw * vh / (w * h), "fills": vw * vh / (fw * fh)}
 
 
 def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults=DEFAULTS, scale_bars=None):
@@ -516,7 +513,7 @@ def measure(item, folder, inv_by_file, style, notes, room=(None, None), defaults
             item.update(_img_w=win["w"], _img_h=win["h"], _draw_w=dw, _draw_h=dh, _ox=win["ox"], _oy=win["oy"],
                         _hidden=win["hidden"], _factor=factor, _own=own, _print_scale=sc, _auto=auto,
                         _framed=bool(fr), _scale_held=True,
-                        _fills=win["w"] * win["h"] / (fr["w"] * fr["h"]) if fr else 1.0)
+                        _fills=win["fills"])
             if item.get("w") and not fr and abs(item["w"] - dw) > 0.5:
                 notes.append(f"`{item['id']}`: width {item['w']} mm ignored; at 1:{sc:,} the drawing is {dw:.0f} mm wide: give it a `frame` to crop it")
     elif item.get("frame"):
