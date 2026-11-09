@@ -75,3 +75,11 @@ def test_skill_reads_narrative_then_references():
     t = (DG / "SKILL.md").read_text(encoding="utf-8")
     assert "Reads: brief-reader, narrative" in t
     assert t.index("base.md") < t.index("narrative/") < t.index("references/")
+
+
+def test_modes_name_the_standards_own_colours(tmp_path):
+    """Issue #45: each way of moving is drawn in a colour the standard already has, so a map shares the drawings' palette."""
+    assert all(k in base() for k in base()["modes"].values())
+    s = base(); s["modes"] = {"bus": "#ffcc00"}
+    r = check(s, tmp_path)
+    assert r.returncode != 0 and "modes.bus" in r.stdout

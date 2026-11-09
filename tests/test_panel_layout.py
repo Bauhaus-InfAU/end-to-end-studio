@@ -380,3 +380,11 @@ def test_ink_height_seen_ignores_empty_sky(tmp_path):
     seen = panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 272 * mm, 564, 40 * mm))
     assert abs(seen - 12 * mm) < 2 * mm, seen
     assert panels.ink_height_seen(png, fmt, CODE_BOX, "#ffffff", (15, 100, 564, 40)) is None
+
+
+def test_smaller_drawing_sits_in_the_middle_of_its_frame(tmp_path):
+    """Issue #45: a map smaller than its frame keeps the frame and is centred in it, not pushed to its top left."""
+    f = drawing(tmp_path, "map_1-1000.svg", 200, 100, font_mm=3.2)
+    it = measured(tmp_path, {"id": "m", "type": "drawing", "file": f, "scale": "1:1000", "frame": {"w": 300, "h": 300}})
+    assert (it["_img_w"], it["_img_h"], it["_ox"], it["_oy"]) == (300, 300, -50, -100)
+    assert abs(it["_fills"] - 200 * 100 / (300 * 300)) < 1e-6

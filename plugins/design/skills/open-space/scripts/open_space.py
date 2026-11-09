@@ -89,7 +89,7 @@ DEFAULTS = {
     "scale": (3000, "scale of the check plan, 1:n"),
 }
 
-FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "existing": "#d0d0d0", "street": "#f2f2f2",
+FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "new": "#fff", "existing": "#d0d0d0", "street": "#f2f2f2",
                   "park": "#dcdcdc", "kept": "#b5b5b5", "water": "#7f7f7f", "accent": "#1f6fb2",
                   "lawn": "#ececec", "meadow": "#dcdcdc", "wet-meadow": "#cfd6dc", "grove": "#bdbdbd", "path": "#fff",
                   "font": "Helvetica, Arial, sans-serif", "line": 0.25, "outline": 0.6, "text": 3.2, "title": 4.2,
@@ -146,9 +146,8 @@ def main():
         cfg[k] = cfg_in[k]
     std = load_json(a.style) if a.style else {}   # the standard's keys this plan has, by name, never merged
     style = {k: std.get(k, v) for k, v in FALLBACK_STYLE.items()}
-    dg = std.get("diagram") if isinstance(std.get("diagram"), dict) else {}   # a thematic plan's weights and text sizes, px
-    style.update({k: dg[d] * 25.4 / 96 for k, d in (("line", "line"), ("outline", "outline"), ("text", "label_size"),
-                                                    ("title", "title_size")) if d in dg})
+    dg = std.get("diagram") if isinstance(std.get("diagram"), dict) else {}   # text sizes as the diagrams', px; lines the plans'
+    style.update({k: dg[d] * 25.4 / 96 for k, d in (("text", "label_size"), ("title", "title_size")) if d in dg}, marks=std.get("marks"))
 
     site_ll = unary_union([shape(f["geometry"]) for f in load(a.site)])
     to_m, to_ll = utm_for(site_ll.centroid.x, site_ll.centroid.y)
@@ -959,7 +958,7 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
         els.append(f'<circle cx="{pt.x - x0:.1f}" cy="{y1 - pt.y:.1f}" r="{crown / 2:.1f}" fill="{tree_fill}" '
                    f'fill-opacity="0.8" stroke="{s["ink"]}" stroke-width="{lw(s["line"] / 2)}"/>')
     shape_el(unary_union(old_bld).intersection(site.buffer(80)) if old_bld else None, s["existing"], s["ink"], s["line"])
-    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["building"], s["ink"], s["line"])
+    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["new"], s["ink"], s["line"])   # new buildings in the standard's colour for new, as on every plan
     for g, _ in links:
         shape_el(g, "none", s["accent"], s["outline"] * 1.5, extra=f'stroke-dasharray="{lw(2)} {lw(1.2)}"')
     shape_el(keep_free, "none", s["ink"], s["line"], extra=f'stroke-dasharray="{lw(0.6)} {lw(0.6)}"')
@@ -973,14 +972,15 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
               ("green link", None, "")] + ([("kept free", "none", "")] if not keep_free.is_empty else []) \
         + ([("tree", tree_fill, "")] if trees else [])
     credit = textwrap.wrap(cfg.get("map_credit", ""), 32) if frame else []
+    panel = frame and s.get("marks") == "panel"   # on a panel, the panel writes the caption, scale bar and north arrow
     if frame:   # a box in the corner where it hides least of the site: the title, one entry a row, the scale, the credit
-        bw, bh = 66 * k, (s["title"] + 18 + 5.5 * len(legend) + 4.5 * len(credit)) * k
+        bw, bh = 66 * k, ((4 if panel else s["title"] + 18) + 5.5 * len(legend) + 4.5 * len(credit)) * k
         bx, by = min(((a_, b_) for b_ in (y0, y1 - bh) for a_ in (x0, x1 - bw)),
                      key=lambda c_: shapely.box(c_[0], c_[1], c_[0] + bw, c_[1] + bh).intersection(site).area)
-        lx, ly = bx - x0 + 4 * k, y1 - by - bh + (s["title"] + 7) * k
+        lx, ly = bx - x0 + 4 * k, y1 - by - bh + (4 if panel else s["title"] + 7) * k
         els.append(f'<rect x="{bx - x0:.1f}" y="{y1 - by - bh:.1f}" width="{bw:.1f}" height="{bh:.1f}" fill="{s["paper"]}"/>'
-                   f'<text x="{lx:.1f}" y="{y1 - by - bh + (s["title"] + 3) * k:.1f}" font-size="{max(fs, s["title"] * k):.1f}" '
-                   f'font-weight="bold" font-family="{s["font"]}">Open space, 1:{scale:,}</text>')
+                   + ('' if panel else f'<text x="{lx:.1f}" y="{y1 - by - bh + (s["title"] + 3) * k:.1f}" font-size="{max(fs, s["title"] * k):.1f}" '
+                   f'font-weight="bold" font-family="{s["font"]}">Open space, 1:{scale:,}</text>'))
     else:
         lx, ly = 6 * k, (y1 - y0) + 8 * k
     for name, fill, extra in legend:
@@ -996,12 +996,14 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
     # graphic scale: a thin line stepping up and down, a tick at every step, the numbers under, the unit on the last
     bar = min((b for b in (50, 100, 200, 250, 500, 1000, 2000) if b >= (bw / 3 if frame else (x1 - x0) / 6)), default=1000)
     sx, sy, sg = (lx if frame else 6 * k), ly + (2 if frame else 14) * k, bar / 4
-    els.append(f'<path d="{"".join(f"M{sx + i * sg:.1f},{sy + 1.5 * k * (i % 2):.1f}h{sg:.1f}" for i in range(4))}'
+    if panel:
+        sx, sy = lx, ly - 7.2 * k   # only the credit, under the legend
+    els.append('' if panel else f'<path d="{"".join(f"M{sx + i * sg:.1f},{sy + 1.5 * k * (i % 2):.1f}h{sg:.1f}" for i in range(4))}'
                f'{"".join(f"M{sx + i * sg:.1f},{sy:.1f}v{1.5 * k:.1f}" for i in range(5))}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
-    for v, t in ((0, "0"), (bar, f"{bar} m")):
+    for v, t in () if panel else ((0, "0"), (bar, f"{bar} m")):
         els.append(f'<text x="{sx + v:.1f}" y="{sy + 1.5 * k + fs + 0.5 * k:.1f}" font-size="{fs}" font-family="{s["font"]}" text-anchor="middle">{t}</text>')
     nx, ny = sx + bar + 12 * k, sy + 1 * k   # north: a circle in outline, a line from its centre to the circle, pointing north
-    els.append(f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="{3 * k:.1f}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>'
+    els.append('' if panel else f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="{3 * k:.1f}" fill="none" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>'
                f'<line x1="{nx:.1f}" y1="{ny:.1f}" x2="{nx:.1f}" y2="{ny - 3 * k:.1f}" stroke="{s["ink"]}" stroke-width="{lw(s["line"])}"/>')
     for i, t in enumerate(credit or [f'1:{scale:,}   {cfg.get("map_credit", "")}']):
         els.append(f'<text x="{sx if frame else nx + 6 * k:.1f}" y="{(sy + (10.5 + 4.5 * i) * k) if frame else ny + 1 * k:.1f}" '
