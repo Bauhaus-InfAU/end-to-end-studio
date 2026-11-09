@@ -1066,7 +1066,8 @@ PANEL = FRAME and S.get('marks') == 'panel'
 BAR = 0   # the room the scale bar takes at the right of the legend's first row, mm
 if PANEL:   # on a panel, the panel writes the caption and north arrow; the legend keeps the modes and main places, the scale
     st, row_y = [], 0   # bar at the right of its icons
-    BAR = Lmm + tw(nums[-1], TXT) + 8
+    CAP = f'{LAB["title"]} 1:{scale:,}'   # its name and scale, between the icons and the scale bar, at the legend's size
+    BAR = Lmm + tw(nums[-1], TXT) + 8 + tw(CAP, TXT) + 6
     CREDIT = CREDIT and 'Map data © OpenStreetMap contributors (ODbL).'
 # legend: every line, fill and symbol drawn
 y, x = row_y + 4, 4
@@ -1107,6 +1108,7 @@ if BAR:   # the scale bar, its own: one line stepping up and down, a tick at eve
                                                        f'{m_(Yb(by0 + 1.2))}" stroke="{ink}" stroke-width="{m_(thin)}"/>' for i in range(n + 1)) + '</g>')
     for i in (0, n):
         text(bx0 + i * seg, by0 + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
+    text(bx0 - tw(nums[0], TXT) / 2 - 6, row_y + 4, CAP, extra=' text-anchor="end"')
     y = max(y, by0 + 1.2 + TXT + 1)
 y += TXT + 3
 for line_ in ([walk_line] if walk_line and not FRAME else []) + ([CREDIT] if CREDIT else []):
