@@ -191,8 +191,8 @@ S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) e
 if S:   # its keys this plan draws with, by name, never merged; its text sizes are `diagram`'s (px), its lines the plans'
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
     MODE = {m: next(S[c] for c in [(S.get('modes') or {}).get(m), alt, 'ink'] if isinstance(S.get(c), str))   # the standard's own colours:
-            for m, alt in (('bus', 'accent'), ('bike', 'accent'), ('car', 'path'), ('foot', 'accent'))}   # the theme in the accent, cars grey
-    S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept',
+            for m, alt in (('bus', 'accent'), ('bike', 'water'), ('car', 'building'), ('foot', 'grove'))}   # each mode its own
+    S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept', 'building',
                            'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
     S.update({k: DG[d] * 25.4 / 96 for k, d in (('text', 'label_size'), ('title', 'title_size')) if d in DG})
     FONT = escape(str(S['font']), {'"': "'"})
@@ -724,8 +724,8 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
     ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
-LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'thin', None), 'bike': (MODE['bike'], 'mid', (2, 1)),   # one colour,
-        'foot': (MODE['foot'], 'thin', (0.1, 0.8))}   # told apart by the line: bus solid, bike dashed, foot dotted, cars thin
+LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'thin', None), 'bike': (MODE['bike'], 'mid', (2, 1)),   # each in its colour,
+        'foot': (MODE['foot'], 'thin', (0.1, 0.8))}   # and its line: bus solid, bike dashed, foot dotted, cars thin
 for m in reversed(ORDER):
     col, wkey, dash = LOOK[m]
     for lvl in ('local', 'main'):
@@ -745,15 +745,26 @@ for m in reversed(ORDER):
 o.append('</g>')
 
 
-GLYPH = {'bus': 'M-.6,-.75h1.2v1.3h-1.2zM-.6,-.1h1.2M-.35,.55v.25M.35,.55v.25',   # white pictograms in a disc of the mode's colour
-         'car': 'M-.85,.35v-.4l.35,-.45h1l.35,.45v.4zM-.45,.35v.25M.45,.35v.25',
-         'bike': 'M-.85,.3a.35,.35 0 1,0 .7,0a.35,.35 0 1,0 -.7,0M.15,.3a.35,.35 0 1,0 .7,0a.35,.35 0 1,0 -.7,0M-.5,.3l.35,-.65h.55l.1,.65M-.15,-.35l.25,.65',
-         'foot': 'M0,-.85a.15,.15 0 1,0 0,.3a.15,.15 0 1,0 0,-.3M0,-.4v.6l-.35,.6M0,.2l.35,.6M-.35,-.15h.7'}
+GLYPH = {   # white pictograms in a disc of the mode's colour (C: the disc's colour, W: white), in a box from -1 to 1
+    'bus': '<rect x="-.6" y="-.85" width="1.2" height="1.4" rx=".2" fill="W"/><rect x="-.45" y="-.62" width=".9" height=".5" rx=".05" fill="C"/>'
+           '<circle cx="-.3" cy=".25" r=".1" fill="C"/><circle cx=".3" cy=".25" r=".1" fill="C"/>'
+           '<rect x="-.52" y=".5" width=".24" height=".3" rx=".05" fill="W"/><rect x=".28" y=".5" width=".24" height=".3" rx=".05" fill="W"/>',
+    'train': '<rect x="-.55" y="-.9" width="1.1" height="1.3" rx=".35" fill="W"/><rect x="-.38" y="-.62" width=".76" height=".42" rx=".08" fill="C"/>'
+             '<circle cx="-.25" cy=".12" r=".09" fill="C"/><circle cx=".25" cy=".12" r=".09" fill="C"/>'
+             '<path d="M-.3,.45L-.55,.88M.3,.45L.55,.88M-.42,.68h.84" fill="none" stroke="W" stroke-width=".13" stroke-linecap="round"/>',
+    'car': '<path d="M-.88,.38v-.36l.18,-.1l.22,-.42h.96l.22,.42l.18,.1v.36z" fill="W"/><path d="M-.34,-.38h.68l.15,.3h-.98z" fill="C"/>'
+           '<circle cx="-.48" cy=".4" r=".2" fill="W" stroke="C" stroke-width=".1"/><circle cx=".48" cy=".4" r=".2" fill="W" stroke="C" stroke-width=".1"/>',
+    'bike': '<g fill="none" stroke="W" stroke-width=".13" stroke-linecap="round" stroke-linejoin="round"><circle cx="-.5" cy=".3" r=".34"/>'
+            '<circle cx=".5" cy=".3" r=".34"/><path d="M-.5,.3L-.18,-.3H.36L.5,.3M-.18,-.3L.04,.3H-.5M.04,.3L.36,-.3M-.34,-.48h.3M.28,-.52h.18"/></g>',
+    'foot': '<circle cx=".06" cy="-.72" r=".18" fill="W"/><path d="M.02,-.42L-.08,.15L-.36,.82M-.08,.15L.22,.46L.24,.84M-.02,-.32L-.4,-.02M-.02,-.32L.32,-.06" '
+            'fill="none" stroke="W" stroke-width=".17" stroke-linecap="round" stroke-linejoin="round"/>'}
+RAIL = str(CFG.get('main_stop_mode') or '').lower() in ('rail', 'train', 'railway')   # the main stop a train stop: the train's icon
 
 
-def icon(m, x, y, r):
-    return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}" fill="{LOOK[m][0]}"/><path d="{GLYPH[m]}" transform="translate({f2(x)},{f2(y)}) '
-            f'scale({f2(r * 0.62)})" fill="none" stroke="{S["paper"]}" stroke-width="0.16" stroke-linecap="round" stroke-linejoin="round"/>')
+def icon(m, x, y, r, col=None):
+    col = col or LOOK[m][0]
+    return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}" fill="{col}"/><g transform="translate({f2(x)},{f2(y)}) scale({f2(r * 0.62)})">'
+            + GLYPH[m].replace('"W"', f'"{S["paper"]}"').replace('"C"', f'"{col}"') + '</g>')
 
 
 def symbol(kind, x, y):
@@ -928,16 +939,21 @@ for key, spec in legend.items():
     if FRAME and key in ('street', 'context', 'existing', 'new') or PANEL and key in (
             'site', 'ring', 'car-access', 'bike-local', 'bus-stop', 'local-hub', 'access'):   # a short legend: the theme, not the base
         continue
-    lab = LAB.get(key, key)
-    wi = 8 + 1.5 + tw(lab, TXT) + 5
+    pict = key in GLYPH or key == 'stop' and RAIL   # a way of moving: its icon and its line, no words
+    lab = '' if pict else LAB.get(key, key)
+    wi = 19 if pict else 8 + 1.5 + tw(lab, TXT) + 5
     if x + wi > W - 4 and x > 4:
         x, y = 4, y + TXT + 3
     mid = y - 3.2 + 1.75
     if spec[0] == 'fill':
         sk = f' stroke="{spec[2]}"' if spec[2] else f' stroke="{S["path"]}"'
         st.append(f'<rect x="{m_(x)}" y="{m_(Yb(mid - 1.75))}" width="{m_(8)}" height="{m_(3.5)}" fill="{spec[1]}"{sk} stroke-width="{m_(thin)}"/>')
-    elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon, as the winners' legends show it
-        st.append(icon(key, (x + 4) * k, Yb(mid) * k, 2.6 * k))
+    elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon, then a piece of its line
+        da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
+        st.append(icon(key, (x + 2.6) * k, Yb(mid) * k, 2.6 * k) + f'<path d="M{m_(x + 7)},{m_(Yb(mid))}L{m_(x + 15)},{m_(Yb(mid))}" '
+                  f'stroke="{spec[1]}" stroke-width="{f2(max(spec[2], lw("mid")))}"{da} stroke-linecap="round"/>')
+    elif pict:   # the main stop of a train: the train's icon beside the stop's symbol
+        st.append(icon('train', (x + 2.6) * k, Yb(mid) * k, 2.6 * k, S['ink']) + symbol(spec[1], (x + 10) * k, Yb(mid) * k))
     elif spec[0] == 'line':
         da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid))}L{m_(x + 8)},{m_(Yb(mid))}" stroke="{spec[1]}" stroke-width="{f2(spec[2])}"{da} stroke-linecap="round"/>')
@@ -945,7 +961,8 @@ for key, spec in legend.items():
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid + 1.5))}A{m_(8)},{m_(8)} 0 0 1 {m_(x + 8)},{m_(Yb(mid - 1.5))}" fill="none" stroke="{ink}" stroke-width="{m_(thin)}"/>')
     else:
         st.append(symbol(spec[1], (x + 4) * k, Yb(mid) * k))
-    text(x + 9.5, y, lab)
+    if lab:
+        text(x + 9.5, y, lab)
     x += wi
 y += TXT + 3
 for line_ in ([walk_line] if walk_line and not FRAME else []) + ([CREDIT] if CREDIT else []):
