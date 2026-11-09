@@ -194,7 +194,7 @@ S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) e
 if S:   # its keys this plan draws with, by name, never merged; its text sizes are `diagram`'s (px), its lines the plans'
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
     MODE = {m: next(S[c] for c in [(S.get('modes') or {}).get(m), alt, 'ink'] if isinstance(S.get(c), str))   # the standard's own colours:
-            for m, alt in (('bus', 'accent'), ('bike', 'water'), ('car', 'building'), ('foot', 'grove'))}   # each mode its own
+            for m, alt in (('bus', 'accent'), ('bike', 'water'), ('car', 'building'), ('foot', 'grove'), ('train', 'public'))}   # each mode its own
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept', 'building',
                            'public', 'shadow', 'shadow_len',
                            'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
@@ -867,7 +867,7 @@ for m in reversed(ORDER):
                              f'stroke-linecap="round" marker-end="url(#out-{m})"/>')
 for p, g in [(p, g) for p, g in (load(os.path.join(SITE, 'rail.geojson')) or []) if g.intersects(fr)]:   # the train: the railway
     if p.get('railway') not in PL['gone_rail']:                                                         # on top, black, its centre dashed
-        o.append(f'<path d="{d(g)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thick"))}"/>'
+        o.append(f'<path d="{d(g)}" fill="none" stroke="{tone(MODE["train"])}" stroke-width="{f2(lw("thick"))}"/>'
                  f'<path d="{d(g)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(lw("thin"))}" stroke-dasharray="{f2(2 * k)} {f2(2 * k)}"/>')
 o.append('</g>')
 
@@ -901,7 +901,7 @@ def symbol(kind, x, y):
     ink, paper, sw = S['ink'], S['paper'], f2(lw('mid'))
     if kind == 'stop':
         return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(2.4 * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
-                f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.2 * k)}" fill="{ink}"/>')
+                f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.2 * k)}" fill="{tone(MODE["train"]) if RAIL else ink}"/>')
     if kind == 'bus-stop':   # a dot in the bus's colour on its line
         return f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(SYM_R[kind] * k)}" fill="{LOOK["bus"][0]}" stroke="{paper}" stroke-width="{f2(lw("thin"))}"/>'
     if kind in ('hub', 'local-hub'):   # two rings
@@ -1087,7 +1087,7 @@ for key, spec in legend.items():
     elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon alone, in its colour
         st.append(icon(key, (x + 2.6) * k, Yb(mid) * k, 2.6 * k))
     elif pict:   # the main stop of a train: the train's icon beside the stop's symbol
-        st.append(icon('train', (x + 2.6) * k, Yb(mid) * k, 2.6 * k, S['ink']) + symbol(spec[1], (x + 10) * k, Yb(mid) * k))
+        st.append(icon('train', (x + 2.6) * k, Yb(mid) * k, 2.6 * k, tone(MODE['train'])) + symbol(spec[1], (x + 10) * k, Yb(mid) * k))
     elif spec[0] == 'line':
         da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid))}L{m_(x + 8)},{m_(Yb(mid))}" stroke="{spec[1]}" stroke-width="{f2(spec[2])}"{da} stroke-linecap="round"/>')
