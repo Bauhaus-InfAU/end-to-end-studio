@@ -675,7 +675,7 @@ def stroke(g, colour, w, dash=None, key=None, extra=''):
 
 
 # ground: the green land around the site and the open space, as the plans draw it
-pale = '#' + ''.join('%02x' % ((int(S['context'][i:i + 2], 16) + int(S['paper'][i:i + 2], 16)) // 2) for i in (1, 3, 5))
+pale = '#' + ''.join('%02x' % round((int(S['context'][i:i + 2], 16) + int(S['paper'][i:i + 2], 16)) / 2) for i in (1, 3, 5))
 for p, g in load(os.path.join(SITE, 'plots.geojson')) or []:
     if str(p.get('landuse', '')).split(':')[-1] in ('forest', 'wood', 'scrub', 'meadow', 'grass', 'park', 'farmland', 'allotments'):
         fill(g.intersection(fr.buffer(10)), pale)
@@ -939,19 +939,17 @@ for key, spec in legend.items():
     if FRAME and key in ('street', 'context', 'existing', 'new') or PANEL and key in (
             'site', 'ring', 'car-access', 'bike-local', 'bus-stop', 'local-hub', 'access'):   # a short legend: the theme, not the base
         continue
-    pict = key in GLYPH or key == 'stop' and RAIL   # a way of moving: its icon and its line, no words
+    pict = key in GLYPH or key == 'stop' and RAIL   # a way of moving: its icon, no words
     lab = '' if pict else LAB.get(key, key)
-    wi = 19 if pict else 8 + 1.5 + tw(lab, TXT) + 5
+    wi = (14 if key == 'stop' else 8) if pict else 8 + 1.5 + tw(lab, TXT) + 5
     if x + wi > W - 4 and x > 4:
         x, y = 4, y + TXT + 3
     mid = y - 3.2 + 1.75
     if spec[0] == 'fill':
         sk = f' stroke="{spec[2]}"' if spec[2] else f' stroke="{S["path"]}"'
         st.append(f'<rect x="{m_(x)}" y="{m_(Yb(mid - 1.75))}" width="{m_(8)}" height="{m_(3.5)}" fill="{spec[1]}"{sk} stroke-width="{m_(thin)}"/>')
-    elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon, then a piece of its line
-        da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
-        st.append(icon(key, (x + 2.6) * k, Yb(mid) * k, 2.6 * k) + f'<path d="M{m_(x + 7)},{m_(Yb(mid))}L{m_(x + 15)},{m_(Yb(mid))}" '
-                  f'stroke="{spec[1]}" stroke-width="{f2(max(spec[2], lw("mid")))}"{da} stroke-linecap="round"/>')
+    elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon alone, in its colour
+        st.append(icon(key, (x + 2.6) * k, Yb(mid) * k, 2.6 * k))
     elif pict:   # the main stop of a train: the train's icon beside the stop's symbol
         st.append(icon('train', (x + 2.6) * k, Yb(mid) * k, 2.6 * k, S['ink']) + symbol(spec[1], (x + 10) * k, Yb(mid) * k))
     elif spec[0] == 'line':
