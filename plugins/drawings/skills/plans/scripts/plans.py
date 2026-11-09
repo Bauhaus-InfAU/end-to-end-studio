@@ -480,14 +480,18 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         elif CFG['contour_m']:
             missing.append('terrain (no contour lines)')
         # 3. streets: the streets skill's surface, else lines at their widths
-        paths = [g for p, g in (OPEN or []) if p.get('kind') == 'path']
+        WALK = ('connection', 'promenade', 'bridge', 'boardwalk')   # open-space's pedestrian layer, drawn apart
+        walk = [(p.get('type') or 'promenade', g) for p, g in (OPEN or []) if p.get('kind') == 'path']   # park loops too
+        paths = []
         if STREETS is not None:
             used.append('streets')
             old = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and p.get('existing') and g.geom_type.endswith('Polygon')]
             new = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and not p.get('existing') and g.geom_type.endswith('Polygon')]
             for p, g in inside(STREETS):
                 if p.get('kind') == 'path':
-                    if g.geom_type.endswith('Polygon'):
+                    if p.get('type') == 'park threshold':
+                        fill(g, S.get('public', S['street']), 'park threshold')
+                    elif g.geom_type.endswith('Polygon'):
                         fill(g, S['street'])
                     else:
                         paths.append(g)
@@ -527,6 +531,15 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         for g in paths:
             if g.intersects(fr):
                 line(g, S['path'], 'thin', (1.2, 0.8), 'path')
+        for t, g in walk:                      # new park paths solid; bridges heavy; boardwalks a fine double line
+            if not g.intersects(fr):
+                continue
+            if t == 'bridge':
+                line(g, S['accent'], 'thick', None, 'footbridge')
+            elif t == 'boardwalk':
+                line(g.buffer(1.2, cap_style=2).boundary, S['ink'], 'thin', None, 'boardwalk')
+            else:
+                line(g, S['ink'], 'thin', None, 'park path')
         # 3d. the idea, under the buildings like a highlighter: a line as a broad band, an area as a tint
         j = CFG['idea_join_m']                           # grown and shrunk again: close lines become one band
         idea_ground = unary_union([IDEA_AREA, IDEA_LINE.buffer(j + CFG['idea_band_mm'] * k / 2).buffer(-j)
