@@ -190,9 +190,8 @@ style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
 if S:   # its keys this plan draws with, by name, never merged; its text sizes are `diagram`'s (px), its lines the plans'
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
-    _new = str(S.get('new', '')).lower()   # each mode in a colour of the standard's own, never the new buildings', whatever it holds
-    MODE = {m: next((S[c] for c in [(S.get('modes') or {}).get(m)] + alt if isinstance(S.get(c), str) and S[c].lower() != _new), S['ink'])
-            for m, alt in (('bus', ['accent', 'water', 'ink']), ('bike', ['grove', 'park', 'ink']), ('car', ['ink']), ('foot', ['path', 'ink']))}
+    MODE = {m: next(S[c] for c in [(S.get('modes') or {}).get(m), alt, 'ink'] if isinstance(S.get(c), str))   # the standard's own colours:
+            for m, alt in (('bus', 'accent'), ('bike', 'accent'), ('car', 'path'), ('foot', 'accent'))}   # the theme in the accent, cars grey
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept',
                            'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
     S.update({k: DG[d] * 25.4 / 96 for k, d in (('text', 'label_size'), ('title', 'title_size')) if d in DG})
@@ -716,7 +715,7 @@ if stop_pt is not None:
     X, Y = P(stop_pt.x, stop_pt.y)
 for i, L in enumerate(limits if stop_pt is not None else []):   # rings only around a main stop
     da = f' stroke-dasharray="{f2(2 * k)} {f2(1.5 * k)}"' if i else ''
-    o.append(f'<circle cx="{f2(X)}" cy="{f2(Y)}" r="{f2(L)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"{da}/>')
+    o.append(f'<circle cx="{f2(X)}" cy="{f2(Y)}" r="{f2(L)}" fill="none" stroke="{S["path"]}" stroke-width="{f2(lw("thin"))}"{da}/>')
     legend.setdefault('ring', ('ring',))
     a = math.radians(45)
     rx, ry = X + L * math.cos(a) + 1.5 * k, Y - L * math.sin(a)
@@ -725,8 +724,8 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
     ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
-LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'mid', None), 'bike': (MODE['bike'], 'mid', None),
-        'foot': (MODE['foot'], 'thin', (1.2, 0.8))}
+LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'thin', None), 'bike': (MODE['bike'], 'mid', (2, 1)),   # one colour,
+        'foot': (MODE['foot'], 'thin', (0.1, 0.8))}   # told apart by the line: bus solid, bike dashed, foot dotted, cars thin
 for m in reversed(ORDER):
     col, wkey, dash = LOOK[m]
     for lvl in ('local', 'main'):

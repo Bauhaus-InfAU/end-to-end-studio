@@ -83,6 +83,3 @@ def test_modes_name_the_standards_own_colours(tmp_path):
     s = base(); s["modes"] = {"bus": "#ffcc00"}
     r = check(s, tmp_path)
     assert r.returncode != 0 and "modes.bus" in r.stdout
-    s = base(); s["new"] = s["accent"]; s["modes"] = {"bus": "accent"}   # the bus in the new buildings' red: it would not read
-    r = check(s, tmp_path)
-    assert r.returncode != 0 and "new buildings" in r.stdout

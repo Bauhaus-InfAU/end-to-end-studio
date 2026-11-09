@@ -54,8 +54,6 @@ def problems(s):
         out += [f"diagram.{k}: {v!r} px, needs at least 12" for k, v in s["diagram"].items()
                 if k.endswith("_size") and not (isinstance(v, (int, float)) and v >= 12)]
     out += [f"modes.{m}: {k!r} is not one of the standard's colours" for m, k in (s.get("modes") or {}).items() if k not in COLOURS]
-    out += [f"modes.{m}: {k!r} is the colour of the new buildings; pick another of the standard's colours"
-            for m, k in (s.get("modes") or {}).items() if k in COLOURS and str(s.get(k)).lower() == str(s["new"]).lower()]
     return out
 
 
