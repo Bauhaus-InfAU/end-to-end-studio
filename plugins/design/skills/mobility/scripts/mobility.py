@@ -190,7 +190,9 @@ style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
 if S:   # its keys this plan draws with, by name, never merged; its text sizes are `diagram`'s (px), its lines the plans'
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
-    MODE = {m: S[c] for m, c in (S.get('modes') or {}).items() if isinstance(S.get(c), str)}   # each mode in a colour of the standard's own
+    _new = str(S.get('new', '')).lower()   # each mode in a colour of the standard's own, never the new buildings', whatever it holds
+    MODE = {m: next((S[c] for c in [(S.get('modes') or {}).get(m)] + alt if isinstance(S.get(c), str) and S[c].lower() != _new), S['ink'])
+            for m, alt in (('bus', ['accent', 'water', 'ink']), ('bike', ['grove', 'park', 'ink']), ('car', ['ink']), ('foot', ['path', 'ink']))}
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept',
                            'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
     S.update({k: DG[d] * 25.4 / 96 for k, d in (('text', 'label_size'), ('title', 'title_size')) if d in DG})
@@ -723,8 +725,8 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
     ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
-LOOK = {'bus': (MODE.get('bus', S['ink']), 'mid', None), 'car': (MODE.get('car', S['ink']), 'mid', None),   # no `modes` in the standard: ink, never a colour of its own
-        'bike': (MODE.get('bike', S['ink']), 'mid', None), 'foot': (MODE.get('foot', S['ink']), 'thin', (1.2, 0.8))}
+LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'mid', None), 'bike': (MODE['bike'], 'mid', None),
+        'foot': (MODE['foot'], 'thin', (1.2, 0.8))}
 for m in reversed(ORDER):
     col, wkey, dash = LOOK[m]
     for lvl in ('local', 'main'):
@@ -735,12 +737,12 @@ for m in reversed(ORDER):
             sel_access = [g for p, g in feats if p['kind'] == 'route' and p['mode'] == 'car' and p['level'] == lvl
                           and p.get('access_only') and g.intersects(fr)]
             if sel_access:
-                stroke(unary_union(sel_access), col, lw(wkey, 0.8), (0.6, 0.9), 'car-access')
+                stroke(unary_union(sel_access), col, lw('thin'), (0.6, 0.9), 'car-access')
             sel = sel_through
         if not sel:
             continue
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
-        stroke(unary_union(sel), col, lw(wkey, 1.6 if lvl == 'main' else 0.8), dash, key)   # every main route at one weight
+        stroke(unary_union(sel), col, lw(wkey) if lvl == 'main' else lw('thin'), dash, key)   # main routes the plans' mid, local thin
 o.append('</g>')
 
 

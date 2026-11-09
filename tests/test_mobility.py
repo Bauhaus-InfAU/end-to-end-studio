@@ -75,7 +75,7 @@ def test_mobility_fills_its_frame(massed):
     assert not any(abs(w - 3.2 * 25.4 / 96 * k) < 0.01 for w in widths)   # no line at diagram.heavy: the bus is not heavier
     style = json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))
     bus = style[style["modes"]["bus"]]   # each mode in one of the standard's own colours
-    assert f'stroke="{bus}" stroke-width="{1.6 * style["mid"] * k:.2f}"' in svg   # every main route one weight, the plans' mid
+    assert f'stroke="{bus}" stroke-width="{style["mid"] * k:.2f}"' in svg   # every main route one weight, the plans' mid
     assert f'<circle' in svg and f'fill="{bus}"/><path' in svg   # the bus in the legend as an icon in its colour
     assert "Mobility plan, 1:5,000" not in svg   # on a panel, the panel writes the caption and scale
 
