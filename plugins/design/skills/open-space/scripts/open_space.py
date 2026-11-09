@@ -89,7 +89,7 @@ DEFAULTS = {
     "scale": (3000, "scale of the check plan, 1:n"),
 }
 
-FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "existing": "#d0d0d0", "street": "#f2f2f2",
+FALLBACK_STYLE = {"paper": "#fff", "ink": "#000", "building": "#9a9a9a", "new": "#fff", "existing": "#d0d0d0", "street": "#f2f2f2",
                   "park": "#dcdcdc", "kept": "#b5b5b5", "water": "#7f7f7f", "accent": "#1f6fb2",
                   "lawn": "#ececec", "meadow": "#dcdcdc", "wet-meadow": "#cfd6dc", "grove": "#bdbdbd", "path": "#fff",
                   "font": "Helvetica, Arial, sans-serif", "line": 0.25, "outline": 0.6, "text": 3.2, "title": 4.2,
@@ -959,7 +959,7 @@ def draw(out, site, buildings, old_bld, streets, kept, water, parks, playgrounds
         els.append(f'<circle cx="{pt.x - x0:.1f}" cy="{y1 - pt.y:.1f}" r="{crown / 2:.1f}" fill="{tree_fill}" '
                    f'fill-opacity="0.8" stroke="{s["ink"]}" stroke-width="{lw(s["line"] / 2)}"/>')
     shape_el(unary_union(old_bld).intersection(site.buffer(80)) if old_bld else None, s["existing"], s["ink"], s["line"])
-    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["building"], s["ink"], s["line"])
+    shape_el(buildings.difference(unary_union(old_bld)) if old_bld else buildings, s["new"], s["ink"], s["line"])   # new buildings in the standard's colour for new, as on every plan
     for g, _ in links:
         shape_el(g, "none", s["accent"], s["outline"] * 1.5, extra=f'stroke-dasharray="{lw(2)} {lw(1.2)}"')
     shape_el(keep_free, "none", s["ink"], s["line"], extra=f'stroke-dasharray="{lw(0.6)} {lw(0.6)}"')

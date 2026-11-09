@@ -325,7 +325,7 @@ class Map:
         st, c = self.st, self.compact or {}
         tx = max(st["text"], MIN_TEXT)
         lh, wrap = tx * 1.3, int((bw - 16) / (tx * 0.5))
-        heads = textwrap.wrap(f"{self.title}, 1:{self.scale:,}", int((bw - 8) / (st["title"] * 0.55)))
+        heads = [] if st.get("marks") == "panel" else textwrap.wrap(f"{self.title}, 1:{self.scale:,}", int((bw - 8) / (st["title"] * 0.55)))
         e = [self.text(4, 3 + st["title"] * 1.2 * (i + 1), ln, st["title"], "bold") for i, ln in enumerate(heads)]
         y = 5 + st["title"] * 1.2 * len(heads)
         if c.get("bar"):
@@ -336,25 +336,26 @@ class Map:
                   self.text(26, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip())]
             y += lh + 0.8
         for fill, op, label, *look in c.get("rows", []):
-            word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon or bracket
-            lines = textwrap.wrap(f"{word}: {re.split(r': | [(]', rest)[0]}" if rest else label, wrap) or [""]
+            word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon, comma or bracket
+            lines = textwrap.wrap(f"{word}: {re.split(r': | [(]|, ', rest)[0]}" if rest else label, wrap) or [""]
             e.append(mark(4, y, fill, op, st, *look))
             e += [self.text(12, y + 2.8 + j * lh, ln) for j, ln in enumerate(lines)]
             y += len(lines) * lh + 0.8
-        # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
-        L = nice(30 / self.k)
-        n, by = (4 if f"{L:g}"[0] == "2" else 5), y + 3
-        s = L * self.k / n
-        e.append(f'<path d="{"".join(f"M{4 + i * s:.2f},{by + 1.6 * (i % 2):.2f}h{s:.2f}" for i in range(n))}'
-                 f'{"".join(f"M{4 + i * s:.2f},{by:.2f}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
-        e += [self.text(4, by + 6, "0", anchor="middle"), self.text(4 + L * self.k, by + 6, f"{L:g} m", anchor="middle")]
-        nx = 4 + L * self.k + 12
-        e.append(f'<circle cx="{nx:.2f}" cy="{by + 1:.2f}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
-                 f'<line x1="{nx:.2f}" y1="{by + 1:.2f}" x2="{nx:.2f}" y2="{by - 2:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
-        y = by + 6
-        for ln in textwrap.wrap("Sources: climate.md; base map: the site folder (its SOURCES.md).", int((bw - 8) / (tx * 0.5))):
-            y += lh
-            e.append(self.text(4, y, ln))
+        if st.get("marks") != "panel":   # on a panel, the panel writes the caption and scale bar; sources are in climate.md
+            # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
+            L = nice(30 / self.k)
+            n, by = (4 if f"{L:g}"[0] == "2" else 5), y + 3
+            s = L * self.k / n
+            e.append(f'<path d="{"".join(f"M{4 + i * s:.2f},{by + 1.6 * (i % 2):.2f}h{s:.2f}" for i in range(n))}'
+                     f'{"".join(f"M{4 + i * s:.2f},{by:.2f}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+            e += [self.text(4, by + 6, "0", anchor="middle"), self.text(4 + L * self.k, by + 6, f"{L:g} m", anchor="middle")]
+            nx = 4 + L * self.k + 12
+            e.append(f'<circle cx="{nx:.2f}" cy="{by + 1:.2f}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
+                     f'<line x1="{nx:.2f}" y1="{by + 1:.2f}" x2="{nx:.2f}" y2="{by - 2:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
+            y = by + 6
+            for ln in textwrap.wrap("Sources: climate.md; base map: the site folder (its SOURCES.md).", int((bw - 8) / (tx * 0.5))):
+                y += lh
+                e.append(self.text(4, y, ln))
         bh = y + 2.5
         site = shapely.affinity.affine_transform(self.S.poly, [self.k, 0, 0, -self.k, -self.x0 * self.k, self.y1 * self.k])
         bx, by = min(((x, y_) for y_ in (self.mh - bh, 0) for x in (0, self.mw - bw)),

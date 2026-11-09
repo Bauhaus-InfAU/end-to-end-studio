@@ -190,8 +190,9 @@ style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
 if S:   # its keys this plan draws with, by name, never merged; a thematic plan's weights and text sizes are `diagram`'s (px)
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
+    MODE = {m: S[c] for m, c in (S.get('modes') or {}).items() if isinstance(S.get(c), str)}   # each mode in a colour of the standard's own
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font',
-                           'thin', 'mid', 'thick', 'text', 'title') if k in S}
+                           'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
     S.update({k: DG[d] * 25.4 / 96 for k, d in (('thin', 'line'), ('mid', 'outline'), ('thick', 'heavy'),
                                                 ('text', 'label_size'), ('title', 'title_size')) if d in DG})
     FONT = escape(str(S['font']), {'"': "'"})
@@ -693,8 +694,8 @@ fill(unary_union([g for p, g in CTX if g.intersects(fr) and not site.contains(g.
 kept = [g for p, g in MASS if p.get('kind') == 'building' and p.get('existing') and g.intersects(fr)]
 if kept:
     fill(unary_union(kept), S['existing'], 'existing')
-if NEWB:   # the standard's colour for new, light enough for the routes to read on it, outlined so white ones show
-    fill(unary_union([g for p, g in NEWB if g.intersects(fr)]), S['new'], 'new', S['ink'], extra=' fill-opacity="0.45"')
+if NEWB:   # the standard's colour for new, as it is, outlined so white ones show
+    fill(unary_union([g for p, g in NEWB if g.intersects(fr)]), S['new'], 'new', S['ink'])
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
@@ -712,8 +713,8 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
     ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
-LOOK = {'bus': (S['ink'], 'thick', None), 'car': (S['existing'], 'mid', None), 'bike': (S['accent'], 'mid', None),
-        'foot': (S['ink'], 'thin', (1.2, 0.8))}
+LOOK = {'bus': (MODE.get('bus', S['ink']), 'mid', None), 'car': (MODE.get('car', S['ink']), 'mid', None),   # no `modes` in the standard: ink, never a colour of its own
+        'bike': (MODE.get('bike', S['ink']), 'mid', None), 'foot': (MODE.get('foot', S['ink']), 'thin', (1.2, 0.8))}
 for m in reversed(ORDER):
     col, wkey, dash = LOOK[m]
     for lvl in ('local', 'main'):
@@ -724,12 +725,12 @@ for m in reversed(ORDER):
             sel_access = [g for p, g in feats if p['kind'] == 'route' and p['mode'] == 'car' and p['level'] == lvl
                           and p.get('access_only') and g.intersects(fr)]
             if sel_access:
-                stroke(unary_union(sel_access), col, lw(wkey, 0.6), (0.6, 0.9), 'car-access')
+                stroke(unary_union(sel_access), col, lw(wkey, 0.8), (0.6, 0.9), 'car-access')
             sel = sel_through
         if not sel:
             continue
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
-        stroke(unary_union(sel), col, lw(wkey, 1.0 if lvl == 'main' else 0.6), dash, key)
+        stroke(unary_union(sel), col, lw(wkey, 1.6 if lvl == 'main' else 0.8), dash, key)   # every main route at one weight
 o.append('</g>')
 
 
@@ -895,10 +896,15 @@ for i in range(n + 1):
     st.append(f'<path d="M{m_(x)},{m_(Yb(sy - hstep))}L{m_(x)},{m_(Yb(sy + 1.2))}" stroke="{ink}" stroke-width="{m_(thin)}"/>')
     if i in show:
         text(x, sy + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
+PANEL = FRAME and S.get('marks') == 'panel'
+if PANEL:   # on a panel, the panel writes the caption, scale bar and north arrow; the legend keeps the modes and main places
+    st, row_y = [], 0
+    CREDIT = CREDIT and 'Map data © OpenStreetMap contributors (ODbL).'
 # legend: every line, fill and symbol drawn
 y, x = row_y + 4, 4
 for key, spec in legend.items():
-    if FRAME and key in ('street', 'context', 'existing', 'new'):   # a short legend: the theme, not the base
+    if FRAME and key in ('street', 'context', 'existing', 'new') or PANEL and key in (
+            'site', 'ring', 'car-access', 'bike-local', 'bus-stop', 'local-hub', 'access'):   # a short legend: the theme, not the base
         continue
     lab = LAB.get(key, key)
     wi = 8 + 1.5 + tw(lab, TXT) + 5
@@ -907,8 +913,7 @@ for key, spec in legend.items():
     mid = y - 3.2 + 1.75
     if spec[0] == 'fill':
         sk = f' stroke="{spec[2]}"' if spec[2] else f' stroke="{S["path"]}"'
-        op = ' fill-opacity="0.45"' if key == 'new' else ''
-        st.append(f'<rect x="{m_(x)}" y="{m_(Yb(mid - 1.75))}" width="{m_(8)}" height="{m_(3.5)}" fill="{spec[1]}"{op}{sk} stroke-width="{m_(thin)}"/>')
+        st.append(f'<rect x="{m_(x)}" y="{m_(Yb(mid - 1.75))}" width="{m_(8)}" height="{m_(3.5)}" fill="{spec[1]}"{sk} stroke-width="{m_(thin)}"/>')
     elif spec[0] == 'line':
         da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid))}L{m_(x + 8)},{m_(Yb(mid))}" stroke="{spec[1]}" stroke-width="{f2(spec[2])}"{da} stroke-linecap="round"/>')
