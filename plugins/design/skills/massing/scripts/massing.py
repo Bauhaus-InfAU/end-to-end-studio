@@ -58,6 +58,7 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
             'path_reach_m': 150.0,
+            'integrate_m': 6.0,   # an existing building with a new one this close, or on a centre, is changed: taken into the design
             'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
 CONFIG = {**OPTIONAL, **DEFAULTS, **_values}
@@ -890,10 +891,31 @@ for b in buildings:
     if b.get('note'): pr['note'] = b['note']
     if 'row' in b: pr['row'], pr['col'] = b['row'], b['col']   # the block's place in its land's grid
     add('building', b['geom'], **pr)
+# what the design does with each existing building: changed where it takes it in (a new building beside it, or a
+# centre around it), else kept as it is; analysis's keep.geojson gives the brief's reason to keep it
+KEEP = [(f['properties'], m(f['geometry'])) for f in load_if(RUN + 'analysis/keep.geojson')
+        if f['properties'].get('layer') == 'buildings']
+NEW_U = unary_union([Polygon()] + [b['geom'] for b in buildings])
+
+
+def status_of(g):
+    why = next((p.get('reason') for p, k in KEEP if k.intersects(g)), None)
+    if not NEW_U.is_empty and NEW_U.distance(g) <= CONFIG['integrate_m']:
+        return 'changed', 'a new building within %g m: taken into a new block' % CONFIG['integrate_m'], why
+    on = next((p.get('name') for p, c in centres if c.intersects(g)), None)
+    if on is not None:
+        return 'changed', 'on the centre %s' % on, why
+    return 'kept', 'kept as it is', why
+
+
+STATUS = {}
 for p, g in kept:
     fl = p.get('floors') or 1
+    st, reason, why = status_of(g)
+    STATUS[st] = STATUS.get(st, 0) + 1
+    extra = {'keep_reason': why} if why else {}
     add('building', g, floors=fl, height_m=p.get('height'), use=p.get('use'), type=p.get('building'), existing=True,
-        height_source=p.get('height_source'), osm_id=p.get('id'))
+        status=st, status_reason=reason, height_source=p.get('height_source'), osm_id=p.get('id'), **extra)
 for p, g in street_routes:
     add('street', g.intersection(site.buffer(5)) if g.intersects(site) else g, width=CONFIG['street_w'], name=p['name'], level=p['level'])
 for p, g in path_routes:
@@ -1009,6 +1031,7 @@ stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k 
 stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
+stats['existing'] = {s: STATUS.get(s, 0) for s in ('kept', 'changed', 'removed')}   # nothing is removed: massing builds around every existing building
 stats['assumed_sizes'] = ASSUMED
 stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
 stats['warnings'] = WARN
