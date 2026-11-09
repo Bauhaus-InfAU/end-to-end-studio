@@ -159,8 +159,8 @@ def test_mobility_label_off_bus_line(massed):
     svg = (out / "mobility/mobility_1-3000.svg").read_text(encoding="utf-8")
     k = 3000 / 1000
     lab = label_boxes(svg, [name])[name]
-    hub = [(float(x) + float(w) / 2, float(y) + float(w) / 2) for x, y, w in re.findall(r'<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="[\d.]+" rx', svg)   # a local hub: its square
-           if abs(float(w) - 2 * 2.4 * k) < 0.01]
+    hub = [(float(x), float(y)) for x, y, r in re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="#?\w+" stroke', svg)
+           if abs(float(r) - 2.2 * k) < 0.01]
     assert hub, "no symbol for the point"
     x, y = min(hub, key=lambda h: Point(h).distance(lab))   # its own symbol, not the legend's
     line = LineString([(0, y), (1e6, y)]).buffer(0.5 * k / 2)   # the bus line as drawn: thick, 0.5 mm
@@ -198,8 +198,8 @@ def test_mobility_labels_apart(massed):
     assert set(boxes) == set(names), boxes
     assert not boxes[names[0]].intersects(boxes[names[1]]), boxes
     k = 3000 / 1000
-    rings = [Point(float(x) + float(w) / 2, float(y) + float(w) / 2).buffer(float(w) / 2) for x, y, w in
-             re.findall(r'<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="[\d.]+" rx', svg) if abs(float(w) - 2 * 2.4 * k) < 0.01]
+    rings = [Point(float(x), float(y)).buffer(float(r)) for x, y, r in
+             re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="#?\w+" stroke', svg) if abs(float(r) - 2.2 * k) < 0.01]
     assert len(rings) >= 2, len(rings)
     for b in boxes.values():
         assert not any(b.intersects(r) for r in rings), b
