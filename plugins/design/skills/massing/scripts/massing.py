@@ -9,7 +9,7 @@ phase's neighbourhoods. Writes massing.geojson, areas.csv, stats.json and assump
 """
 import argparse, json, math, sys, csv, os, random
 from shapely.geometry import shape, mapping, Polygon, LineString, Point, box, MultiPolygon
-from shapely.ops import transform, unary_union, nearest_points
+from shapely.ops import transform, unary_union, nearest_points, substring
 from shapely import affinity, prepare
 import pyproj
 
@@ -58,6 +58,8 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
+            'green_link_m': 250.0,
+            'green_link_front_m': 30.0,   # ... and only where most of the link runs this close to new buildings: it fronts them, it is no road through the green   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
             'path_reach_m': 150.0,
             'acoustic_db': 65.0, 'commerce_db': 70.0,   # day, at the loudest facade with the design standing: homes from acoustic_db need better acoustic protection, from commerce_db the building is commerce
             'integrate_m': 6.0,   # an existing building with a new one this close, or on a centre, is changed: taken into the design
@@ -172,7 +174,11 @@ quiet = unary_union([m(f['geometry']) for f in noise if f['properties']['period'
 levels = [(f['properties']['noise_day_db'], m(f['geometry'])) for f in load(ARGS.design_noise)] if ARGS.design_noise else []
 
 allb = [(f['properties'], m(f['geometry'])) for f in load(os.path.join(SITE, 'buildings.geojson'))]
-kept = [(p, g) for p, g in allb if site.contains(g.representative_point())]
+# the structure plan's `existing` features with action demolish free their land; every other building in the site stays
+gone = unary_union([Polygon()] + [m(f['geometry']) for f in SP
+                                  if f['properties']['kind'] == 'existing' and f['properties'].get('action') == 'demolish'])
+kept = [(p, g) for p, g in allb if site.contains(g.representative_point()) and not gone.contains(g.representative_point())]
+demolished = [(p, g) for p, g in allb if site.contains(g.representative_point()) and gone.contains(g.representative_point())]
 
 street_routes = [(p, g) for p, g in routes if p['level'] in ('main', 'local')]
 path_routes = [(p, g) for p, g in routes if p['level'] == 'landscape']
@@ -455,6 +461,96 @@ def first_hit(start, d, reach, targets):
     return best
 
 
+def link_green_ends(sec, ends):
+    """streets that end at the same green edge, next to each other and at most green_link_m apart along it, are
+    joined by a secondary street on that edge, where it clears every building and the water, so the blocks face the
+    green along a street instead of stopping at the grass. Returns the streets, their ends and the links."""
+    reach = CONFIG['green_link_m']
+    if not reach or green_u.is_empty:
+        return sec, ends, []
+    blocked = unary_union([b['geom'] for b in buildings] + [g for _, g in kept] + water)
+    front = unary_union([b['geom'] for b in buildings]).buffer(CONFIG['green_link_front_m'])
+    rings = [r for poly in getattr(green_u, 'geoms', [green_u]) for r in [poly.exterior, *poly.interiors]]
+    on = {}                                  # ring: [(position along it, index in ends)]
+    for k, (kind, p) in enumerate(ends):
+        if kind != 'green edge':
+            continue
+        r = min(range(len(rings)), key=lambda i: rings[i].distance(p))
+        if rings[r].distance(p) <= 8:
+            on.setdefault(r, []).append((rings[r].project(p), k))
+    links, ends = [], list(ends)
+    polys = [poly for poly in getattr(green_u, 'geoms', [green_u]) for _ in [poly.exterior, *poly.interiors]]
+
+    def inside_green(q, r, pa, pb, blocked):
+        """the link moved half a street plus 2 m into its green, with a short street from each end to it; None if
+        the green is too narrow or it still meets a building"""
+        inner = polys[r].buffer(-(CONFIG['sec_street_w'] / 2 + 2))
+        if inner.is_empty:
+            return None
+        line = min([LineString(x.coords) for poly in getattr(inner, 'geoms', [inner])
+                    for x in [poly.exterior, *poly.interiors]], key=lambda x: x.distance(q))
+        a, b = sorted((line.project(pa), line.project(pb)))
+        if not 0 < b - a <= reach * 1.3:
+            return None
+        mid = substring(line, a, b)
+        if mid.length < 1:
+            return None
+        cs = list(mid.coords)
+        if Point(cs[0]).distance(pa) > Point(cs[0]).distance(pb):
+            cs = cs[::-1]
+        out = LineString([(pa.x, pa.y), *cs, (pb.x, pb.y)])
+        return None if out.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked) else out
+
+    for r, pts in on.items():
+        ring, pts = LineString(rings[r].coords), sorted(pts)
+        for (a, ka), (b, kb) in zip(pts, pts[1:]):
+            if not 0 < b - a <= reach:
+                continue
+            q = substring(ring, a, b)
+            if q.length < 1:
+                continue
+            if q.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked):
+                q = inside_green(q, r, ends[ka][1], ends[kb][1], blocked)   # a few metres into the green, past the building
+                if q is None:
+                    continue
+            if q.intersection(front).length < 0.6 * q.length:   # it would run through the green, not along the blocks
+                continue
+            q = smooth(q, blocked)
+            links.append(q); sec.append(q)
+            ends[ka] = ('street', ends[ka][1]); ends[kb] = ('street', ends[kb][1])
+            ends += [('street', Point(q.coords[0])), ('street', Point(q.coords[-1]))]
+    # an end still at the green goes on as a footpath into it, to the nearest path or street within path_reach_m,
+    # so the street turns into a path instead of stopping at the grass
+    starts = unary_union([g.boundary for g in green_paths]) if green_paths else Polygon()
+    net = unary_union([g for g in sec] + [g for _, g in street_routes] + [g for _, g in path_routes] + green_paths)
+    for kind, p in ends:
+        if kind != 'green edge' or (not starts.is_empty and starts.distance(p) < 3):
+            continue
+        rest = net.difference(p.buffer(CONFIG['sec_street_w']))
+        if rest.is_empty:
+            continue
+        q = nearest_points(p, rest)[1]
+        seg = LineString([p, q])
+        if 10 < seg.length <= CONFIG['path_reach_m'] and seg.within(green_u.buffer(3))                 and not seg.buffer(CONFIG['path_w'] / 2).intersects(blocked):
+            green_paths.append(seg)
+    return sec, ends, links
+
+
+def smooth(q, blocked, rounds=3):
+    """a link along a green's outline, with its small kinks taken out and its bends rounded (Chaikin), ends kept;
+    the link as it was where the smooth one would meet a building"""
+    cs = list(q.simplify(4).coords)
+    for _ in range(rounds):
+        if len(cs) < 3:
+            break
+        out = [cs[0]]
+        for (x0, y0), (x1, y1) in zip(cs, cs[1:]):
+            out += [(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1), (0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1)]
+        cs = out + [cs[-1]]
+    r = LineString(cs)
+    return q if r.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked) else r
+
+
 green_paths = []
 
 
@@ -516,6 +612,7 @@ def end_streets(sec):
 
 
 sec_streets, street_ends = end_streets(sec_streets)
+sec_streets, street_ends, green_links = link_green_ends(sec_streets, street_ends)
 
 # ---------- community: school, pool, daycares ----------
 def blocks_by_centre_dist(cands):
@@ -1023,7 +1120,7 @@ with open(OUT + 'areas.csv', 'w', newline='', encoding='utf8') as fh:
     w = csv.writer(fh); w.writerow(['use', 'programme_m2', 'design_m2', 'difference_m2', 'source'])
     for u, a, b_, s in rows: w.writerow([u, a, b_, b_ - a, s])
 
-stats = dict(n_new=len(new), n_kept=len(kept), total_gfa=round(total), far_site=round(total / site.area, 2),
+stats = dict(n_new=len(new), n_kept=len(kept), n_demolished=len(demolished), total_gfa=round(total), far_site=round(total / site.area, 2),
              site_ha=round(site.area / 1e4, 1), new_land_ha=round(sum(g.intersection(site).area for p, g in nbh if p['action'] != 'keep') / 1e4, 1),
              homes=round(homes), H_m2=round(H_m2), C_m2=round(C_m2), f_res=round(f_res, 3), f_com=round(f_com, 3),
              floors={k: sum(1 for b in new if b['floors'] == k) for k in range(1, 10)}, trees=len(trees),
@@ -1042,6 +1139,8 @@ stats['profiles'] = {name: figure_for(name).get('heights', 'flat') for name in C
 stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k in sorted({kind for kind, _ in street_ends})}
 stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
+stats['green_links'] = len(green_links)
+stats['green_links_m'] = round(sum(g.length for g in green_links))
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
 stats['existing'] = {s: STATUS.get(s, 0) for s in ('kept', 'changed', 'removed')}   # nothing is removed: massing builds around every existing building
 stats['assumed_sizes'] = ASSUMED

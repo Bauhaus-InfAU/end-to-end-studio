@@ -4,6 +4,7 @@ every feature before it is written.
     from frame import Frame
     F = Frame(site_dir, climate_dir)        # climate_dir is optional
     F.add('neighbourhood', 'Field', F.lu('farmland'), 'new', 'mapped', 'plots.geojson')
+    F.add('existing', 'Old barns', F.box(10, 10, 60, 40), 'demolish', 'mapped', 'buildings.geojson', reason='...')
     warnings = F.write('<proposal>/structure-plan/structure-plan.geojson')
 
 Coordinates are metres from the south-west corner of the site's bounds, in the UTM zone of the site's centroid, so a
@@ -23,9 +24,10 @@ DEFAULTS = {
     'min_length_m': 1.0,        # line pieces shorter than this are dropped
 }
 
-KINDS = ('neighbourhood', 'centre', 'green', 'route', 'gateway')
-POLYGON_KINDS = ('neighbourhood', 'centre', 'green')
+KINDS = ('neighbourhood', 'centre', 'green', 'route', 'gateway', 'existing')
+POLYGON_KINDS = ('neighbourhood', 'centre', 'green', 'existing')
 ACTIONS = ('keep', 'change', 'new')
+EXISTING_ACTIONS = ('keep', 'demolish')   # an `existing` feature decides on the buildings standing inside it
 BASES = ('documented', 'brief', 'mapped', 'hypothesis')
 LEVELS = {'centre': ('main', 'local'), 'route': ('main', 'local', 'landscape')}
 
@@ -153,8 +155,11 @@ class Frame:
         if not isinstance(name, str) or not name.strip():
             raise SystemExit(f'{kind} {name!r}: a feature needs a name')
         who = f'{kind} {name}'
-        if action not in ACTIONS:
-            raise SystemExit(f"{who}: action '{action}' is not one of {', '.join(ACTIONS)}")
+        allowed = EXISTING_ACTIONS if kind == 'existing' else ACTIONS
+        if action not in allowed:
+            raise SystemExit(f"{who}: action '{action}' is not one of {', '.join(allowed)}")
+        if kind == 'existing' and not str(props.get('reason') or '').strip():
+            raise SystemExit(f'{who}: say why the buildings are kept or demolished, e.g. reason="listed farmhouse"')
         if basis not in BASES:
             raise SystemExit(f"{who}: basis '{basis}' is not one of {', '.join(BASES)}")
         if kind in LEVELS and props.get('level') not in LEVELS[kind]:

@@ -36,6 +36,8 @@ DEFAULTS = {
     "follow_deg": (25, "how far a new street may turn from an existing one and still run its way, degrees"),
     "stub_m": (50, "a street that ends nowhere more than this from its last crossing gets a turning head, m"),
     "turning_head_m": (18, "diameter of a turning head, m"),
+    "threshold_m": (15, "a street that ends where a footpath goes on narrows to the path over this length, as paved ground: a park threshold, not a turning head, m"),
+    "threshold_path_w": (4, "the width a park threshold narrows to, m"),
     "path_link_m": (100, "a street that ends nowhere is joined by a path to the nearest path or street this close, m"),
     "clearance_m": (2, "existing street land this close to a new building, and street this skill adds this close to any building, gives way to it, m"),
     "new_sliver_m": (2.5, "strips of new street narrower than twice this, beside an existing street, are dropped, m"),
@@ -330,14 +332,35 @@ def main():
                                "width_source": "massing" if p.get("width") else "default", "name": p.get("name"),
                                "existing": False, "source": "massing"}))
         # Every street that still ends in nothing gets an end: a square end at the site edge, kept for a later link;
-        # inside, a turning head on a long stub, else a square end; and from each, a path to the nearest path or street.
-        heads = []
+        # where a footpath goes on from it (into a park), a park threshold: the street narrows to the path as paved
+        # ground; else a turning head on a long stub, or a square end; and from each, a path to the nearest path or street.
+        heads, thresholds = [], []
+        foot = unary_union([g for g, _ in paths_n] + [g for g, _ in paths_l])
         for i, end in ends:
             g, p, w = lines_n[i]
             pt = Point(g.coords[end])
             others = unary_union([surf] + [h.buffer(v / 2) for j, (h, _, v) in enumerate(lines_n) if j != i])
+            on = [h for h in getattr(foot, "geoms", [foot]) if not h.is_empty and h.distance(pt) < 3] if not foot.is_empty else []
             if site.exterior.distance(pt) < w or not site.contains(pt):
                 kind = "future link"
+            elif on:
+                kind = "park threshold"
+                used.update(["threshold_m", "threshold_path_w"])
+                before = Point(g.coords[1 if end == 0 else -2])
+                n = pt.distance(before) or 1
+                d = ((pt.x - before.x) / n, (pt.y - before.y) / n)
+                h = on[0]                           # the path's way out of the end gives the taper its direction
+                far = Point(h.coords[-1]) if Point(h.coords[0]).distance(pt) < Point(h.coords[-1]).distance(pt) else Point(h.coords[0])
+                if far.distance(pt) > 1:
+                    e = ((far.x - pt.x) / far.distance(pt), (far.y - pt.y) / far.distance(pt))
+                    d = e if d[0] * e[0] + d[1] * e[1] > 0 else d
+                L, a_, b_ = cfg["threshold_m"], w / 2, cfg["threshold_path_w"] / 2
+                q = (pt.x + d[0] * L, pt.y + d[1] * L)
+                taper = Polygon([(pt.x - d[1] * a_, pt.y + d[0] * a_), (q[0] - d[1] * b_, q[1] + d[0] * b_),
+                                 (q[0] + d[1] * b_, q[1] - d[0] * b_), (pt.x + d[1] * a_, pt.y - d[0] * a_)])
+                taper = taper.difference(barrier)
+                if not taper.is_empty:
+                    thresholds.append(taper)
             else:
                 meets = g.intersection(others.buffer(1))
                 at = g.project(pt)
@@ -371,6 +394,10 @@ def main():
             new_surf = unary_union([q for q in polys(new_surf) if q.area > 1])
         kept = [g for g, p in m if p.get("kind") == "building" and p.get("existing")]
         crossed = sum(1 for g in kept if g.intersection(new_surf).area > 5)
+        for t in thresholds:                         # paved ground, drawn as path surface
+            for q in polys(t):
+                if q.area > 1:
+                    feats.append((q, {"kind": "path", "existing": False, "type": "park threshold", "source": "massing"}))
         for g, p in paths_n:
             paths_l.append((g, {"existing": False, "type": "path", "width": p.get("width")}))
 
@@ -404,7 +431,7 @@ def main():
              "kept_buildings_under_new_streets": crossed,
              "new_street_on_existing_m": round(on_old) if a.massing else 0,
              "street_ends": {k: sum(1 for g, p in feats if p.get("kind") == "street-end" and p["type"] == k)
-                             for k in ("future link", "turning head", "square end")},
+                             for k in ("future link", "park threshold", "turning head", "square end")},
              "main_routes_ending_nowhere": sum(1 for g, p in feats if p.get("kind") == "street-end" and p.get("level") == "main"),
              "widths_by_default": sum(1 for _, p in centre if str(p.get("width_source", "")).startswith("default"))}
     (out / "stats.json").write_text(json.dumps(stats, indent=1), encoding="utf-8")
