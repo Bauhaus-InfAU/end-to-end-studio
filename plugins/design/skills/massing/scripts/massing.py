@@ -57,7 +57,8 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
-            'green_link_m': 250.0,   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
+            'green_link_m': 250.0,
+            'green_link_front_m': 30.0,   # ... and only where most of the link runs this close to new buildings: it fronts them, it is no road through the green   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
             'path_reach_m': 150.0,
             'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
@@ -464,6 +465,7 @@ def link_green_ends(sec, ends):
     if not reach or green_u.is_empty:
         return sec, ends, []
     blocked = unary_union([b['geom'] for b in buildings] + [g for _, g in kept] + water)
+    front = unary_union([b['geom'] for b in buildings]).buffer(CONFIG['green_link_front_m'])
     rings = [r for poly in getattr(green_u, 'geoms', [green_u]) for r in [poly.exterior, *poly.interiors]]
     on = {}                                  # ring: [(position along it, index in ends)]
     for k, (kind, p) in enumerate(ends):
@@ -507,10 +509,42 @@ def link_green_ends(sec, ends):
                 q = inside_green(q, r, ends[ka][1], ends[kb][1], blocked)   # a few metres into the green, past the building
                 if q is None:
                     continue
+            if q.intersection(front).length < 0.6 * q.length:   # it would run through the green, not along the blocks
+                continue
+            q = smooth(q, blocked)
             links.append(q); sec.append(q)
             ends[ka] = ('street', ends[ka][1]); ends[kb] = ('street', ends[kb][1])
             ends += [('street', Point(q.coords[0])), ('street', Point(q.coords[-1]))]
+    # an end still at the green goes on as a footpath into it, to the nearest path or street within path_reach_m,
+    # so the street turns into a path instead of stopping at the grass
+    starts = unary_union([g.boundary for g in green_paths]) if green_paths else Polygon()
+    net = unary_union([g for g in sec] + [g for _, g in street_routes] + [g for _, g in path_routes] + green_paths)
+    for kind, p in ends:
+        if kind != 'green edge' or (not starts.is_empty and starts.distance(p) < 3):
+            continue
+        rest = net.difference(p.buffer(CONFIG['sec_street_w']))
+        if rest.is_empty:
+            continue
+        q = nearest_points(p, rest)[1]
+        seg = LineString([p, q])
+        if 10 < seg.length <= CONFIG['path_reach_m'] and seg.within(green_u.buffer(3))                 and not seg.buffer(CONFIG['path_w'] / 2).intersects(blocked):
+            green_paths.append(seg)
     return sec, ends, links
+
+
+def smooth(q, blocked, rounds=3):
+    """a link along a green's outline, with its small kinks taken out and its bends rounded (Chaikin), ends kept;
+    the link as it was where the smooth one would meet a building"""
+    cs = list(q.simplify(4).coords)
+    for _ in range(rounds):
+        if len(cs) < 3:
+            break
+        out = [cs[0]]
+        for (x0, y0), (x1, y1) in zip(cs, cs[1:]):
+            out += [(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1), (0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1)]
+        cs = out + [cs[-1]]
+    r = LineString(cs)
+    return q if r.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked) else r
 
 
 green_paths = []

@@ -83,3 +83,27 @@ def test_massing_lays_streets_off_kept_buildings(tmp_path):
         area = g.buffer(p["width"] / 2, cap_style="flat")
         assert all(b.intersection(area).area < 1 for b in kept), p.get("name")
     assert any(p.get("name") == "Main road" and p.get("level") == "path" for g, p in feats if p.get("kind") == "street")
+
+
+def test_street_into_a_park_path_ends_as_a_threshold(tmp_path):
+    """A street that ends where a footpath goes on into a park narrows to the path as paved ground: a park threshold,
+    no turning head; the same street without the path keeps its turning head."""
+    x, y = 500000.0, 5430000.0
+    site = box(x, y, x + 400, y + 400)
+    write_fc(tmp_path / "site/site.geojson", [(site, {})])
+    write_fc(tmp_path / "site/streets.geojson", [(LineString([(x - 100, y - 10), (x + 500, y - 10)]),
+                                                 {"highway": "residential"})])
+    end = (x + 200, y + 200)
+    street = (LineString([(end[0], y - 10), end]), {"kind": "street", "width": 10, "level": "secondary"})
+    path = (LineString([end, (end[0], end[1] + 120)]), {"kind": "street", "width": 4, "level": "path"})
+    write_fc(tmp_path / "massing.geojson", [street, path])
+    run(STREETS, "--layers", tmp_path / "site", "--out", tmp_path / "streets", "--massing", tmp_path / "massing.geojson")
+    feats = read_m(tmp_path / "streets/streets.geojson")
+    ends = [p.get("type") for g, p in feats if p.get("kind") == "street-end"]
+    assert ends == ["park threshold"]
+    taper = [g for g, p in feats if p.get("kind") == "path" and p.get("type") == "park threshold"]
+    assert taper and 50 < unary_union(taper).area < 200            # 15 m from 10 m down to 4 m wide: about 105 m2
+    write_fc(tmp_path / "massing2.geojson", [street])
+    run(STREETS, "--layers", tmp_path / "site", "--out", tmp_path / "streets2", "--massing", tmp_path / "massing2.geojson")
+    ends = [p.get("type") for g, p in read_m(tmp_path / "streets2/streets.geojson") if p.get("kind") == "street-end"]
+    assert ends == ["turning head"]
