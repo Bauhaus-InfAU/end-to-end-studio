@@ -51,6 +51,7 @@ def read_config(path, required=()):
 
 # the skill's own numbers and words: (value, meaning)
 DEFAULTS = {
+    'base_opacity': (0.5, 'the site plan under the routes at this strength, so the mobility reads first'),
     'plan_look': ({'tree_crown_m': 6, 'tree_shadow': 0.3, 'tree_tones': [0, 0.18, -0.25], 'shadow_az_deg': 135,
                    'shared_street_w_m': 7, 'gone_rail': ['abandoned', 'razed', 'dismantled']},
                   'the base drawn as the site plan draws it: tree crown (m), its shadow\'s share, tones of grove, light from, shared street width (m), rail not drawn'),
@@ -677,9 +678,10 @@ def stroke(g, colour, w, dash=None, key=None, extra=''):
     o.append(f'<path d="{d(g)}" fill="none" stroke="{colour}" stroke-width="{f2(w)}"{da} stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
 
-# the base, as the site plan draws it, layer by layer, in its colours: the theme goes on top
+# the base, as the site plan draws it, layer by layer, in its colours, paler: the theme goes on top at full strength
+BASE_AT = len(o)
 PL = D['plan_look']
-USED.add('plan_look')
+USED.update(['plan_look', 'base_opacity'])
 mix = lambda a, b, t: '#%02x%02x%02x' % tuple(round(int(a[i:i + 2], 16) + (int(b[i:i + 2], 16) - int(a[i:i + 2], 16)) * t) for i in (1, 3, 5))
 inside = lambda items: [(p, g) for p, g in items if g.intersects(fr)]
 EDGE = mix(S['ink'], S['paper'], 0.5)   # the base's lines, lighter than the routes on top
@@ -787,6 +789,7 @@ for p, g in BLD:
         fill(g, S['existing'], 'existing', EDGE)
     else:
         fill(g, S['new'], 'new', EDGE, sw='mid' if p.get('landmark') else 'thin')
+o[BASE_AT:] = [f'<g opacity="{D["base_opacity"]}">'] + o[BASE_AT:] + ['</g>']
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
