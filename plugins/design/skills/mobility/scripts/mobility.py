@@ -918,7 +918,7 @@ labelled, marks = [], []   # bus stops and garages under the hubs, the main stop
 for p, g in sorted(feats, key=lambda f: (0 if f[0]['kind'] == 'stop' and not f[0].get('main') else   # bus stops under the hubs,
                                          1.5 if f[0].get('function') == 'garage' else   # garages under the hubs,
                                          {'access': 1, 'hub': 2, 'stop': 3}.get(f[0]['kind'], 9))):   # the main stop on top
-    if p['kind'] in ('stop', 'hub', 'access') and g.intersects(fr):
+    if p['kind'] in ('stop', 'hub') and g.intersects(fr):   # the car access shows by its routes, without a marker
         kind = {'stop': 'stop' if p.get('main') else 'bus-stop', 'access': 'access'}.get(p['kind'])
         if p['kind'] == 'hub':
             kind = 'garage' if p.get('function') == 'garage' else ('hub' if p['level'] == 'main' else 'local-hub')
@@ -1060,19 +1060,21 @@ for i in range(n + 1):
     if i in show:
         text(x, sy + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
 PANEL = FRAME and S.get('marks') == 'panel'
-if PANEL:   # on a panel, the panel writes the caption, scale bar and north arrow; the legend keeps the modes and main places
-    st, row_y = [], 0
+BAR = 0   # the room the scale bar takes at the right of the legend's first row, mm
+if PANEL:   # on a panel, the panel writes the caption and north arrow; the legend keeps the modes and main places, the scale
+    st, row_y = [], 0   # bar at the right of its icons
+    BAR = Lmm + tw(nums[-1], TXT) + 8
     CREDIT = CREDIT and 'Map data © OpenStreetMap contributors (ODbL).'
 # legend: every line, fill and symbol drawn
 y, x = row_y + 4, 4
 for key, spec in legend.items():
     if FRAME and key in ('street', 'context', 'existing', 'new') or PANEL and key in (
-            'site', 'ring', 'car-access', 'bike-local', 'bus-stop', 'local-hub', 'access'):   # a short legend: the theme, not the base
+            'site', 'ring', 'car-access', 'bike-local', 'local-hub'):   # a short legend: the theme and its symbols
         continue
     pict = key in GLYPH or key == 'stop' and RAIL   # a way of moving: its icon, no words
     lab = '' if pict else LAB.get(key, key)
     wi = (14 if key == 'stop' else 8) if pict else 8 + 1.5 + tw(lab, TXT) + 5
-    if x + wi > W - 4 and x > 4:
+    if x + wi > W - 4 - (BAR if y == row_y + 4 else 0) and x > 4:
         x, y = 4, y + TXT + 3
     mid = y - 3.2 + 1.75
     if spec[0] == 'fill':
@@ -1092,6 +1094,17 @@ for key, spec in legend.items():
     if lab:
         text(x + 9.5, y, lab)
     x += wi
+if BAR:   # the scale bar, its own: one line stepping up and down, a tick at every step, the ends numbered
+    bx0, by0 = W - 4 - tw(nums[-1], TXT) / 2 - Lmm, row_y + 4 - 3.2 + 1.75
+    pts = []
+    for i in range(n):
+        pts += [(bx0 + i * seg, by0 - (hstep if i % 2 else 0)), (bx0 + (i + 1) * seg, by0 - (hstep if i % 2 else 0))]
+    st.append('<g id="scale-bar"><path d="M' + 'L'.join(f'{m_(x_)},{m_(Yb(y_))}' for x_, y_ in pts) + f'" fill="none" stroke="{ink}" '
+              f'stroke-width="{m_(thin)}"/>' + ''.join(f'<path d="M{m_(bx0 + i * seg)},{m_(Yb(by0 - hstep))}L{m_(bx0 + i * seg)},'
+                                                       f'{m_(Yb(by0 + 1.2))}" stroke="{ink}" stroke-width="{m_(thin)}"/>' for i in range(n + 1)) + '</g>')
+    for i in (0, n):
+        text(bx0 + i * seg, by0 + 1.2 + TXT, nums[i], extra=' text-anchor="middle"')
+    y = max(y, by0 + 1.2 + TXT + 1)
 y += TXT + 3
 for line_ in ([walk_line] if walk_line and not FRAME else []) + ([CREDIT] if CREDIT else []):
     cur = ''
@@ -1110,7 +1123,13 @@ Hs = H_strip * k
 if FRAME:   # in a frame, the legend's strip under the map inside it: the map keeps its scale and centre, its edges give the room
     o = [f'<defs><clipPath id="room"><rect width="{f2(Wm)}" height="{f2(Hm - Hs)}"/></clipPath></defs>',
          f'<g clip-path="url(#room)"><g transform="translate(0,{f2(-Hs / 2)})">'] + o + ['</g></g>']
-    st, Hs = [f'<g transform="translate(0,{f2(-Hs)})">'] + st + ['</g>'], 0
+    st, Hs, strip = [f'<g transform="translate(0,{f2(-Hs)})">'] + st + ['</g>'], 0, Hs / k
+    # the frame it needs for panel-layout's second run: the whole site at this scale with the legend's strip under it
+    need = (max(FRAME[0], math.ceil((site.bounds[2] - site.bounds[0]) / k + 6)),
+            max(FRAME[1], math.ceil((site.bounds[3] - site.bounds[1]) / k + 6 + strip)))
+    open(os.path.join(OUT, f'mobility_1-{scale}.frame.json'), 'w', encoding='utf8').write(json.dumps(
+        {'drawing': f'mobility_1-{scale}.svg', 'scale': f'1:{scale}', 'needs_mm': {'w': need[0], 'h': need[1]},
+         'planned_frame_mm': {'w': FRAME[0], 'h': FRAME[1]}, 'by': 'mobility', 'why': 'the site and the legend under it'}, indent=1) + '\n')
 svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
        f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
        f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath></defs>',
