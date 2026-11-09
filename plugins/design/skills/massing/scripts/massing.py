@@ -57,7 +57,7 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
-            'green_link_m': 150.0,   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
+            'green_link_m': 250.0,   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
             'path_reach_m': 150.0,
             'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
@@ -473,14 +473,40 @@ def link_green_ends(sec, ends):
         if rings[r].distance(p) <= 8:
             on.setdefault(r, []).append((rings[r].project(p), k))
     links, ends = [], list(ends)
+    polys = [poly for poly in getattr(green_u, 'geoms', [green_u]) for _ in [poly.exterior, *poly.interiors]]
+
+    def inside_green(q, r, pa, pb, blocked):
+        """the link moved half a street plus 2 m into its green, with a short street from each end to it; None if
+        the green is too narrow or it still meets a building"""
+        inner = polys[r].buffer(-(CONFIG['sec_street_w'] / 2 + 2))
+        if inner.is_empty:
+            return None
+        line = min([LineString(x.coords) for poly in getattr(inner, 'geoms', [inner])
+                    for x in [poly.exterior, *poly.interiors]], key=lambda x: x.distance(q))
+        a, b = sorted((line.project(pa), line.project(pb)))
+        if not 0 < b - a <= reach * 1.3:
+            return None
+        mid = substring(line, a, b)
+        if mid.length < 1:
+            return None
+        cs = list(mid.coords)
+        if Point(cs[0]).distance(pa) > Point(cs[0]).distance(pb):
+            cs = cs[::-1]
+        out = LineString([(pa.x, pa.y), *cs, (pb.x, pb.y)])
+        return None if out.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked) else out
+
     for r, pts in on.items():
         ring, pts = LineString(rings[r].coords), sorted(pts)
         for (a, ka), (b, kb) in zip(pts, pts[1:]):
             if not 0 < b - a <= reach:
                 continue
             q = substring(ring, a, b)
-            if q.length < 1 or q.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked):
+            if q.length < 1:
                 continue
+            if q.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked):
+                q = inside_green(q, r, ends[ka][1], ends[kb][1], blocked)   # a few metres into the green, past the building
+                if q is None:
+                    continue
             links.append(q); sec.append(q)
             ends[ka] = ('street', ends[ka][1]); ends[kb] = ('street', ends[kb][1])
             ends += [('street', Point(q.coords[0])), ('street', Point(q.coords[-1]))]
