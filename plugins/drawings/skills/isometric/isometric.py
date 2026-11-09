@@ -1,7 +1,7 @@
 """Isometric of an urban design, or of the site as it is when there is no design yet.
 
 python3 isometric.py <site folder> <proposal folder> <scale> <panel width mm> [--style style.json]
-                     [--close 1000] [--close-frame W H] [--centre NAME]
+                     [--close 1000] [--close-frame W H] [--centre NAME] [--frame W H [--fit]]
 
 Reads <site folder>/site.geojson and its layers (buildings, plots, streets, water, rail), and in <proposal folder>
 massing/massing.geojson, open-space/open-space.geojson's trees and structure-plan/structure-plan.geojson's centres if
@@ -10,10 +10,13 @@ isometric_1-<scale>.svg and .png; with a design also its main centre close up at
 --close-frame mm (else the panel's width by 0.6 of it), isometric_centre_1-<close>.svg and .png, with use labels,
 people and roofs; and summary.md.
 --centre: the centre or square to close in on, by its name; else the structure plan's main centre, else the largest square.
+--frame: the district's frame in mm: seen from the side that fills it best, centred on the district, the city filling it.
+--fit: where the brief fixes no scale for it: with --frame, the largest scale, to 500, at which the district and its margin
+fit the frame, never smaller than <scale>.
 --style: the drawing standard's style.json, its keys mapped onto STYLE below.
 Needs shapely and pyproj; the PNG needs a headless Chrome, Chromium or Edge.
 """
-import argparse, json, math, os, random, re, shutil, subprocess, sys
+import argparse, glob, json, math, os, random, re, shutil, subprocess, sys
 from shapely.geometry import shape, Point, Polygon, LineString, box
 from shapely.ops import unary_union, transform
 from shapely.prepared import prep
@@ -28,6 +31,8 @@ ap.add_argument("--style")
 ap.add_argument("--close", type=int, default=1000, help="the close view's scale, 1000 to 1500")
 ap.add_argument("--close-frame", type=float, nargs=2, metavar=("W", "H"), help="the close view's frame in mm")
 ap.add_argument("--centre", help="the centre or square to close in on, by its name")
+ap.add_argument("--frame", type=float, nargs=2, metavar=("W", "H"), help="the district's frame in mm")
+ap.add_argument("--fit", action="store_true", help="with --frame, the largest scale at which the district fits it")
 a = ap.parse_args()
 out_dir = os.path.join(a.proposal, "isometric"); os.makedirs(out_dir, exist_ok=True)
 
@@ -81,7 +86,12 @@ new = [(f["properties"], transform(tr, shape(f["geometry"]))) for f in mass
        if f["properties"].get("kind") == "building" and not f["properties"].get("existing")]
 focus = unary_union([g for _, g in new]) if new else site
 MARGIN = 100 if new else 200
-area = box(*focus.buffer(MARGIN * 3).bounds)
+C30 = math.cos(math.radians(30))
+iso = lambda x, y, z=0.0: ((x - y) * C30, -((x + y) * 0.5 + z))   # 1 unit = 1 m, true along the axes
+top = max([float(p.get("height_m") or 0) for p, _ in new] or [0])
+# with a frame the city fills it: as far as its corners reach on the ground at the planned scale
+reach = (a.frame[0] / C30 + 2 * a.frame[1]) * a.scale / 4000 if a.frame else MARGIN * 3
+area = box(*focus.buffer(reach).bounds)
 
 # the centre to close in on: by name, else the structure plan's main centre, else the largest square
 squares = [(f["properties"], transform(tr, shape(f["geometry"]))) for f in mass
@@ -109,7 +119,13 @@ def status_of(g):
     return next((s for s, k in STATUS if k.contains(g.representative_point())), "kept")   # its own footprint, not a neighbour's it touches
 existing = [({**p, "_status": status_of(g)}, g) for p, g in existing]
 
-# view: the side with the least built volume standing in front of the focus
+def fit_scale(az):
+    """1:this is where the district, its margin and its tallest building just fill --frame, seen from az."""
+    r = affinity.rotate(focus, 225 - az, origin=focus.centroid)
+    xs, ys = zip(*[iso(x, y, z) for p in getattr(r, "geoms", [r]) for x, y in p.exterior.coords for z in (0, top)])
+    return 1000 * max((max(xs) - min(xs) + 2 * MARGIN) / a.frame[0], (max(ys) - min(ys) + 2 * MARGIN) / a.frame[1])
+
+# view: the side that fills the frame best, if there is one; then the least built volume standing in front of the focus
 best = None
 for az in (225, 135, 45, 315):
     vx, vy = math.cos(math.radians(az)), math.sin(math.radians(az))
@@ -117,12 +133,12 @@ for az in (225, 135, 45, 315):
     hid = sum(g.area * float(p.get("height") or 3) for p, g in existing
               if band.contains(g.centroid) and not focus.contains(g.centroid)
               and (g.centroid.x - c0.x) * vx + (g.centroid.y - c0.y) * vy > 0)
-    if best is None or hid < best[1]: best = (az, hid)
+    key = (round(fit_scale(az), -2) if a.frame else 0, hid)
+    if best is None or key < best[1]: best = (az, key)
 AZ = best[0]; ROT = 225 - AZ; O = focus.centroid
+scale = min(a.scale, max(500, round(fit_scale(AZ) / 500) * 500)) if a.frame and a.fit else a.scale
 SIDE = {225: "south-west", 135: "south-east", 45: "north-east", 315: "north-west"}[AZ]
 rot = lambda g: affinity.translate(affinity.rotate(g, ROT, origin=O), -O.x, -O.y)   # turned, about the origin: small numbers draw sharp
-C30 = math.cos(math.radians(30))
-iso = lambda x, y, z=0.0: ((x - y) * C30, -((x + y) * 0.5 + z))   # 1 unit = 1 m, true along the axes
 plan = lambda sx, sy: ((sx / C30 - 2 * sy) / 2, (-2 * sy - sx / C30) / 2)   # a point of the view back onto the ground
 ring_d = lambda cs, z=0.0: "M" + "L".join("%.1f,%.1f" % iso(x, y, z) for x, y in cs) + "Z"
 def poly_d(g, z=0.0):
@@ -133,12 +149,14 @@ def line_d(g, z=0.0):
                    for l in getattr(g, "geoms", [g]) if not l.is_empty and l.geom_type == "LineString")
 
 # the district at its frame's scale, never a smaller one: the panels crop it
-top = max([float(p.get("height_m") or 0) for p, _ in new] or [0])
 pts = [iso(x, y, z) for p in getattr(rot(focus), "geoms", [rot(focus)]) for x, y in p.exterior.coords for z in (0, top)]
 xs, ys = zip(*pts)
 fx0, fy0, fx1, fy1 = min(xs) - MARGIN, min(ys) - MARGIN, max(xs) + MARGIN, max(ys) + MARGIN
+if a.frame:   # its frame, centred on the district, the city filling it
+    fw, fh = a.frame[0] * scale / 1000, a.frame[1] * scale / 1000
+    mx, my = (fx0 + fx1) / 2, (fy0 + fy1) / 2
+    fx0, fx1, fy0, fy1 = mx - fw / 2, mx + fw / 2, my - fh / 2, my + fh / 2
 W, H = fx1 - fx0, fy1 - fy0
-scale = a.scale
 frame = box(fx0, fy0, fx1, fy1)
 def in_frame(g, fr, h=0.0):   # g's footprint, raised by its height h, reaches into the view's frame fr
     q = Point(iso(g.x, g.y)).bounds if g.geom_type == "Point" else Polygon([iso(x, y) for x, y in g.exterior.coords]).bounds
@@ -432,10 +450,13 @@ fs = S["label_mm"] * scale / 1000
 lab = labels_in(items) if LARGE else {}
 crowd = people(Polygon([plan(x, y) for x, y in frame.exterior.coords])) if LARGE else []
 body = ground(fs=fs if LARGE else 0) + paint(sorted(items + crowd, key=lambda i: -i[0]), LARGE, lab, fs) + [fade(fx0, fy0, W, H, min(0.08 * min(W, H), 0.8 * MARGIN))]
-HT = H + 40
+HT = H + (0 if a.frame else 40)   # a frame holds its own north arrow and note
+foot = fy1 - 40 if a.frame else fy1
 note_txt = "* the ground floor's use as the massing allots it, illustrative. People illustrative."
-extra = north(fx0 + 50, fy1 + 20, 14, 1.5) + (label(note_txt, fs, "translate(%.1f,%.1f)" % (fx0 + 80, fy1 + 24), anchor="start") if LARGE else "")
+extra = north(fx0 + 50, foot + 20, 14, 1.5) + (label(note_txt, fs, "translate(%.1f,%.1f)" % (fx0 + 80, foot + 24), anchor="start") if LARGE else "")
 name = "isometric_1-%d" % scale
+for old in glob.glob(os.path.join(out_dir, "isometric_1-*.*")) if a.fit else []:   # its own earlier draft, at another scale
+    if os.path.splitext(os.path.basename(old))[0] != name: os.remove(old)
 mmw, mmh, png_note = render(name, scale, (fx0, fy0, W, H, HT), body, extra)
 
 # the main centre close up, in its frame, at --close
@@ -473,9 +494,11 @@ for p, g in new:
     if r == "gable" and not all(gable(q) for q in getattr(rot(g), "geoms", [rot(g)]) if q.geom_type == "Polygon"): r = "gable drawn flat (not a rectangle)"
     roof_n[r] = roof_n.get(r, 0) + 1
 roofs = ", ".join("%d %s" % (v, k + (" at an assumed %g° pitch" % PITCH if k == "gable" else "")) for k, v in sorted(roof_n.items()))
+frame_note = "the panels crop it" if not a.frame else "its frame, the city filling it" + (
+    "; planned at 1:%d, drawn larger to fill it, so the panels take this scale and file" % a.scale if scale != a.scale else "")
 open(summary, "w", encoding="utf-8").write(
-    "- %s, isometric seen from the %s: the district at 1:%d, %.0f × %.0f mm in print (the panels crop it)%s.\n"
-    % (what, SIDE, scale, mmw, mmh, close_line if new else "") +
+    "- %s, isometric seen from the %s: the district at 1:%d, %.0f × %.0f mm in print (%s)%s.\n"
+    % (what, SIDE, scale, mmw, mmh, frame_note, close_line if new else "") +
     "- %d new buildings%s%s; %d existing buildings, %d of them at default heights from the site data; %d trees%s.\n"
     % (n_new, " with floor lines" if LARGE else "", ", roofs as the massing names them (%s)" % roofs if new else "",
        n_exist, defaults, sum(i[1] == "t" for i in items), close_what if new else "") +
