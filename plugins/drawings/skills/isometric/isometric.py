@@ -40,6 +40,7 @@ STYLE = {"accent": "#d9302b", "new_wall": "#ececec", "new_wall_shade": "#cfcfcf"
          "shadow": "#a8a8a8", "roof_green": "#e1e8d8", "font": "Arial, Helvetica, sans-serif", "label_mm": 3.2}
 TREE_H, TREE_CROWN = 10.0, 6.0   # height and crown diameter of a tree without height_m or crown_m, metres
 PITCH = 30.0                     # assumed pitch of a gable roof, degrees
+FADE_OUTSIDE = 0.75              # how far the city outside the site fades toward the paper, 0 (not) to 1 (gone)
 PEOPLE_M2 = (60.0, 400.0)        # one person per this many m2 of square and of street, illustrative
 mix = lambda c1, c2, t: "#%02x%02x%02x" % tuple(round(int(c1[i:i + 2], 16) * (1 - t) + int(c2[i:i + 2], 16) * t) for i in (1, 3, 5))
 used_standard = False
@@ -208,6 +209,9 @@ def ground(clip=None, fs=0.0):
         for off in (-2.2, -0.8, 0.8, 2.2):
             try: out.append('<path d="%s" fill="none" stroke="%s" stroke-width="0.45"/>' % (line_d(cut(g.parallel_offset(off, "left"))), S["rail"]))
             except Exception: pass
+    if new and FADE_OUTSIDE > 0:   # the ground outside the site fades back under a veil of the paper, as on the site plan
+        out.append('<path d="%s" fill="%s" fill-opacity="%g" stroke="none" fill-rule="evenodd"/>'
+                   % (poly_d(cut(rot(area).difference(rot(site)))), S["ground"], FADE_OUTSIDE))
     if not new:
         out.append('<path d="%s" fill="none" stroke="%s" stroke-width="2.4" stroke-dasharray="10 4"/>' % (poly_d(rot(site)), S["accent"]))
     for p, g in opens if fs else []:   # the squares' own names, from the massing
@@ -294,7 +298,7 @@ def paint(items, large, labels, fs):
         elif st == "changed":   # taken into the design: darker than kept, lighter than new's outline
             wall = top_ = mix(S["existing_fill"], S["existing_line"], 0.6); line = mix(S["existing_line"], S["new_line"], 0.45)
         elif st == "city":      # the city around the site fades back
-            wall, top_, line = S["existing_fill"], S["existing_fill"], mix(S["existing_line"], S["ground"], 0.5)
+            wall, top_, line = S["existing_fill"], S["existing_fill"], mix(S["existing_line"], S["ground"], min(0.9, FADE_OUTSIDE + 0.1))
         else: wall, top_, line = S["existing_fill"], S["existing_fill"], S["existing_line"]
         ring = list(g.exterior.coords)
         if not Polygon(ring).exterior.is_ccw: ring = ring[::-1]
