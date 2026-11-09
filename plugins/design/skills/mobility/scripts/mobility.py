@@ -809,7 +809,7 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
 # the routes, by mode and level: foot under bike under car under bus
 tone = lambda c: mix(c, S['ink'], 0.35) if sum(int(c[i:i + 2], 16) for i in (1, 3, 5)) > 450 else c   # a pale colour darker, to read
 LOOK = {'bus': (tone(MODE['bus']), 'thick', None), 'car': (MODE['car'], 'mid', None), 'bike': (tone(MODE['bike']), 'thick', None),
-        'foot': (tone(MODE['foot']), 'thick', (0.01, 0.9))}   # each in its icon's colour, clear like the winners': foot dotted
+        'foot': (tone(MODE['foot']), 'thick', (0.8, 0.5))}   # each in its icon's colour, clear like the winners': foot dashed
 SIDE = {'bus': 0, 'car': 0, 'bike': 0.6, 'foot': -0.6}   # mm: on a shared street the main routes run side by side, not on top
 
 
@@ -844,9 +844,8 @@ for m in reversed(ORDER):
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
         g_ = beside(unary_union(sel), m) if lvl == 'main' else unary_union(sel)
         w_ = lw(wkey) if lvl == 'main' else lw('mid')   # main routes the standard's thick, local ones its mid: all readable
-        if lvl == 'main':   # a white edge under a main route lifts it off the base
-            o.append(f'<path d="{d(g_)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(w_ + 2 * lw("thin"))}" '
-                     f'stroke-linecap="round" stroke-linejoin="round"/>')
+        o.append(f'<path d="{d(g_)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(w_ + 2 * lw("thin"))}" '   # a white edge
+                 f'stroke-linecap="round" stroke-linejoin="round"/>')   # under every route lifts it off the base
         stroke(g_, col, w_, dash, key)
         if lvl == 'main':   # where a main route leaves the site, it goes on a little with an arrow: it leads somewhere
             o.append(f'<defs><marker id="out-{m}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" '
@@ -866,6 +865,10 @@ for m in reversed(ORDER):
                     (x1, y1), (x2, y2) = P(*b_[:2]), P(*tip)
                     o.append(f'<path d="M{f2(x1)},{f2(y1)}L{f2(x2)},{f2(y2)}" stroke="{col}" stroke-width="{f2(w_)}" '
                              f'stroke-linecap="round" marker-end="url(#out-{m})"/>')
+for p, g in [(p, g) for p, g in (load(os.path.join(SITE, 'rail.geojson')) or []) if g.intersects(fr)]:   # the train: the railway
+    if p.get('railway') not in PL['gone_rail']:                                                         # on top, black, its centre dashed
+        o.append(f'<path d="{d(g)}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thick"))}"/>'
+                 f'<path d="{d(g)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(lw("thin"))}" stroke-dasharray="{f2(2 * k)} {f2(2 * k)}"/>')
 o.append('</g>')
 
 
@@ -891,7 +894,7 @@ def icon(m, x, y, r, col=None):
             + GLYPH[m].replace('"W"', f'"{S["paper"]}"').replace('"C"', f'"{col}"') + '</g>')
 
 
-SYM_R = {'stop': 2.4, 'bus-stop': 1.4, 'hub': 3.2, 'local-hub': 2.2, 'garage': 2.2, 'access': 1.8}   # mm, as drawn below
+SYM_R = {'stop': 2.4, 'bus-stop': 0.9, 'hub': 3.2, 'local-hub': 2.2, 'garage': 2.2, 'access': 1.8}   # mm, as drawn below
 
 
 def symbol(kind, x, y):
@@ -900,7 +903,7 @@ def symbol(kind, x, y):
         return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(2.4 * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
                 f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.2 * k)}" fill="{ink}"/>')
     if kind == 'bus-stop':   # a dot in the bus's colour on its line
-        return f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.4 * k)}" fill="{LOOK["bus"][0]}" stroke="{paper}" stroke-width="{sw}"/>'
+        return f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(SYM_R[kind] * k)}" fill="{LOOK["bus"][0]}" stroke="{paper}" stroke-width="{f2(lw("thin"))}"/>'
     if kind in ('hub', 'local-hub'):   # two rings
         r = SYM_R[kind]
         return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
