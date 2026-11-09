@@ -9,7 +9,7 @@ phase's neighbourhoods. Writes massing.geojson, areas.csv, stats.json and assump
 """
 import argparse, json, math, sys, csv, os, random
 from shapely.geometry import shape, mapping, Polygon, LineString, Point, box, MultiPolygon
-from shapely.ops import transform, unary_union, nearest_points
+from shapely.ops import transform, unary_union, nearest_points, substring
 from shapely import affinity, prepare
 import pyproj
 
@@ -57,6 +57,7 @@ DEFAULTS = {'floor_h': 3.0, 'street_w': 16.0, 'sec_street_w': 10.0, 'path_w': 4.
             'setback_h_factor': 0.0, 'setback_min_m': 0.0,
             'row_gap': 24.0,   # metres between the two rows of a block in the rows and points typologies
             'street_reach_m': 60.0,   # how far a secondary street that ends in nothing is led on to the next street, the green or the site edge
+            'green_link_m': 150.0,   # street ends at the same green edge this close along it are linked by a street on the edge (0: none)
             'path_reach_m': 150.0,
             'community_gfa_m2': 300.0}   # assumed floor area of a community building the brief names without one    # how far a path may carry a street end across the green to the next street
 _values, SOURCE = read_config(ARGS.config, BRIEF)
@@ -168,7 +169,11 @@ loud = unary_union([m(f['geometry']) for f in noise if f['properties']['period']
 quiet = unary_union([m(f['geometry']) for f in noise if f['properties']['period'] == 'day' and f['properties']['db_max'] <= 55])
 
 allb = [(f['properties'], m(f['geometry'])) for f in load(os.path.join(SITE, 'buildings.geojson'))]
-kept = [(p, g) for p, g in allb if site.contains(g.representative_point())]
+# the structure plan's `existing` features with action demolish free their land; every other building in the site stays
+gone = unary_union([Polygon()] + [m(f['geometry']) for f in SP
+                                  if f['properties']['kind'] == 'existing' and f['properties'].get('action') == 'demolish'])
+kept = [(p, g) for p, g in allb if site.contains(g.representative_point()) and not gone.contains(g.representative_point())]
+demolished = [(p, g) for p, g in allb if site.contains(g.representative_point()) and gone.contains(g.representative_point())]
 
 street_routes = [(p, g) for p, g in routes if p['level'] in ('main', 'local')]
 path_routes = [(p, g) for p, g in routes if p['level'] == 'landscape']
@@ -451,6 +456,37 @@ def first_hit(start, d, reach, targets):
     return best
 
 
+def link_green_ends(sec, ends):
+    """streets that end at the same green edge, next to each other and at most green_link_m apart along it, are
+    joined by a secondary street on that edge, where it clears every building and the water, so the blocks face the
+    green along a street instead of stopping at the grass. Returns the streets, their ends and the links."""
+    reach = CONFIG['green_link_m']
+    if not reach or green_u.is_empty:
+        return sec, ends, []
+    blocked = unary_union([b['geom'] for b in buildings] + [g for _, g in kept] + water)
+    rings = [r for poly in getattr(green_u, 'geoms', [green_u]) for r in [poly.exterior, *poly.interiors]]
+    on = {}                                  # ring: [(position along it, index in ends)]
+    for k, (kind, p) in enumerate(ends):
+        if kind != 'green edge':
+            continue
+        r = min(range(len(rings)), key=lambda i: rings[i].distance(p))
+        if rings[r].distance(p) <= 8:
+            on.setdefault(r, []).append((rings[r].project(p), k))
+    links, ends = [], list(ends)
+    for r, pts in on.items():
+        ring, pts = LineString(rings[r].coords), sorted(pts)
+        for (a, ka), (b, kb) in zip(pts, pts[1:]):
+            if not 0 < b - a <= reach:
+                continue
+            q = substring(ring, a, b)
+            if q.length < 1 or q.buffer(CONFIG['sec_street_w'] / 2 - 1).intersects(blocked):
+                continue
+            links.append(q); sec.append(q)
+            ends[ka] = ('street', ends[ka][1]); ends[kb] = ('street', ends[kb][1])
+            ends += [('street', Point(q.coords[0])), ('street', Point(q.coords[-1]))]
+    return sec, ends, links
+
+
 green_paths = []
 
 
@@ -512,6 +548,7 @@ def end_streets(sec):
 
 
 sec_streets, street_ends = end_streets(sec_streets)
+sec_streets, street_ends, green_links = link_green_ends(sec_streets, street_ends)
 
 # ---------- community: school, pool, daycares ----------
 def blocks_by_centre_dist(cands):
@@ -989,7 +1026,7 @@ with open(OUT + 'areas.csv', 'w', newline='', encoding='utf8') as fh:
     w = csv.writer(fh); w.writerow(['use', 'programme_m2', 'design_m2', 'difference_m2', 'source'])
     for u, a, b_, s in rows: w.writerow([u, a, b_, b_ - a, s])
 
-stats = dict(n_new=len(new), n_kept=len(kept), total_gfa=round(total), far_site=round(total / site.area, 2),
+stats = dict(n_new=len(new), n_kept=len(kept), n_demolished=len(demolished), total_gfa=round(total), far_site=round(total / site.area, 2),
              site_ha=round(site.area / 1e4, 1), new_land_ha=round(sum(g.intersection(site).area for p, g in nbh if p['action'] != 'keep') / 1e4, 1),
              homes=round(homes), H_m2=round(H_m2), C_m2=round(C_m2), f_res=round(f_res, 3), f_com=round(f_com, 3),
              floors={k: sum(1 for b in new if b['floors'] == k) for k in range(1, 10)}, trees=len(trees),
@@ -1008,6 +1045,8 @@ stats['profiles'] = {name: figure_for(name).get('heights', 'flat') for name in C
 stats['street_ends'] = {k: sum(1 for kind, _ in street_ends if kind == k) for k in sorted({kind for kind, _ in street_ends})}
 stats['secondary_dead_ends'] = stats['street_ends'].get('dead end', 0)
 stats['green_crossings'] = len(green_paths)
+stats['green_links'] = len(green_links)
+stats['green_links_m'] = round(sum(g.length for g in green_links))
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
 stats['assumed_sizes'] = ASSUMED
 stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
