@@ -1,0 +1,17 @@
+{
+ "status": "PROVISIONAL design proposal (2026-11-09), not a team decision. Any facade instruction from the team overrides it: put it in the proposal's perspective/facades_override.json, or change this file by pull request.",
+ "rule": "One facade system per building, the same on every floor and bay, ground floor included; never mix systems on one building.",
+ "bay_m": 3.0,
+ "default": "horizontal",
+ "by_type": {
+  "L blocks": "ftc", "town houses": "ftc",
+  "rows": "horizontal", "school": "horizontal",
+  "daycare": "louver", "courtyard ensemble": "louver", "garage": "louver"
+ },
+ "systems": {
+  "ftc": {"what": "floor-to-ceiling glazing in every bay, a glass rail on the upper floors", "width_m": 2.4, "sill": 0.02, "head": 0.88, "rail": true},
+  "horizontal": {"what": "one long horizontal window per bay", "width_m": 2.7, "sill": 0.30, "head": 0.80},
+  "louver": {"what": "floor-to-ceiling openings, each behind vertical timber slats", "width_m": 2.4, "sill": 0.02, "head": 0.88, "slats": true, "slat_gap_m": 0.12},
+  "punched": {"what": "building-types' rule: one 1.4 m window per bay", "width_m": 1.4, "sill": 0.30, "head": 0.78}
+ }
+}

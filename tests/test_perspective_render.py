@@ -59,7 +59,7 @@ def fake_client(size, calls):
 
 
 def run(args, code=None, env_extra=None):
-    env = {k: v for k, v in os.environ.items() if k not in render.KEYS}
+    env = {k: v for k, v in os.environ.items() if k not in render.KEYS + render.REPLICATE_KEYS}   # no real key, so no paid call
     env.update({"PYTHONUTF8": "1", **(env_extra or {})})
     cmd = [sys.executable, "-c", code, *map(str, args)] if code else [sys.executable, str(SCRIPT), *map(str, args)]
     return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
