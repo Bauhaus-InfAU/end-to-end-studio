@@ -76,7 +76,6 @@ DEFAULTS = {
     'crop_pad_m': (60.0, 'ground around the new buildings when the plan is cropped, metres'),
     'text_floor_mm': (3.2, 'no text smaller than this on paper (12 px, 9 pt)'),
     'legend_mm': (30.0, 'the least height of the strip under the map, mm'),
-    'legend_w_mm': (70.0, 'in a frame: the width of the legend box in its corner, mm'),
     'png_px_per_mm': (4, 'PNG resolution, pixels per printed mm'),
     'label_gap_mm': (1.2, 'a label sits this far from the edge of its symbol, mm on paper'),
     'leader_mm': ([7, 11, 15], 'how far out a label on a leader line may go when no place beside its symbol is free, mm'),
@@ -619,7 +618,7 @@ def plan_frame():
 FRAME = plan_frame()   # a frame: the map fills it at its scale around its centre, else the site's, the legend inside
 scale = int((FRAME and FRAME[3]) or CFG['scale'])
 k = scale / 1000.0                                     # metres per mm on paper
-USED.update(['site_pad_m', 'panel_w_mm'] if not FRAME else ['legend_w_mm'])
+USED.update(['site_pad_m', 'panel_w_mm'] if not FRAME else [])
 win = site.buffer(float(D['site_pad_m'])).bounds
 NEWB = [(p, g) for p, g in MASS if p.get('kind') == 'building' and not p.get('existing')]
 room = float(D['panel_w_mm']) * k
@@ -683,6 +682,7 @@ PL = D['plan_look']
 USED.add('plan_look')
 mix = lambda a, b, t: '#%02x%02x%02x' % tuple(round(int(a[i:i + 2], 16) + (int(b[i:i + 2], 16) - int(a[i:i + 2], 16)) * t) for i in (1, 3, 5))
 inside = lambda items: [(p, g) for p, g in items if g.intersects(fr)]
+EDGE = mix(S['ink'], S['paper'], 0.5)   # the base's lines, lighter than the routes on top
 OPEN = load(os.path.join(RUN, 'open-space', 'open-space.geojson')) or []
 # 1. the green land around and the water
 for p, g in inside(load(os.path.join(SITE, 'plots.geojson')) or []):
@@ -701,7 +701,7 @@ for kind_ in ('open-space', 'ground-cover', 'retention'):
         if isinstance(c, str) and g.geom_type.endswith('Polygon'):
             fill(g, c)
 for p, g in inside([x for x in OPEN if x[0].get('kind') == 'open-space' and x[0].get('use') == 'playground']):
-    fill(g, 'none', None, S['ink'])
+    fill(g, 'none', None, EDGE)
 # 3. the streets: the existing outlined grey, the new in ink, the paths dashed; the public ground in its tone
 paths = [g for p, g in OPEN if p.get('kind') == 'path']
 if STREETS is not None and any(p.get('kind') == 'street' for p, g in STREETS):
@@ -712,7 +712,7 @@ if STREETS is not None and any(p.get('kind') == 'street' for p, g in STREETS):
                 fill(g, S['street'])
             else:
                 paths.append(g)
-    for ex, col in ((True, S['path']), (False, S['ink'])):
+    for ex, col in ((True, S['path']), (False, EDGE)):
         sel = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and bool(p.get('existing')) == ex and g.geom_type.endswith('Polygon')]
         if sel:
             fill(unary_union(sel).intersection(fr.buffer(10)), S['street'], 'street', col)
@@ -742,7 +742,7 @@ for p, g in inside(load(os.path.join(SITE, 'rail.geojson')) or []):
         for q in getattr(g, 'geoms', [g]):
             for off in (-2.2, -0.8, 0.8, 2.2) if 1.4 / k >= 0.3 else (-2.2, 2.2):   # four lines while they stay apart on paper
                 try:
-                    o.append(f'<path d="{d(q.offset_curve(off))}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"/>')
+                    o.append(f'<path d="{d(q.offset_curve(off))}" fill="none" stroke="{EDGE}" stroke-width="{f2(lw("thin"))}"/>')
                 except Exception:
                     pass
 # 4b. the buildings' cast shadow, one shape, darkening the ground it falls on
@@ -784,9 +784,9 @@ for p, g in inside(CTX):
         fill(g, S['context'], 'context')
 for p, g in BLD:
     if p.get('existing'):
-        fill(g, S['existing'], 'existing', S['ink'])
+        fill(g, S['existing'], 'existing', EDGE)
     else:
-        fill(g, S['new'], 'new', S['ink'], sw='mid' if p.get('landmark') else 'thin')
+        fill(g, S['new'], 'new', EDGE, sw='mid' if p.get('landmark') else 'thin')
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
@@ -804,8 +804,26 @@ for i, L in enumerate(limits if stop_pt is not None else []):   # rings only aro
     ring_boxes.append(box(rx, ry - 0.75 * fs, rx + tw('%g m' % L, fs), ry + 0.25 * fs))
 
 # the routes, by mode and level: foot under bike under car under bus
-LOOK = {'bus': (MODE['bus'], 'mid', None), 'car': (MODE['car'], 'thin', None), 'bike': (MODE['bike'], 'mid', (2, 1)),   # each in its colour,
-        'foot': (MODE['foot'], 'thin', (0.1, 0.8))}   # and its line: bus solid, bike dashed, foot dotted, cars thin
+tone = lambda c: mix(c, S['ink'], 0.35) if sum(int(c[i:i + 2], 16) for i in (1, 3, 5)) > 450 else c   # a pale colour darker, to read
+LOOK = {'bus': (tone(MODE['bus']), 'thick', None), 'car': (MODE['car'], 'mid', None), 'bike': (tone(MODE['bike']), 'thick', None),
+        'foot': (tone(MODE['foot']), 'thick', (0.01, 0.9))}   # each in its icon's colour, clear like the winners': foot dotted
+SIDE = {'bus': 0, 'car': 0, 'bike': 0.6, 'foot': -0.6}   # mm: on a shared street the main routes run side by side, not on top
+
+
+def beside(g, m):
+    """A main route moved to its side of the street, so the modes on one street all show."""
+    if not SIDE[m]:
+        return g
+    out = []
+    for q in lines(merged(g)):
+        try:
+            out.append(q.offset_curve(SIDE[m] * k))
+        except Exception:
+            out.append(q)
+    return unary_union(out) if out else g
+
+
+
 for m in reversed(ORDER):
     col, wkey, dash = LOOK[m]
     for lvl in ('local', 'main'):
@@ -821,7 +839,11 @@ for m in reversed(ORDER):
         if not sel:
             continue
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
-        stroke(unary_union(sel), col, lw(wkey) if lvl == 'main' else lw('thin'), dash, key)   # main routes the plans' mid, local thin
+        g_ = beside(unary_union(sel), m) if lvl == 'main' else unary_union(sel)
+        if lvl == 'main':   # a white edge under a main route lifts it off the base
+            o.append(f'<path d="{d(g_)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(lw(wkey) + 2 * lw("thin"))}" '
+                     f'stroke-linecap="round" stroke-linejoin="round"/>')
+        stroke(g_, col, lw(wkey) if lvl == 'main' else lw('thin'), dash, key)   # main routes the standard's thick, local thin
 o.append('</g>')
 
 
@@ -965,10 +987,10 @@ def north_angle():
     return math.atan2(x - cx, y - cy)
 
 
-W = min(Wm / k, float(D['legend_w_mm'])) if FRAME else Wm / k   # the strip's width; in a frame, its legend box's
+W = Wm / k   # the strip under the map, its full width
 st = []
 m_ = lambda v: f2(v * k)
-Yb = lambda y: y if FRAME else Hm / k + y
+Yb = lambda y: Hm / k + y
 ink, thin = S['ink'], float(S['thin'])
 
 
@@ -1057,12 +1079,10 @@ for line_ in ([walk_line] if walk_line and not FRAME else []) + ([CREDIT] if CRE
 H_strip = y + 2 if FRAME else max(float(D['legend_mm']), y + 2)
 USED.update(['text_floor_mm', 'png_px_per_mm'] + ([] if FRAME else ['legend_mm']))
 Hs = H_strip * k
-if FRAME:   # the legend box goes in the corner where it hides least of the site, the labels and the symbols
-    sd, bw = shapely.affinity.affine_transform(site, [1, 0, 0, -1, -wx0, wy1]), W * k
-    cost = lambda b: b.intersection(sd).area + 10 * sum(b.intersection(t).area for t in taken + marks)
-    bx, by = min(((x_, y_) for y_ in (Hm - Hs, 0) for x_ in (0, Wm - bw)), key=lambda s: cost(box(s[0], s[1], s[0] + bw, s[1] + Hs)))
-    o += [f'<g transform="translate({f2(bx)},{f2(by)})"><rect width="{f2(bw)}" height="{f2(Hs)}" fill="{S["paper"]}"/>'] + st + ['</g>']
-    st, Hs, W = [], 0, Wm / k
+if FRAME:   # in a frame, the legend's strip under the map inside it: the map keeps its scale and centre, its edges give the room
+    o = [f'<defs><clipPath id="room"><rect width="{f2(Wm)}" height="{f2(Hm - Hs)}"/></clipPath></defs>',
+         f'<g clip-path="url(#room)"><g transform="translate(0,{f2(-Hs / 2)})">'] + o + ['</g></g>']
+    st, Hs = [f'<g transform="translate(0,{f2(-Hs)})">'] + st + ['</g>'], 0
 svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.1f}mm" height="{(Hm + Hs) / k:.1f}mm" '
        f'viewBox="0 0 {f2(Wm)} {f2(Hm + Hs)}" font-family="{FONT}">',
        f'<defs><clipPath id="map"><rect width="{f2(Wm)}" height="{f2(Hm)}"/></clipPath></defs>',

@@ -75,13 +75,14 @@ def test_mobility_fills_its_frame(massed):
     assert not any(abs(w - 3.2 * 25.4 / 96 * k) < 0.01 for w in widths)   # no line at diagram.heavy: the bus is not heavier
     style = json.loads((out / "drawing-graphics/style.json").read_text(encoding="utf-8"))
     bus = style[style["modes"]["bus"]]   # each mode in one of the standard's own colours
-    assert f'stroke="{bus}" stroke-width="{style["mid"] * k:.2f}"' in svg   # every main route one weight, the plans' mid
+    assert f'stroke="{bus}" stroke-width="{style["thick"] * k:.2f}"' in svg   # every main route clear, the standard's thick
     assert f'fill="{bus}"/><g transform' in svg and ">Bus<" not in svg   # the bus in the legend: its icon in its colour, no word
     assert "Mobility plan, 1:5,000" not in svg   # on a panel, the panel writes the caption and scale
-    # a small site plan with the mobility on top: each new building its own shape in the standard's `new`, no line over `mid`
-    assert svg.count(f'fill="{style["new"]}" stroke="{style["ink"]}"') >= 2
-    lines = re.findall(r'<(?:path|circle|rect|g) [^>]*stroke-width="([\d.]+)"', svg)   # not the white halo behind a label
-    assert max(float(w) for w in lines) <= style["mid"] * k + 0.01
+    # a small site plan with the mobility on top: each new building its own shape in the standard's `new`
+    assert svg.count(f'fill="{style["new"]}" stroke=') >= 2
+    lines = [w for s_, w in re.findall(r'<(?:path|circle|rect|g) [^>]*stroke="([^"]+)" stroke-width="([\d.]+)"', svg)
+             if s_.lower() != style["paper"].lower()]   # not the white edges that keep labels and routes clear
+    assert max(float(w) for w in lines) <= style["thick"] * k + 0.01   # no line over the standard's thick
 
 
 def test_mobility_without_hub_runs(massed):
