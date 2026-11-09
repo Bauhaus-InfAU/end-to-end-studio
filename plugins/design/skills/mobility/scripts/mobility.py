@@ -51,7 +51,7 @@ def read_config(path, required=()):
 
 # the skill's own numbers and words: (value, meaning)
 DEFAULTS = {
-    'base_opacity': (0.5, 'the site plan under the routes at this strength, so the mobility reads first'),
+    'base_opacity': (0.7, 'the site plan under the routes at this strength, so the mobility reads first'),
     'plan_look': ({'tree_crown_m': 6, 'tree_shadow': 0.3, 'tree_tones': [0, 0.18, -0.25], 'shadow_az_deg': 135,
                    'shared_street_w_m': 7, 'gone_rail': ['abandoned', 'razed', 'dismantled']},
                   'the base drawn as the site plan draws it: tree crown (m), its shadow\'s share, tones of grove, light from, shared street width (m), rail not drawn'),
@@ -843,10 +843,28 @@ for m in reversed(ORDER):
             continue
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
         g_ = beside(unary_union(sel), m) if lvl == 'main' else unary_union(sel)
+        w_ = lw(wkey) if lvl == 'main' else lw('mid')   # main routes the standard's thick, local ones its mid: all readable
         if lvl == 'main':   # a white edge under a main route lifts it off the base
-            o.append(f'<path d="{d(g_)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(lw(wkey) + 2 * lw("thin"))}" '
+            o.append(f'<path d="{d(g_)}" fill="none" stroke="{S["paper"]}" stroke-width="{f2(w_ + 2 * lw("thin"))}" '
                      f'stroke-linecap="round" stroke-linejoin="round"/>')
-        stroke(g_, col, lw(wkey) if lvl == 'main' else lw('thin'), dash, key)   # main routes the standard's thick, local thin
+        stroke(g_, col, w_, dash, key)
+        if lvl == 'main':   # where a main route leaves the site, it goes on a little with an arrow: it leads somewhere
+            o.append(f'<defs><marker id="out-{m}" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="4" markerHeight="4" '
+                     f'orient="auto"><path d="M0,0L10,5L0,10z" fill="{col}"/></marker></defs>')
+            edge = site.exterior
+            for q in lines(merged(g_)):
+                for a_, b_ in ((q.coords[1], q.coords[0]), (q.coords[-2], q.coords[-1])):
+                    end = Point(P(*b_[:2]))
+                    if edge.distance(Point(b_[:2])) > 40:
+                        continue
+                    dx_, dy_ = b_[0] - a_[0], b_[1] - a_[1]
+                    n_ = math.hypot(dx_, dy_) or 1
+                    tip = (b_[0] + dx_ / n_ * 6 * k, b_[1] + dy_ / n_ * 6 * k)
+                    if site.contains(Point(tip)):
+                        continue
+                    (x1, y1), (x2, y2) = P(*b_[:2]), P(*tip)
+                    o.append(f'<path d="M{f2(x1)},{f2(y1)}L{f2(x2)},{f2(y2)}" stroke="{col}" stroke-width="{f2(w_)}" '
+                             f'marker-end="url(#out-{m})"/>')
 o.append('</g>')
 
 
@@ -872,27 +890,30 @@ def icon(m, x, y, r, col=None):
             + GLYPH[m].replace('"W"', f'"{S["paper"]}"').replace('"C"', f'"{col}"') + '</g>')
 
 
+SYM_R = {'stop': 2.4, 'bus-stop': 1.4, 'hub': 3.0, 'local-hub': 2.4, 'garage': 2.2, 'access': 1.8}   # mm, as drawn above
+
+
 def symbol(kind, x, y):
     ink, paper, sw = S['ink'], S['paper'], f2(lw('mid'))
     if kind == 'stop':
         return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(2.4 * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
                 f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.2 * k)}" fill="{ink}"/>')
-    if kind == 'bus-stop':
-        return f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.4 * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
-    if kind in ('hub', 'local-hub'):
-        r = 3.2 if kind == 'hub' else 2.2
-        return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r * k)}" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
-                f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r * 0.55 * k)}" fill="none" stroke="{ink}" stroke-width="{sw}"/>')
-    if kind == 'garage':
-        r = 1.8 * k
-        return f'<rect x="{f2(x - r)}" y="{f2(y - r)}" width="{f2(2 * r)}" height="{f2(2 * r)}" fill="{S["existing"]}" stroke="{ink}" stroke-width="{sw}"/>'
+    if kind == 'bus-stop':   # a dot in the bus's colour on its line
+        return f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(1.4 * k)}" fill="{LOOK["bus"][0]}" stroke="{paper}" stroke-width="{sw}"/>'
+    if kind in ('hub', 'local-hub', 'garage'):   # a square with its letter: M the mobility hub, P a garage
+        r = SYM_R[kind] * k
+        bg, fg, ch = (ink, paper, 'M') if kind != 'garage' else (S['existing'], ink, 'P')
+        return (f'<rect x="{f2(x - r)}" y="{f2(y - r)}" width="{f2(2 * r)}" height="{f2(2 * r)}" rx="{f2(0.5 * k)}" fill="{bg}" '
+                f'stroke="{paper if kind != "garage" else ink}" stroke-width="{sw}"/><text x="{f2(x)}" y="{f2(y + 0.36 * TXT * k)}" '
+                f'font-size="{f2(TXT * k)}" font-weight="bold" fill="{fg}" text-anchor="middle">{ch}</text>')
     r = 1.8 * k
     return f'<path d="M{f2(x)},{f2(y - r)}L{f2(x + r)},{f2(y)}L{f2(x)},{f2(y + r)}L{f2(x - r)},{f2(y)}Z" fill="{paper}" stroke="{ink}" stroke-width="{sw}"/>'
 
 
-SYM_R = {'stop': 2.4, 'bus-stop': 1.4, 'hub': 3.2, 'local-hub': 2.2, 'garage': 1.8, 'access': 1.8}   # mm, as drawn above
-labelled, marks = [], []   # hubs first, the stops on top; one label for a stop and hub at the same place
-for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['kind']) if f[0]['kind'] in ('hub', 'access', 'stop') else 9):
+labelled, marks = [], []   # bus stops and garages under the hubs, the main stop on top; one label a place
+for p, g in sorted(feats, key=lambda f: (0 if f[0]['kind'] == 'stop' and not f[0].get('main') else   # bus stops under the hubs,
+                                         1.5 if f[0].get('function') == 'garage' else   # garages under the hubs,
+                                         {'access': 1, 'hub': 2, 'stop': 3}.get(f[0]['kind'], 9))):   # the main stop on top
     if p['kind'] in ('stop', 'hub', 'access') and g.intersects(fr):
         kind = {'stop': 'stop' if p.get('main') else 'bus-stop', 'access': 'access'}.get(p['kind'])
         if p['kind'] == 'hub':
@@ -903,7 +924,7 @@ for p, g in sorted(feats, key=lambda f: ('hub', 'access', 'stop').index(f[0]['ki
         r_ = (SYM_R[kind] + float(S['mid']) / 2) * k
         marks.append(box(x - r_, y - r_, x + r_, y + r_))
         if kind in ('stop', 'hub', 'local-hub') and not any(t == p['name'] and q.distance(g) < 10 * k for t, q, *_ in labelled):
-            labelled.append((p['name'], g, x, y, r_, kind))
+            labelled.append((p['name'] + (', ' + LAB.get('hub', 'mobility hub').lower() if kind == 'hub' else ''), g, x, y, r_, kind))
 
 
 def label_spots(s, x, y, r_):
