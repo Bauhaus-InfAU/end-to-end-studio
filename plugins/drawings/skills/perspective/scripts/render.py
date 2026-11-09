@@ -56,6 +56,10 @@ KEEP_GEOMETRY = (
     "over IMAGE 1 line for line. Only give the surfaces their materials, light, planting, sky and people.")
 DEPTH_NOTE = ("IMAGE 2 is the depth map of the same view: lighter is nearer, black is the sky. Use it only to tell "
               "near from far; do not draw it.")
+GROUND_NOTE = ("GROUND: keep every ground colour of IMAGE 1 within its edges. The pale pink ground is the project's public "
+               "space (squares, shared streets, park thresholds): keep it that pale pink, as paving with fine joints, never "
+               "grey, green or red. The lawns and parks are never a flat green: paint them as grass, with visible blades, "
+               "mowing stripes and small variations of tone, as the short strokes in IMAGE 1 show.")
 CLOSING = "No text, no labels, no frame, no watermark in the image."
 
 
@@ -165,7 +169,7 @@ def build_prompt(view, title, idea, look, send_depth=True, style=None, reference
     parts = [KEEP_GEOMETRY, DEPTH_NOTE if send_depth else "",
              reference_note(first, first + references - 1) if references else "",
              style or RENDER_STYLE,
-             " ".join(tell), f"The look: {look}", CLOSING]
+             " ".join(tell), f"The look: {look}", GROUND_NOTE, CLOSING]
     return "\n\n".join(p for p in parts if p)
 
 

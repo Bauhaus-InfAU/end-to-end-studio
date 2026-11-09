@@ -14,6 +14,7 @@ import zlib
 from pathlib import Path
 
 import numpy as np
+import shapely
 from shapely import STRtree, box
 from shapely.geometry.polygon import orient
 from shapely.ops import triangulate
@@ -347,6 +348,41 @@ def from_standard(scene):
     return tones
 
 
+def grass(scene, cam, buf, style, rnd, tree, step=7, blade=0.12):
+    """Short grass blades on the lawns and parks the view shows, each at its own depth so nearer things still
+    cover it; a drawing convention for a planted surface, not data. Each sample is traced back to the ground and
+    takes the tone painted on top there (the flats in their drawing order), so no blade lands on a street or square."""
+    lawn, dark = style.get("green", "#c9dcbc"), style.get("forest", "#8fb27f")
+    ground = (CLASSES["ground"], CLASSES["street"], CLASSES["green"])
+    us, vs, zs = [], [], []
+    for v in range(int(cam.cy) + 2, H, step):
+        for u in range(0, W, step):
+            uu, vv = min(W - 1, u + rnd.randrange(step)), min(H - 1, v + rnd.randrange(step))
+            if buf.ids[vv, uu] in ground and buf.depth[vv, uu] > 0:
+                us.append(uu); vs.append(vv); zs.append(1 / buf.depth[vv, uu])
+    if not us or tree is None:
+        return []
+    us, vs, zs = np.array(us, float), np.array(vs, float), np.array(zs)
+    c0 = (us + .5 - cam.cx) * zs / cam.f
+    wx, wy = cam.ex + c0 * cam.fy + zs * cam.fx, cam.ey - c0 * cam.fx + zs * cam.fy
+    top = np.full(len(us), -1)
+    pairs = tree.query(shapely.points(wx, wy), predicate="intersects")
+    for i, j in zip(*pairs):
+        top[i] = max(top[i], j)
+    out = []
+    for k in np.where(top >= 0)[0]:
+        if scene.flats[top[k]][2] not in ("green", "park", "garden"):
+            continue
+        h = min(7.0, cam.f * blade / zs[k])
+        if h < 1.3:
+            continue
+        col = dark if rnd.random() < 0.6 else lawn
+        lean = (rnd.random() - 0.5) * h * 0.6
+        out.append((zs[k] - 0.01, f'<line x1="{us[k]:.1f}" y1="{vs[k]:.1f}" x2="{us[k] + lean:.1f}" y2="{vs[k] - h:.1f}" stroke="{col}" '
+                                  f'stroke-width="{max(0.5, min(1.4, h / 5)):.2f}" stroke-opacity="0.75" stroke-linecap="round"/>'))
+    return out
+
+
 def draw_view(scene, view, out, stem, style):
     """Writes <stem>_base.svg and .png, <stem>_depth.png and <stem>_ids.png. Returns what the view can't vouch for."""
     style = {**STYLE, **from_standard(scene), **style}
@@ -378,6 +414,7 @@ def draw_view(scene, view, out, stem, style):
         s = elevation_tree(base, mid, r, max(.6, cam.f * .3 / c0[2]), style, random.Random(f"{x:.0f},{y:.0f}"))
         items.append((math.hypot(x - cam.ex, y - cam.ey), s))
         buf.disc(mid[0], mid[1], r, 1 / c0[2], CLASSES["tree"])
+    items += grass(scene, cam, buf, style, random.Random(stem), tree)
     items.sort(key=lambda i: -i[0])
     sky = f'<rect width="{W}" height="{H}" fill="{style["sky"]}"/>'
     land = f'<rect y="{cam.cy:.1f}" width="{W}" height="{H - cam.cy:.1f}" fill="{style["ground"]}"/>'

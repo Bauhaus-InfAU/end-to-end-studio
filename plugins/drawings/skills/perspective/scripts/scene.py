@@ -32,6 +32,7 @@ ASSUMED = {
     "lane_width": 3.25,
     "rail_width": 4,
     "new_street_width": 12,
+    "shared_street_width": 7,   # m of the public tone along mobility's access-only routes, as the plans draw them
     "tree_height": 12,
     "tree_crown_radius": 3.5,
 }
@@ -381,7 +382,7 @@ class Scene:
             new_parts.append(area)
             self.flats.append((70, area, "street"))
             self.public_parts.append((area, "street"))
-        tones = {"park": ("park", 40), "garden": ("garden", 41), "square": ("square", 60), "water": ("water", 50)}
+        tones = {"park": ("park", 40), "garden": ("garden", 41), "square": ("square", 75), "water": ("water", 50)}   # squares over streets, as on the plans
         for f in self.by_kind.get("open-space", []):
             g, p = self.geom(f, "massing open spaces"), f["properties"]
             if g is None:
@@ -394,6 +395,22 @@ class Scene:
             self.open_spaces.append((g, use))
             if use in ("park", "square"):
                 self.public_parts.append((g, use))
+        # the rest of the public ground the plans draw in the public tone: park thresholds and shared (access-only) streets
+        for p, g in self.surface or []:
+            if p.get("kind") == "path" and p.get("type") == "park threshold":
+                self.flats.append((75, g, "square"))
+        mob = self.proposal / "mobility" / "mobility.geojson"
+        if mob.exists():
+            shared = []
+            for f in json.loads(mob.read_text(encoding="utf-8")).get("features") or []:
+                p = f.get("properties") or {}
+                if p.get("kind") == "route" and p.get("access_only"):
+                    g = self.geom(f, "mobility/mobility.geojson")
+                    if g is not None:
+                        shared.append(g.buffer(self.assumed["shared_street_width"] / 2, cap_style="flat"))
+            if shared:
+                self.flats.append((75, unary_union(shared), "square"))
+                self.used.append("mobility/mobility.geojson")
         osp = self.proposal / "open-space" / "open-space.geojson"   # the street trees are the massing's, the rest open-space's
         planted = [f for f in (json.loads(osp.read_text(encoding="utf-8")).get("features") or [] if osp.exists() else [])
                    if (f.get("properties") or {}).get("kind") == "tree"]

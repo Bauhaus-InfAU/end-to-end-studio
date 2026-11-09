@@ -7,7 +7,7 @@ facades.json, a PROVISIONAL design proposal, not a team decision. A proposal's p
 it key by key: write the team's facade instructions there. Every system is the same on every floor and bay of a
 building, ground floor included; systems never mix on one building. Each system is an opening of a given width,
 sill and head per 3 m bay, with an optional glass rail on the upper floors.
-Keeps the plain view as <stem>_plain.svg/png the first time, so a rerun starts from it; writes <stem>_base.svg/png
+Keeps the plain view as <stem>_plain.svg/png (again whenever perspective.py redrew it), so a rerun starts from it; writes <stem>_base.svg/png
 with the facades, and perspective/facades_drawn.json with what was drawn and where the systems came from.
 Never changes footprints, heights, floors or the camera. Entrances come from ground-floor/*.geojson when there is one.
 """
@@ -82,7 +82,7 @@ def main(proposal, site=None):
         files = view.get("files", {})
         svg, png = out / files.get("base_svg", f"{stem}_base.svg"), out / files.get("base_png", f"{stem}_base.png")
         plain_svg, plain_png = out / f"{stem}_plain.svg", out / f"{stem}_plain.png"
-        if not plain_svg.exists():
+        if not plain_svg.exists() or '<g id="facades">' not in svg.read_text(encoding="utf-8"):   # a fresh or redrawn view
             shutil.copy(svg, plain_svg)
             shutil.copy(png, plain_png)
         depth = np.asarray(__import__("PIL.Image", fromlist=["Image"]).open(out / files.get("depth_png", f"{stem}_depth.png")).convert("L")).astype(float) / 255
