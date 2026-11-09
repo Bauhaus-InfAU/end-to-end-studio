@@ -100,7 +100,8 @@ DEFAULTS = {
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
     'png_px_per_mm': 4,         # PNG resolution, pixels per printed mm
 }
-LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Existing buildings',
+LABELS = {'new': 'New buildings', 'existing': 'Existing, kept', 'changed': 'Existing, taken into the design',
+          'removed': 'Existing, removed', 'context': 'City around the site',
           'buildings': 'Buildings', 'street': 'Streets and squares', 'path': 'Paths', 'green': 'Fields and woods',
           'park': 'Parks', 'kept': 'Kept green', 'lawn': 'Lawn, gardens', 'meadow': 'Meadow',
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
@@ -635,12 +636,19 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     o.append(f'<g fill="{c}" fill-opacity="0.9" stroke="{dark}" stroke-width="{f2(lw("thin"))}">' + ''.join(
                         f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for (x, y, r), tn in zip(trees, tone) if tn == i) + '</g>')
             legend.setdefault('tree', ('dot', S['grove']))
-        # 5. existing buildings: around the site pale, kept ones in it with an outline
+        # 5. existing buildings: the city around the site fades back; in it, what the design does with each
+        #    (massing's status): kept with an outline, changed darker, removed only its dashed outline
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
-            fill(g, S['context'], 'context')
+            fill(g, mix(S['context'], S['paper'], 0.5), 'context')
         for p, g in inside(KEPT):
-            fill(g, S['existing'], 'existing', S['ink'], 'thin')
+            st = p.get('status', 'kept')
+            if st == 'removed':
+                line(g.boundary, S['ink'], 'thin', (1.0, 0.7), 'removed')
+            elif st == 'changed':
+                fill(g, mix(S['existing'], S['ink'], 0.35), 'changed', S['ink'], 'thin')
+            else:
+                fill(g, S['existing'], 'existing', S['ink'], 'thin')
         # 6. new buildings; in a detail area at cut_scale_max and larger, cut at the ground floor
         cut = kind == 'detail' and scale <= CFG['cut_scale_max']
         door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []

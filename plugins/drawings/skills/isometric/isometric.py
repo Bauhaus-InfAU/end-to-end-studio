@@ -101,6 +101,13 @@ existing = list(layer("buildings"))
 if new:
     newu = unary_union([g for _, g in new]).buffer(0)
     existing = [(p, g) for p, g in existing if not g.buffer(0).intersects(newu)]
+# what the design does with each existing building (massing's status: kept, changed, removed); outside the site: city
+STATUS = [(f["properties"].get("status") or "kept", transform(tr, shape(f["geometry"]))) for f in mass
+          if f["properties"].get("kind") == "building" and f["properties"].get("existing")]
+def status_of(g):
+    if not site.contains(g.representative_point()): return "city"
+    return next((s for s, k in STATUS if k.intersects(g)), "kept")
+existing = [({**p, "_status": status_of(g)}, g) for p, g in existing]
 
 # view: the side with the least built volume standing in front of the focus
 best = None
@@ -278,7 +285,16 @@ def paint(items, large, labels, fs):
             out.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.2f" stroke="%s" stroke-width="0.55" stroke-linecap="round"/>'
                        '<circle cx="%.1f" cy="%.2f" r="0.27" fill="%s"/>' % (bx, by, tx, ty, S["text"], hx, hy, S["text"]))
             continue
+        st = (p or {}).get("_status", "kept")
         if k == "n": wall, top_, line = S["new_wall"], S["new_roof"], S["new_line"]
+        elif st == "removed":   # only its footprint, dashed
+            out.append('<path d="%s" fill="none" stroke="%s" stroke-width="0.5" stroke-dasharray="2 1.5"/>'
+                       % (ring_d(list(g.exterior.coords)), S["existing_line"]))
+            continue
+        elif st == "changed":   # taken into the design: darker than kept, lighter than new's outline
+            wall = top_ = mix(S["existing_fill"], S["existing_line"], 0.6); line = mix(S["existing_line"], S["new_line"], 0.45)
+        elif st == "city":      # the city around the site fades back
+            wall, top_, line = S["existing_fill"], S["existing_fill"], mix(S["existing_line"], S["ground"], 0.5)
         else: wall, top_, line = S["existing_fill"], S["existing_fill"], S["existing_line"]
         ring = list(g.exterior.coords)
         if not Polygon(ring).exterior.is_ccw: ring = ring[::-1]
