@@ -20,7 +20,7 @@ Its frame in the panels' plan (panel-layout/layout-plan.json, else layout.json; 
 gives its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills it, a short legend inside.
 """
 import numpy as np
-import argparse, json, math, os, re, subprocess, sys
+import argparse, json, math, os, random, re, subprocess, sys
 from xml.sax.saxutils import escape
 import networkx as nx
 import pyproj
@@ -51,6 +51,9 @@ def read_config(path, required=()):
 
 # the skill's own numbers and words: (value, meaning)
 DEFAULTS = {
+    'plan_look': ({'tree_crown_m': 6, 'tree_shadow': 0.3, 'tree_tones': [0, 0.18, -0.25], 'shadow_az_deg': 135,
+                   'shared_street_w_m': 7, 'gone_rail': ['abandoned', 'razed', 'dismantled']},
+                  'the base drawn as the site plan draws it: tree crown (m), its shadow\'s share, tones of grove, light from, shared street width (m), rail not drawn'),
     'mode_words': ({'car': ['car', 'cars', 'lorry', 'lorries'], 'bus': ['bus', 'buses'],
                     'bike': ['cycle', 'cycles', 'cycling', 'cyclist', 'cyclists', 'bike', 'bikes', 'bicycle', 'bicycles'],
                     'foot': ['foot', 'walk', 'walking', 'walkers', 'pedestrian', 'pedestrians']},
@@ -193,6 +196,7 @@ if S:   # its keys this plan draws with, by name, never merged; its text sizes a
     MODE = {m: next(S[c] for c in [(S.get('modes') or {}).get(m), alt, 'ink'] if isinstance(S.get(c), str))   # the standard's own colours:
             for m, alt in (('bus', 'accent'), ('bike', 'water'), ('car', 'building'), ('foot', 'grove'))}   # each mode its own
     S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept', 'building',
+                           'public', 'shadow', 'shadow_len',
                            'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
     S.update({k: DG[d] * 25.4 / 96 for k, d in (('text', 'label_size'), ('title', 'title_size')) if d in DG})
     FONT = escape(str(S['font']), {'"': "'"})
@@ -655,10 +659,10 @@ o = ['<g clip-path="url(#map)">', f'<rect width="{f2(Wm)}" height="{f2(Hm)}" fil
 legend = {}
 
 
-def fill(g, colour, key=None, stroke=None, extra=''):
+def fill(g, colour, key=None, stroke=None, extra='', sw='thin'):
     if key:
         legend.setdefault(key, ('fill', colour, stroke))
-    st = f' stroke="{stroke}" stroke-width="{f2(lw("thin"))}"' if stroke else ' stroke="none"'
+    st = f' stroke="{stroke}" stroke-width="{f2(lw(sw))}"' if stroke else ' stroke="none"'
     o.append(f'<path d="{d(g)}" fill="{colour}"{st} fill-rule="evenodd"{extra}/>')
 
 
@@ -674,21 +678,44 @@ def stroke(g, colour, w, dash=None, key=None, extra=''):
     o.append(f'<path d="{d(g)}" fill="none" stroke="{colour}" stroke-width="{f2(w)}"{da} stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
 
-# ground: the green land around the site and the open space, as the plans draw it
-pale = '#' + ''.join('%02x' % round((int(S['context'][i:i + 2], 16) + int(S['paper'][i:i + 2], 16)) / 2) for i in (1, 3, 5))
-for p, g in load(os.path.join(SITE, 'plots.geojson')) or []:
+# the base, as the site plan draws it, layer by layer, in its colours: the theme goes on top
+PL = D['plan_look']
+USED.add('plan_look')
+mix = lambda a, b, t: '#%02x%02x%02x' % tuple(round(int(a[i:i + 2], 16) + (int(b[i:i + 2], 16) - int(a[i:i + 2], 16)) * t) for i in (1, 3, 5))
+inside = lambda items: [(p, g) for p, g in items if g.intersects(fr)]
+OPEN = load(os.path.join(RUN, 'open-space', 'open-space.geojson')) or []
+# 1. the green land around and the water
+for p, g in inside(load(os.path.join(SITE, 'plots.geojson')) or []):
     if str(p.get('landuse', '')).split(':')[-1] in ('forest', 'wood', 'scrub', 'meadow', 'grass', 'park', 'farmland', 'allotments'):
-        fill(g.intersection(fr.buffer(10)), pale)
-for p, g in load(os.path.join(RUN, 'open-space', 'open-space.geojson')) or []:
-    c = {'open-space': {'park': S.get('kept' if p.get('existing') else 'park'), 'water': S.get('water')}.get(p.get('use')),
-         'ground-cover': S.get(str(p.get('cover', '')).replace(' ', '-')), 'retention': S.get('water')}.get(p.get('kind'))
-    if isinstance(c, str) and g.geom_type.endswith('Polygon') and g.intersects(fr):
-        fill(g.intersection(fr.buffer(10)), c)
-
-# base: the street surface, the buildings
+        fill(g.intersection(fr.buffer(10)), mix(S['context'], S['paper'], 0.5))
+for p, g in inside(load(os.path.join(SITE, 'water.geojson')) or []):
+    if g.geom_type.endswith('Polygon'):
+        fill(g.intersection(fr.buffer(10)), S['water'])
+# 2. the ground: open space's parks, ground covers, water and rain pools, playgrounds
+for p, g in inside([(p, g) for p, g in MASS if p.get('kind') == 'open-space' and p.get('use') == 'garden']):
+    fill(g, S['lawn'])
+for kind_ in ('open-space', 'ground-cover', 'retention'):
+    for p, g in inside([x for x in OPEN if x[0].get('kind') == kind_]):
+        c = {'open-space': {'park': S.get('kept' if p.get('existing') else 'park'), 'water': S.get('water')}.get(p.get('use')),
+             'ground-cover': S.get(str(p.get('cover', '')).replace(' ', '-')), 'retention': S.get('water')}[kind_]
+        if isinstance(c, str) and g.geom_type.endswith('Polygon'):
+            fill(g, c)
+for p, g in inside([x for x in OPEN if x[0].get('kind') == 'open-space' and x[0].get('use') == 'playground']):
+    fill(g, 'none', None, S['ink'], sw='mid')
+# 3. the streets: the existing outlined grey, the new in ink, the paths dashed; the public ground in its tone
+paths = [g for p, g in OPEN if p.get('kind') == 'path']
 if STREETS is not None and any(p.get('kind') == 'street' for p, g in STREETS):
-    surf = unary_union([g for p, g in STREETS if p.get('kind') in ('street', 'path') and g.geom_type.endswith('Polygon') and g.intersects(fr)])
     walk['base'] = 'streets/streets.geojson'
+    for p, g in inside(STREETS):
+        if p.get('kind') == 'path':
+            if g.geom_type.endswith('Polygon'):
+                fill(g, S['street'])
+            else:
+                paths.append(g)
+    for ex, col in ((True, S['path']), (False, S['ink'])):
+        sel = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and bool(p.get('existing')) == ex and g.geom_type.endswith('Polygon')]
+        if sel:
+            fill(unary_union(sel).intersection(fr.buffer(10)), S['street'], 'street', col)
 else:
     USED.update(['street_widths', 'street_w_other', 'street_w_new'])
     surf = []
@@ -699,14 +726,67 @@ else:
     for p, g in MASS:
         if p.get('kind') == 'street':
             surf.append(g if g.geom_type.endswith('Polygon') else g.buffer(float(p.get('width') or D['street_w_new']) / 2, cap_style=2, join_style=1))
-    surf = unary_union(surf) if surf else shapely.Polygon()
-fill(surf.intersection(fr.buffer(10)), S['street'], 'street', S['path'])
-fill(unary_union([g for p, g in CTX if g.intersects(fr) and not site.contains(g.representative_point())]), S['context'], 'context')
-kept = [g for p, g in MASS if p.get('kind') == 'building' and p.get('existing') and g.intersects(fr)]
-if kept:
-    fill(unary_union(kept), S['existing'], 'existing')
-if NEWB:   # the standard's colour for new, as it is, outlined so white ones show
-    fill(unary_union([g for p, g in NEWB if g.intersects(fr)]), S['new'], 'new', S['ink'])
+    fill((unary_union(surf) if surf else shapely.Polygon()).intersection(fr.buffer(10)), S['street'], 'street', S['path'])
+pub = [g for p, g in MASS if p.get('kind') == 'open-space' and p.get('use') == 'square']
+pub += [g.buffer(PL['shared_street_w_m'] / 2, cap_style=2) for p, g in feats if p['kind'] == 'route' and p.get('access_only')]
+pub = unary_union([g for g in pub if g.intersects(fr)]) if pub else None
+if pub is not None and not pub.is_empty and S.get('public'):
+    fill(pub.intersection(fr.buffer(10)), S['public'])
+for g in paths:
+    if g.intersects(fr):
+        o.append(f'<path d="{d(g)}" fill="none" stroke="{S["path"]}" stroke-width="{f2(lw("thin"))}" '
+                 f'stroke-dasharray="{f2(1.2 * k)} {f2(0.8 * k)}" stroke-linejoin="round"/>')
+# 4. the rail: four thin lines
+for p, g in inside(load(os.path.join(SITE, 'rail.geojson')) or []):
+    if p.get('railway') not in PL['gone_rail']:
+        for q in getattr(g, 'geoms', [g]):
+            for off in (-2.2, -0.8, 0.8, 2.2) if 1.4 / k >= 0.3 else (-2.2, 2.2):   # four lines while they stay apart on paper
+                try:
+                    o.append(f'<path d="{d(q.offset_curve(off))}" fill="none" stroke="{S["ink"]}" stroke-width="{f2(lw("thin"))}"/>')
+                except Exception:
+                    pass
+# 4b. the buildings' cast shadow, one shape, darkening the ground it falls on
+az = math.radians(PL['shadow_az_deg'])
+BLD = inside([(p, g) for p, g in MASS if p.get('kind') == 'building'])
+if S.get('shadow') and S.get('shadow_len'):
+    sh = []
+    for p, g in BLD:
+        L_ = float(S['shadow_len']) * float(p.get('floors') or 1)
+        vx, vy = math.sin(az) * L_, math.cos(az) * L_
+        for q in getattr(g, 'geoms', [g]):
+            if q.geom_type == 'Polygon':
+                c_ = [xy[:2] for xy in q.exterior.coords]
+                sh += [q, shapely.affinity.translate(q, vx, vy)]
+                sh += [shapely.Polygon([a, b, (b[0] + vx, b[1] + vy), (a[0] + vx, a[1] + vy)]) for a, b in zip(c_, c_[1:])]
+    sh = unary_union([q for q in sh if q.area > 0]) if sh else shapely.Polygon()
+    if not sh.is_empty:
+        o.append(f'<path d="{d(sh)}" fill="{S["shadow"]}" stroke="none" fill-rule="evenodd" style="mix-blend-mode:multiply"/>')
+# 4c. hedges and trees as the site plan draws them at this scale: a dark band, a dot over its soft shadow
+hed = inside([x for x in OPEN if x[0].get('kind') == 'hedge'])
+if hed and S.get('grove'):
+    o.append(f'<path d="{" ".join(d(g) for _, g in hed)}" fill="none" stroke="{mix(S["grove"], S["ink"], 0.35)}" '
+             f'stroke-width="{f2(max(float(hed[0][0].get("width_m") or 1.2), 0.35 * k))}" stroke-linecap="round" stroke-linejoin="round"/>')
+trees = [(*P(g.x, g.y), float(p.get('crown_m') or PL['tree_crown_m']) / 2) for p, g in inside(MASS + OPEN)
+         if p.get('kind') == 'tree' and g.geom_type == 'Point']
+if trees and S.get('grove'):
+    dx, dy = 2 * PL['tree_shadow'] * math.sin(az), -2 * PL['tree_shadow'] * math.cos(az)
+    o.append(f'<g fill="{S.get("shadow", S["existing"])}" fill-opacity="0.5" style="mix-blend-mode:multiply">' + ''.join(
+        f'<circle cx="{f2(x + dx * r)}" cy="{f2(y + dy * r)}" r="{f2(r)}"/>' for x, y, r in trees) + '</g>')
+    tones = [mix(S['grove'], S['ink'], t) if t >= 0 else mix(S['grove'], S['paper'], -t) for t in PL['tree_tones']]
+    tone = [random.Random(f'{x + wx0:.0f},{wy1 - y:.0f}tone').randrange(len(tones)) for x, y, r in trees]
+    for i, c in enumerate(tones):
+        o.append(f'<g fill="{c}" fill-opacity="0.9" stroke="{mix(S["grove"], S["ink"], 0.3)}" stroke-width="{f2(lw("thin"))}">' + ''.join(
+            f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for (x, y, r), tn in zip(trees, tone) if tn == i) + '</g>')
+# 5. the buildings, each its own: around the site pale, kept ones outlined, the new in their colour, outlined a weight
+#    finer than the site plan's, since at a smaller scale the same pen reads heavier
+for p, g in inside(CTX):
+    if not site.contains(g.representative_point()):
+        fill(g, S['context'], 'context')
+for p, g in BLD:
+    if p.get('existing'):
+        fill(g, S['existing'], 'existing', S['ink'])
+    else:
+        fill(g, S['new'], 'new', S['ink'], sw='mid' if p.get('landmark') else 'thin')
 stroke(site.exterior, S['ink'], lw('mid'), (3, 1.5), 'site')
 
 # the rings at the walking limits around the main stop
