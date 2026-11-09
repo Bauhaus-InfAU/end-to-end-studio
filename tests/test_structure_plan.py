@@ -241,3 +241,17 @@ def test_demolish_without_reason_stops(tmp_path):
                                     encoding="utf-8")
     r = run(SCRIPTS / "build.py", prop / "design.py", "--site", site_dir, "--proposal", prop)
     assert r.returncode != 0 and "keep, demolish" in r.stderr
+
+
+def test_demolishing_what_the_analysis_keeps_is_short(tmp_path):
+    from shapely.geometry import box as sbox
+    barn = sbox(500, 500, 530, 530)
+    design = PLAN + "F.add('existing', 'Barn', F.box(495, 495, 535, 535), 'demolish', 'mapped', 'test', reason='in the way')\n"
+    prop, checks = checks_of(tmp_path, design, buildings=[({"id": "b2", "building": "barn"}, barn)])
+    assert "the analysis keeps them" not in checks                  # no keep list: nothing to compare with
+    (prop / "analysis").mkdir()
+    (prop / "analysis/keep.geojson").write_text(fc([({"layer": "buildings", "reason": "third parties' property"}, barn)]), encoding="utf-8")
+    r = run(SCRIPTS / "build.py", prop / "design.py", "--site", tmp_path / "site", "--proposal", prop)
+    assert r.returncode == 0, r.stderr[-2000:]
+    line = next(l for l in (prop / "structure-plan/checks.txt").read_text(encoding="utf-8").splitlines() if "the analysis keeps them" in l)
+    assert ": 1" in line and "SHORT" in line and "third parties' property" in line

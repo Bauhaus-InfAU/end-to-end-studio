@@ -261,7 +261,7 @@ def checks(feats, F, distance, proposal=None, asked=None):
     L += loose
     L += over_buildings(ro, nb, ce, gr, F, by('existing'))
     L.append('')
-    L += existing_buildings(nb, ce, gr, ro, by('existing'), F)
+    L += existing_buildings(nb, ce, gr, ro, by('existing'), F, proposal)
     L += path_levels(ro, F)
     L.append('')
     L.append('GEOMETRY')
@@ -380,7 +380,16 @@ def decided(ex, action):
     return unary_union([g for p, g in ex if p.get('action') == action])
 
 
-def existing_buildings(nb, ce, gr, ro, ex, F):
+def protected(proposal, F):
+    """The buildings the analysis keeps (analysis/keep.geojson), as (reason, footprint) in local metres."""
+    p = Path(proposal) / 'analysis' / 'keep.geojson' if proposal else None
+    if p is None or not p.exists():
+        return []
+    return [(f['properties'].get('reason', ''), F.local(shape(f['geometry'])))
+            for f in json.loads(p.read_text(encoding='utf-8'))['features'] if f['properties'].get('layer') == 'buildings']
+
+
+def existing_buildings(nb, ce, gr, ro, ex, F, proposal=None):
     """Every existing building on land the plan changes is kept and reached, or demolished with a reason."""
     changed = unary_union([g for p, g in nb + ce + gr if p.get('action') in ('new', 'change')])
     keep, gone = decided(ex, 'keep'), decided(ex, 'demolish')
@@ -415,6 +424,13 @@ def existing_buildings(nb, ce, gr, ro, ex, F):
         '  SHORT: lead a route to them, or demolish them' if alone else ''))
     if alone:
         L.append('     ' + '; '.join(describe(bp, bg, polys) for bp, bg in alone[:C['listed']]) + more(alone))
+    must = protected(proposal, F)
+    against = [next(r for r, k in must if k.contains(g.representative_point())) for p, g in F.buildings
+               if F.site.contains(g.representative_point()) and gone.contains(g.representative_point())
+               and any(k.contains(g.representative_point()) for r, k in must)]
+    if must:
+        L.append(f'  demolished although the analysis keeps them: {len(against)}' + (
+            f'  SHORT: keep them, because {against[0]}' if against else ''))
     return L
 
 

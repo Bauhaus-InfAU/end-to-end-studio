@@ -103,6 +103,7 @@ DEFAULTS = {
 }
 LABELS = {'new': 'New buildings', 'existing': 'Existing, kept', 'changed': 'Existing, taken into the design',
           'removed': 'Existing, removed', 'context': 'City around the site',
+          'park path': 'Park paths', 'footbridge': 'Footbridges', 'boardwalk': 'Boardwalks', 'park threshold': 'Park thresholds',
           'buildings': 'Buildings', 'street': 'Streets and squares', 'path': 'Paths', 'green': 'Fields and woods',
           'park': 'Parks', 'kept': 'Kept green', 'lawn': 'Lawn, gardens', 'meadow': 'Meadow',
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
@@ -216,6 +217,7 @@ SITE_STREETS = load(os.path.join(SITE, 'streets.geojson')) or []
 BUILD = [(p, g) for p, g in MASS if p.get('kind') == 'building']
 NEW = [(p, g) for p, g in BUILD if not p.get('existing')]
 KEPT = [(p, g) for p, g in BUILD if p.get('existing')]
+GONE = [(p, g) for p, g in MASS if p.get('kind') == 'removed-building']
 CTX_OUT = [(p, g) for p, g in CTX if not site.contains(g.representative_point())]
 
 # the narrative's idea, where a design layer has it as a shape: config's idea {"label", "names"} names the features
@@ -482,7 +484,6 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         elif CFG['contour_m']:
             missing.append('terrain (no contour lines)')
         # 3. streets: the streets skill's surface, else lines at their widths
-        WALK = ('connection', 'promenade', 'bridge', 'boardwalk')   # open-space's pedestrian layer, drawn apart
         walk = [(p.get('type') or 'promenade', g) for p, g in (OPEN or []) if p.get('kind') == 'path']   # park loops too
         paths = []
         if STREETS is not None:
@@ -655,7 +656,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
             fill(g, mix(S['context'], S['paper'], 0.5), 'context')
-        for p, g in inside(KEPT):
+        for p, g in inside(KEPT + GONE):
             st = p.get('status', 'kept')
             if st == 'removed':
                 line(g.boundary, S['ink'], 'thin', (1.0, 0.7), 'removed')
@@ -682,6 +683,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     wall = wall.difference(unary_union([q.buffer(CFG['door_m'] / 2) for q in doors]))
                 if not wall.is_empty:
                     fill(wall, S['ink'], 'cut')
+        # 7b. everything outside the site fades back under a veil of the paper; the names go on top of it
+        if CFG['fade_outside'] > 0:
+            fill(fr.difference(site), S['paper'], extra=' fill-opacity="%g"' % CFG['fade_outside'])
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')
@@ -902,10 +906,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             for s, gs in sorted(byname.items(), key=lambda it: -sum(q.length for q in it[1])):
                 if s not in named and along(gs, s):
                     named.add(s)
-        # 10. everything outside the site fades back under a veil of the paper; then the site boundary, and the
-        #     detail areas on the site plan
-        if CFG['fade_outside'] > 0:
-            fill(fr.difference(site), S['paper'], extra=' fill-opacity="%g"' % CFG['fade_outside'])
+        # 10. the site boundary, and the detail areas on the site plan
         line(site, S['ink'], 'thick', (3, 1.5), 'site')
         for wname, wb in windows:                         # their names are written with the others, in 9b
             line(box(*wb).exterior, S['ink'], 'thin', (2, 1), 'window')

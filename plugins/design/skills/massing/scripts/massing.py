@@ -1025,6 +1025,11 @@ for p, g in kept:
     extra = {'keep_reason': why} if why else {}
     add('building', g, floors=fl, height_m=p.get('height'), use=p.get('use'), type=p.get('building'), existing=True,
         status=st, status_reason=reason, height_source=p.get('height_source'), osm_id=p.get('id'), **extra)
+for p, g in demolished:   # no longer a building, so its own kind: no skill counts it as standing
+    why = next((f['properties'].get('reason') for f in SP if f['properties']['kind'] == 'existing' and f['properties'].get('action') == 'demolish'
+                and m(f['geometry']).contains(g.representative_point())), 'demolished by the structure plan')
+    STATUS['removed'] = STATUS.get('removed', 0) + 1
+    add('removed-building', g, status='removed', status_reason=why, osm_id=p.get('id'))
 for p, g in street_routes:
     add('street', g.intersection(site.buffer(5)) if g.intersects(site) else g, width=CONFIG['street_w'], name=p['name'], level=p['level'])
 for p, g in path_routes:
@@ -1142,7 +1147,7 @@ stats['green_crossings'] = len(green_paths)
 stats['green_links'] = len(green_links)
 stats['green_links_m'] = round(sum(g.length for g in green_links))
 stats['community'] = {(e.get('use') or 'community building'): b is not None for e, b in CB}
-stats['existing'] = {s: STATUS.get(s, 0) for s in ('kept', 'changed', 'removed')}   # nothing is removed: massing builds around every existing building
+stats['existing'] = {s: STATUS.get(s, 0) for s in ('kept', 'changed', 'removed')}   # removed: what the structure plan demolishes
 stats['assumed_sizes'] = ASSUMED
 stats['floors_off_for_max'] = TRIM   # floors taken off so the homes stay within the brief's maximum
 stats['warnings'] = WARN

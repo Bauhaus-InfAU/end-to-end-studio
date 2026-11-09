@@ -103,10 +103,10 @@ if new:
     existing = [(p, g) for p, g in existing if not g.buffer(0).intersects(newu)]
 # what the design does with each existing building (massing's status: kept, changed, removed); outside the site: city
 STATUS = [(f["properties"].get("status") or "kept", transform(tr, shape(f["geometry"]))) for f in mass
-          if f["properties"].get("kind") == "building" and f["properties"].get("existing")]
+          if f["properties"].get("kind") == "removed-building" or (f["properties"].get("kind") == "building" and f["properties"].get("existing"))]
 def status_of(g):
     if not site.contains(g.representative_point()): return "city"
-    return next((s for s, k in STATUS if k.intersects(g)), "kept")
+    return next((s for s, k in STATUS if k.contains(g.representative_point())), "kept")   # its own footprint, not a neighbour's it touches
 existing = [({**p, "_status": status_of(g)}, g) for p, g in existing]
 
 # view: the side with the least built volume standing in front of the focus
@@ -187,7 +187,7 @@ def label(txt, fs, tf, halo=None, anchor="middle"):
 
 def ground(clip=None, fs=0.0):
     """The ground layers, cut to clip (view-turned metres) when given; with fs, the squares' names on the ground."""
-    cut = (lambda g: g.intersection(clip)) if clip is not None else (lambda g: g)
+    cut = (lambda g: (g.buffer(0) if g.geom_type.endswith("Polygon") else g).intersection(clip)) if clip is not None else (lambda g: g)
     out = []
     for g in plots:
         out.append('<path d="%s" fill="%s" stroke="%s" stroke-width="0.4"/>' % (poly_d(cut(g)), S["field"], S["field_line"]))
