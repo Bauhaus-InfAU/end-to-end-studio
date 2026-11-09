@@ -1077,7 +1077,8 @@ for key, spec in legend.items():
         continue
     pict = key in GLYPH or key == 'stop' and RAIL   # a way of moving: its icon, no words
     lab = '' if pict else LAB.get(key, key)
-    wi = (14 if key == 'stop' else 8) if pict else 8 + 1.5 + tw(lab, TXT) + 5
+    sw_ = 2 * SYM_R[spec[1]] + 0.6 if spec[0] == 'symbol' and spec[1] in SYM_R else 8   # the swatch as wide as its symbol
+    wi = (14 if key == 'stop' else 8) if pict else sw_ + 1.2 + tw(lab, TXT) + 3.5   # its name close, a short gap after
     if x + wi > W - 4 - (BAR if y == row_y + 4 else 0) and x > 4:
         x, y = 4, y + TXT + 3
     mid = y - 3.2 + 1.75
@@ -1094,9 +1095,9 @@ for key, spec in legend.items():
     elif spec[0] == 'ring':
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid + 1.5))}A{m_(8)},{m_(8)} 0 0 1 {m_(x + 8)},{m_(Yb(mid - 1.5))}" fill="none" stroke="{ink}" stroke-width="{m_(thin)}"/>')
     else:
-        st.append(symbol(spec[1], (x + 4) * k, Yb(mid) * k))
+        st.append(symbol(spec[1], (x + sw_ / 2) * k, Yb(mid) * k))
     if lab:
-        text(x + 9.5, y, lab)
+        text(x + sw_ + 1.2, y, lab)
     x += wi
 if BAR:   # the scale bar, its own: one line stepping up and down, a tick at every step, the ends numbered
     bx0, by0 = W - 4 - tw(nums[-1], TXT) / 2 - Lmm, row_y + 4 - 3.2 + 1.75
