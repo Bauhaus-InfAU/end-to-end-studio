@@ -38,3 +38,9 @@ F.add('centre', 'Arrival square', centre, 'new', 'hypothesis', 'assumption: the 
 F.add('route', 'Strip path', F.line([(cx, y0), (cx, y1)]).intersection(F.site), 'new', 'hypothesis',
       'assumption: the strip carries the path', level='landscape')
 F.add('gateway', 'Main street gate', nearest_points(main, meet)[0], 'new', 'mapped', 'streets.geojson')
+
+# Every existing building on the new land is kept and reached by a route, or demolished, each with a reason.
+old = [g for p, g in F.buildings if field.contains(g.representative_point())]
+if old:
+    F.add('existing', 'Buildings on the field', unary_union([g.buffer(2) for g in old]), 'demolish', 'mapped',
+          'buildings.geojson', reason='assumption: small farm buildings in the way of the new neighbourhood')

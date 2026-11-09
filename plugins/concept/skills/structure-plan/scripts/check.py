@@ -30,7 +30,8 @@ DEFAULTS = {
     'reach_m': 250,             # from a point in a neighbourhood to the network, at most this far ...
     'detour': 1.3,              # ... and this much longer than the straight line
     'route_buffer_m': 10,       # a route takes this much land on each side when looking for unassigned land
-    'loose_end_m': 20,          # a route end farther than this from every other route, street, gateway and the boundary is loose
+    'loose_end_m': 20,          # a route end farther than this from every other route, street, gateway, centre and the boundary is loose
+    'reach_kept_m': 40,         # a kept building on changed land this close to an existing street or a main or local route is reached
     'street_half_m': 8,         # a main or local route becomes a street this wide on each side (a 16 m street)
     'follows_m': 6,             # a route this close to an existing street or path runs along it
     'cover_min_m2': 5,          # a building with less than this under a route's street is touched, not covered
@@ -242,6 +243,7 @@ def checks(feats, F, distance, proposal=None, asked=None):
         L.append(f"  {p.get('name', ''):<{w}}  {p.get('level', ''):<9} {g.length:7.0f} m")
     gates = unary_union([g for p, g in ga])
     streets = unary_union([g for p, g in F.streets])
+    squares = unary_union([g for p, g in ce])
     edge, inside = F.site.boundary, F.site.buffer(1)
     loose = []
     for i, (p, g) in enumerate(ro):
@@ -251,13 +253,15 @@ def checks(feats, F, distance, proposal=None, asked=None):
                 e = Point(xy)
                 if not inside.contains(e):
                     continue                     # it leaves the site: it joins the city
-                d = min(x.distance(e) for x in (others, streets, gates, edge) if not x.is_empty)
+                d = min(x.distance(e) for x in (others, streets, gates, squares, edge) if not x.is_empty)
                 if d > C['loose_end_m']:
                     loose.append(f"     {p.get('name', '')} ends at ({e.x:.0f},{e.y:.0f}), {d:.0f} m from anything")
-    L.append(f"  loose ends (more than {C['loose_end_m']} m from every other route, street, gateway and the site "
-             f"boundary): {len(loose)}")
+    L.append(f"  loose ends (more than {C['loose_end_m']} m from every other route, street, gateway, centre and the "
+             f"site boundary): {len(loose)}" + ('  SHORT: lead each on to a street, a centre or the site edge' if loose else ''))
     L += loose
-    L += over_buildings(ro, nb, ce, gr, F)
+    L += over_buildings(ro, nb, ce, gr, F, by('existing'))
+    L.append('')
+    L += existing_buildings(nb, ce, gr, ro, by('existing'), F)
     L += path_levels(ro, F)
     L.append('')
     L.append('GEOMETRY')
@@ -371,12 +375,57 @@ def describe(bp, bg, polys):
     return f"{bp.get('id', '?')}{' ' + what if what else ''} at ({q.x:.0f},{q.y:.0f}) {where}"
 
 
-def over_buildings(ro, nb, ce, gr, F):
+def decided(ex, action):
+    """The land of the plan's `existing` features with this action."""
+    return unary_union([g for p, g in ex if p.get('action') == action])
+
+
+def existing_buildings(nb, ce, gr, ro, ex, F):
+    """Every existing building on land the plan changes is kept and reached, or demolished with a reason."""
+    changed = unary_union([g for p, g in nb + ce + gr if p.get('action') in ('new', 'change')])
+    keep, gone = decided(ex, 'keep'), decided(ex, 'demolish')
+    foot = C['foot_highways']
+    reach = unary_union([g for p, g in F.streets if p.get('highway') not in foot]
+                        + [g for p, g in ro if p.get('level') in ('main', 'local')])
+    on = [(p, g) for p, g in F.buildings
+          if F.site.contains(g.representative_point()) and changed.contains(g.representative_point())]
+    open_, kept, cut, alone = [], [], [], []
+    for p, g in on:
+        q = g.representative_point()
+        if gone.contains(q):
+            cut.append((p, g))
+        elif keep.contains(q):
+            kept.append((p, g))
+            if reach.is_empty or g.distance(reach) > C['reach_kept_m']:
+                alone.append((p, g))
+        else:
+            open_.append((p, g))
+    polys = nb + ce + gr
+    L = ['EXISTING BUILDINGS (on land the plan changes; the rest of the site is kept as it is)',
+         f'  on changed land: {len(on)}; kept: {len(kept)}; demolished: {len(cut)}']
+    for p, g in ex:
+        n = sum(1 for bp, bg in on if g.contains(bg.representative_point()))
+        L.append(f"  {p.get('name', '')}: {p.get('action')} {n} building(s), because {p.get('reason')}")
+    more = lambda xs: f'; and {len(xs) - C["listed"]} more' if len(xs) > C['listed'] else ''
+    L.append(f'  undecided: {len(open_)}' + (
+        '  SHORT: add an existing feature that keeps or demolishes them, with a reason' if open_ else ''))
+    if open_:
+        L.append('     ' + '; '.join(describe(bp, bg, polys) for bp, bg in open_[:C['listed']]) + more(open_))
+    L.append(f"  kept but more than {C['reach_kept_m']:g} m from any street or main or local route: {len(alone)}" + (
+        '  SHORT: lead a route to them, or demolish them' if alone else ''))
+    if alone:
+        L.append('     ' + '; '.join(describe(bp, bg, polys) for bp, bg in alone[:C['listed']]) + more(alone))
+    return L
+
+
+def over_buildings(ro, nb, ce, gr, F, ex=()):
     """Main and local routes whose street would cover an existing building the plan keeps."""
     half, foot = C['street_half_m'], C['foot_highways']
     fresh = unary_union([g for p, g in nb + ce if p.get('action') == 'new'])
+    keep, gone = decided(ex, 'keep'), decided(ex, 'demolish')
     kept = [(p, g) for p, g in F.buildings
-            if F.site.contains(g.representative_point()) and not fresh.contains(g.representative_point())]
+            if F.site.contains(g.representative_point()) and not gone.contains(g.representative_point())
+            and (keep.contains(g.representative_point()) or not fresh.contains(g.representative_point()))]
     roads = unary_union([g for p, g in F.streets if p.get('highway') not in foot]).buffer(C['follows_m'])
     polys = nb + ce + gr
     L, n = [], 0
@@ -558,6 +607,9 @@ def draw(feats, F, S, out_dir):
     for p, g in by('centre'):
         o.append(f'<path d="{path(g)}" fill="{accent}" fill-opacity="0.8" fill-rule="evenodd" stroke="{accent}" '
                  f'stroke-width="{mid}"/>')
+    for p, g in by('existing'):                  # kept: an ink outline; demolished: a dashed accent outline
+        da = ' stroke-dasharray="1.2 0.8"' if p.get('action') == 'demolish' else ''
+        o.append(f'<path d="{path(g)}" fill="none" stroke="{accent if da else ink}" stroke-width="{mid}"{da}/>')
     for p, g in by('route'):
         wd, dash = ROUTE.get(p.get('level'), ('mid', None))
         da = f' stroke-dasharray="{dash[0]} {dash[1]}"' if dash else ''
@@ -607,6 +659,8 @@ def draw(feats, F, S, out_dir):
     items += [('fill', S.get('park', '#c9dcbc'), 'green'), ('fill', accent, 'centre'),
               ('line', 'thick', 'main route'), ('line', 'mid', 'local route'), ('dash', 'mid', 'landscape route'),
               ('dot', accent, 'gateway'), ('site', 'mid', 'site')]
+    if by('existing'):
+        items += [('box', ink, 'existing, kept'), ('box', accent, 'existing, demolished')]
     lx, ly = pad, sy + 1.2 + fs + 4 + fs
     for kind_, val, lab in items:
         wi = 7.5 + tw(lab) + 5
@@ -616,6 +670,10 @@ def draw(feats, F, S, out_dir):
         if kind_ == 'fill':
             s.append(f'<rect x="{lx:.2f}" y="{top:.2f}" width="6" height="3.5" fill="{val}" stroke="{ink}" '
                      f'stroke-width="{thin}"/>')
+        elif kind_ == 'box':
+            da = ' stroke-dasharray="1.2 0.8"' if val == accent else ''
+            s.append(f'<rect x="{lx:.2f}" y="{top:.2f}" width="6" height="3.5" fill="none" stroke="{val}" '
+                     f'stroke-width="{mid}"{da}/>')
         elif kind_ == 'dot':
             s.append(f'<circle cx="{lx + 3:.2f}" cy="{top + 1.75:.2f}" r="1.6" fill="{paper}" stroke="{val}" '
                      f'stroke-width="{thick}"/>')
