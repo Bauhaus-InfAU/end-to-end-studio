@@ -54,6 +54,7 @@ def read_config(path, required=()):
 
 
 DEFAULTS = {
+    'fade_outside': 0.55,       # how far everything outside the site fades toward the paper, 0 (not) to 1 (gone)
     # street widths in metres by the site's street class, used only without the streets skill's surface
     'street_widths': {'motorway': 28, 'trunk': 22, 'trunk_link': 9, 'primary': 18, 'secondary': 15, 'tertiary': 13,
                       'tertiary_link': 8, 'residential': 10, 'unclassified': 8, 'living_street': 7, 'service': 5,
@@ -100,7 +101,8 @@ DEFAULTS = {
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
     'png_px_per_mm': 4,         # PNG resolution, pixels per printed mm
 }
-LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Existing buildings',
+LABELS = {'new': 'New buildings', 'existing': 'Existing, kept', 'changed': 'Existing, taken into the design',
+          'removed': 'Existing, removed', 'context': 'City around the site',
           'buildings': 'Buildings', 'street': 'Streets and squares', 'path': 'Paths', 'green': 'Fields and woods',
           'park': 'Parks', 'kept': 'Kept green', 'lawn': 'Lawn, gardens', 'meadow': 'Meadow',
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
@@ -635,12 +637,19 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     o.append(f'<g fill="{c}" fill-opacity="0.9" stroke="{dark}" stroke-width="{f2(lw("thin"))}">' + ''.join(
                         f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for (x, y, r), tn in zip(trees, tone) if tn == i) + '</g>')
             legend.setdefault('tree', ('dot', S['grove']))
-        # 5. existing buildings: around the site pale, kept ones in it with an outline
+        # 5. existing buildings: the city around the site fades back; in it, what the design does with each
+        #    (massing's status): kept with an outline, changed darker, removed only its dashed outline
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
-            fill(g, S['context'], 'context')
+            fill(g, mix(S['context'], S['paper'], 0.5), 'context')
         for p, g in inside(KEPT):
-            fill(g, S['existing'], 'existing', S['ink'], 'thin')
+            st = p.get('status', 'kept')
+            if st == 'removed':
+                line(g.boundary, S['ink'], 'thin', (1.0, 0.7), 'removed')
+            elif st == 'changed':
+                fill(g, mix(S['existing'], S['ink'], 0.35), 'changed', S['ink'], 'thin')
+            else:
+                fill(g, S['existing'], 'existing', S['ink'], 'thin')
         # 6. new buildings; in a detail area at cut_scale_max and larger, cut at the ground floor
         cut = kind == 'detail' and scale <= CFG['cut_scale_max']
         door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []
@@ -880,7 +889,10 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
             for s, gs in sorted(byname.items(), key=lambda it: -sum(q.length for q in it[1])):
                 if s not in named and along(gs, s):
                     named.add(s)
-        # 10. the site boundary, and the detail areas on the site plan
+        # 10. everything outside the site fades back under a veil of the paper; then the site boundary, and the
+        #     detail areas on the site plan
+        if CFG['fade_outside'] > 0:
+            fill(fr.difference(site), S['paper'], extra=' fill-opacity="%g"' % CFG['fade_outside'])
         line(site, S['ink'], 'thick', (3, 1.5), 'site')
         for wname, wb in windows:                         # their names are written with the others, in 9b
             line(box(*wb).exterior, S['ink'], 'thin', (2, 1), 'window')

@@ -4,7 +4,7 @@ The look comes from a style JSON made from drawing-graphics/standard.md; without
 python draw.py --site SITE_DIR --out CLIMATE_DIR [--style style.json] [--scale 5000] [--margin 300] [--frame W H] [--centre LON LAT]
 
 style.json keys (all optional): paper, ink, accent, context, existing (the buildings, else context), cool (else the
-standard's park, kept or grove green), water, font, thin, mid, thick (mm), text, title (mm), ramp (list of colours, light to dark); its `diagram` line weights and text sizes (px) replace thin, mid, thick, text, title.
+standard's park, kept or grove green), water, font, thin, mid, thick (mm), text, title (mm), ramp (list of colours, light to dark); its `diagram` text sizes (px) replace text and title; the line weights stay the plans' thin, mid, thick.
 A frame of a climate map in the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json; else --frame)
 gives every map its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills the frame, its
 title, short legend, north arrow and scale bar in a box inside it.
@@ -227,9 +227,16 @@ class Map:
 
     def context(self, buildings=True):
         st, S = self.st, self.S
+        green = ("forest", "wood", "scrub", "meadow", "grass", "park", "farmland", "allotments")   # the plans' ground, the same on every map
+        for g, p in S.layer("plots"):
+            if str(p.get("landuse", "")).split(":")[-1] in green and g.geom_type.endswith("Polygon"):
+                self.add(g, fill=mix(st["context"], st["paper"], 0.5), stroke="none")
         for g, _ in S.layer("water"):
             self.add(g, fill=st["water"] if g.geom_type.endswith("Polygon") else "none", stroke=st["water"], stroke_width=st["mid"])
-        for g, _ in S.layer("streets"):
+        land = [g for g, _ in S.layer("street-land") if g.geom_type.endswith("Polygon")]
+        if land:   # the street surface, as the plans draw it
+            self.add(shapely.union_all(land), fill=st.get("street", st["paper"]), stroke=st.get("path", st["context"]), stroke_width=st["thin"])
+        for g, _ in [] if land else S.layer("streets"):
             self.add(g, fill="none", stroke=st["context"], stroke_width=st["thin"])
         for g, _ in S.layer("rail"):
             self.add(g, fill="none", stroke=st["ink"], stroke_width=st["thin"], stroke_dasharray="1.2 0.8")
@@ -325,7 +332,7 @@ class Map:
         st, c = self.st, self.compact or {}
         tx = max(st["text"], MIN_TEXT)
         lh, wrap = tx * 1.3, int((bw - 16) / (tx * 0.5))
-        heads = textwrap.wrap(f"{self.title}, 1:{self.scale:,}", int((bw - 8) / (st["title"] * 0.55)))
+        heads = [] if st.get("marks") == "panel" else textwrap.wrap(f"{self.title}, 1:{self.scale:,}", int((bw - 8) / (st["title"] * 0.55)))
         e = [self.text(4, 3 + st["title"] * 1.2 * (i + 1), ln, st["title"], "bold") for i, ln in enumerate(heads)]
         y = 5 + st["title"] * 1.2 * len(heads)
         if c.get("bar"):
@@ -336,25 +343,26 @@ class Map:
                   self.text(26, y + 2.8, f'{c["low"]} → {c["high"]} {c.get("unit", "")}'.strip())]
             y += lh + 0.8
         for fill, op, label, *look in c.get("rows", []):
-            word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon or bracket
-            lines = textwrap.wrap(f"{word}: {re.split(r': | [(]', rest)[0]}" if rest else label, wrap) or [""]
+            word, _, rest = label.partition(": ")   # a short legend: a rule up to its first colon, comma or bracket
+            lines = textwrap.wrap(f"{word}: {re.split(r': | [(]|, ', rest)[0]}" if rest else label, wrap) or [""]
             e.append(mark(4, y, fill, op, st, *look))
             e += [self.text(12, y + 2.8 + j * lh, ln) for j, ln in enumerate(lines)]
             y += len(lines) * lh + 0.8
-        # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
-        L = nice(30 / self.k)
-        n, by = (4 if f"{L:g}"[0] == "2" else 5), y + 3
-        s = L * self.k / n
-        e.append(f'<path d="{"".join(f"M{4 + i * s:.2f},{by + 1.6 * (i % 2):.2f}h{s:.2f}" for i in range(n))}'
-                 f'{"".join(f"M{4 + i * s:.2f},{by:.2f}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
-        e += [self.text(4, by + 6, "0", anchor="middle"), self.text(4 + L * self.k, by + 6, f"{L:g} m", anchor="middle")]
-        nx = 4 + L * self.k + 12
-        e.append(f'<circle cx="{nx:.2f}" cy="{by + 1:.2f}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
-                 f'<line x1="{nx:.2f}" y1="{by + 1:.2f}" x2="{nx:.2f}" y2="{by - 2:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
-        y = by + 6
-        for ln in textwrap.wrap("Sources: climate.md; base map: the site folder (its SOURCES.md).", int((bw - 8) / (tx * 0.5))):
-            y += lh
-            e.append(self.text(4, y, ln))
+        if st.get("marks") != "panel":   # on a panel, the panel writes the caption and scale bar; sources are in climate.md
+            # scale bar: a line stepping up and down, a tick at every step, 0 and the length under its ends; north beside it
+            L = nice(30 / self.k)
+            n, by = (4 if f"{L:g}"[0] == "2" else 5), y + 3
+            s = L * self.k / n
+            e.append(f'<path d="{"".join(f"M{4 + i * s:.2f},{by + 1.6 * (i % 2):.2f}h{s:.2f}" for i in range(n))}'
+                     f'{"".join(f"M{4 + i * s:.2f},{by:.2f}v1.6" for i in range(n + 1))}" fill="none" stroke="{st["ink"]}" stroke-width="{st["thin"]}"/>')
+            e += [self.text(4, by + 6, "0", anchor="middle"), self.text(4 + L * self.k, by + 6, f"{L:g} m", anchor="middle")]
+            nx = 4 + L * self.k + 12
+            e.append(f'<circle cx="{nx:.2f}" cy="{by + 1:.2f}" r="3" fill="none" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>'
+                     f'<line x1="{nx:.2f}" y1="{by + 1:.2f}" x2="{nx:.2f}" y2="{by - 2:.2f}" stroke="{st["ink"]}" stroke-width="{st["mid"]}"/>')
+            y = by + 6
+            for ln in textwrap.wrap("Sources: climate.md; base map: the site folder (its SOURCES.md).", int((bw - 8) / (tx * 0.5))):
+                y += lh
+                e.append(self.text(4, y, ln))
         bh = y + 2.5
         site = shapely.affinity.affine_transform(self.S.poly, [self.k, 0, 0, -self.k, -self.x0 * self.k, self.y1 * self.k])
         bx, by = min(((x, y_) for y_ in (self.mh - bh, 0) for x in (0, self.mw - bw)),
@@ -442,9 +450,8 @@ def main():
         st["existing"] = st["context"]
     if "cool" not in found:  # since C6/C7 the standard's green is park (or kept, grove)
         st["cool"] = next((found[k] for k in ("park", "kept", "grove", "green") if k in found), mix(st["paper"], st["ink"], 0.35))
-    dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # a thematic plan's weights and text sizes, px
-    st.update({k: dg[d] * 25.4 / 96 for k, d in (("thin", "line"), ("mid", "outline"), ("thick", "heavy"),
-                                                 ("text", "label_size"), ("title", "title_size")) if d in dg})
+    dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # text sizes as the diagrams', px; lines the plans'
+    st.update({k: dg[d] * 25.4 / 96 for k, d in (("text", "label_size"), ("title", "title_size")) if d in dg})
     if a.sheet:  # only the sheet, from the drawings already made
         lines = (out / "drawings.txt").read_text(encoding="utf-8").splitlines()[1:]
         print(sheet(out, st, [n for n in lines if n and n != "climate_sheet.svg"]))
