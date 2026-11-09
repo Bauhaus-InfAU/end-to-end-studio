@@ -4,7 +4,7 @@ The look comes from a style JSON made from drawing-graphics/standard.md; without
 python draw.py --site SITE_DIR --out CLIMATE_DIR [--style style.json] [--scale 5000] [--margin 300] [--frame W H] [--centre LON LAT]
 
 style.json keys (all optional): paper, ink, accent, context, existing (the buildings, else context), cool (else the
-standard's park, kept or grove green), water, font, thin, mid, thick (mm), text, title (mm), ramp (list of colours, light to dark); its `diagram` line weights and text sizes (px) replace thin, mid, thick, text, title.
+standard's park, kept or grove green), water, font, thin, mid, thick (mm), text, title (mm), ramp (list of colours, light to dark); its `diagram` text sizes (px) replace text and title; the line weights stay the plans' thin, mid, thick.
 A frame of a climate map in the panels' plan (<proposal>/panel-layout/layout-plan.json, else layout.json; else --frame)
 gives every map its size in mm, its scale and centre (`frame.centre`, else the site's): the map fills the frame, its
 title, short legend, north arrow and scale bar in a box inside it.
@@ -227,9 +227,16 @@ class Map:
 
     def context(self, buildings=True):
         st, S = self.st, self.S
+        green = ("forest", "wood", "scrub", "meadow", "grass", "park", "farmland", "allotments")   # the plans' ground, the same on every map
+        for g, p in S.layer("plots"):
+            if str(p.get("landuse", "")).split(":")[-1] in green and g.geom_type.endswith("Polygon"):
+                self.add(g, fill=mix(st["context"], st["paper"], 0.5), stroke="none")
         for g, _ in S.layer("water"):
             self.add(g, fill=st["water"] if g.geom_type.endswith("Polygon") else "none", stroke=st["water"], stroke_width=st["mid"])
-        for g, _ in S.layer("streets"):
+        land = [g for g, _ in S.layer("street-land") if g.geom_type.endswith("Polygon")]
+        if land:   # the street surface, as the plans draw it
+            self.add(shapely.union_all(land), fill=st.get("street", st["paper"]), stroke=st.get("path", st["context"]), stroke_width=st["thin"])
+        for g, _ in [] if land else S.layer("streets"):
             self.add(g, fill="none", stroke=st["context"], stroke_width=st["thin"])
         for g, _ in S.layer("rail"):
             self.add(g, fill="none", stroke=st["ink"], stroke_width=st["thin"], stroke_dasharray="1.2 0.8")
@@ -443,9 +450,8 @@ def main():
         st["existing"] = st["context"]
     if "cool" not in found:  # since C6/C7 the standard's green is park (or kept, grove)
         st["cool"] = next((found[k] for k in ("park", "kept", "grove", "green") if k in found), mix(st["paper"], st["ink"], 0.35))
-    dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # a thematic plan's weights and text sizes, px
-    st.update({k: dg[d] * 25.4 / 96 for k, d in (("thin", "line"), ("mid", "outline"), ("thick", "heavy"),
-                                                 ("text", "label_size"), ("title", "title_size")) if d in dg})
+    dg = found.get("diagram") if isinstance(found.get("diagram"), dict) else {}  # text sizes as the diagrams', px; lines the plans'
+    st.update({k: dg[d] * 25.4 / 96 for k, d in (("text", "label_size"), ("title", "title_size")) if d in dg})
     if a.sheet:  # only the sheet, from the drawings already made
         lines = (out / "drawings.txt").read_text(encoding="utf-8").splitlines()[1:]
         print(sheet(out, st, [n for n in lines if n and n != "climate_sheet.svg"]))

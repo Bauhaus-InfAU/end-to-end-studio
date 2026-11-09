@@ -188,13 +188,12 @@ if not (SITE and os.path.exists(os.path.join(SITE, 'site.geojson'))):
 
 style_path = ARGS.style or os.path.join(RUN, 'drawing-graphics', 'style.json')
 S = json.load(open(style_path, encoding='utf8')) if os.path.exists(style_path) else None   # the look is the drawing standard's only
-if S:   # its keys this plan draws with, by name, never merged; a thematic plan's weights and text sizes are `diagram`'s (px)
+if S:   # its keys this plan draws with, by name, never merged; its text sizes are `diagram`'s (px), its lines the plans'
     DG = S.get('diagram') if isinstance(S.get('diagram'), dict) else {}
     MODE = {m: S[c] for m, c in (S.get('modes') or {}).items() if isinstance(S.get(c), str)}   # each mode in a colour of the standard's own
-    S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font',
-                           'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
-    S.update({k: DG[d] * 25.4 / 96 for k, d in (('thin', 'line'), ('mid', 'outline'), ('thick', 'heavy'),
-                                                ('text', 'label_size'), ('title', 'title_size')) if d in DG})
+    S = {k: S[k] for k in ('paper', 'ink', 'accent', 'new', 'existing', 'context', 'street', 'path', 'font', 'park', 'kept',
+                           'lawn', 'meadow', 'wet-meadow', 'grove', 'water', 'thin', 'mid', 'thick', 'text', 'title', 'marks') if k in S}
+    S.update({k: DG[d] * 25.4 / 96 for k, d in (('text', 'label_size'), ('title', 'title_size')) if d in DG})
     FONT = escape(str(S['font']), {'"': "'"})
     TXT = max(float(D['text_floor_mm']), float(S.get('text') or 0))
     TITLE = max(TXT, float(S.get('title') or 0))
@@ -674,6 +673,17 @@ def stroke(g, colour, w, dash=None, key=None, extra=''):
     o.append(f'<path d="{d(g)}" fill="none" stroke="{colour}" stroke-width="{f2(w)}"{da} stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
 
+# ground: the green land around the site and the open space, as the plans draw it
+pale = '#' + ''.join('%02x' % ((int(S['context'][i:i + 2], 16) + int(S['paper'][i:i + 2], 16)) // 2) for i in (1, 3, 5))
+for p, g in load(os.path.join(SITE, 'plots.geojson')) or []:
+    if str(p.get('landuse', '')).split(':')[-1] in ('forest', 'wood', 'scrub', 'meadow', 'grass', 'park', 'farmland', 'allotments'):
+        fill(g.intersection(fr.buffer(10)), pale)
+for p, g in load(os.path.join(RUN, 'open-space', 'open-space.geojson')) or []:
+    c = {'open-space': {'park': S.get('kept' if p.get('existing') else 'park'), 'water': S.get('water')}.get(p.get('use')),
+         'ground-cover': S.get(str(p.get('cover', '')).replace(' ', '-')), 'retention': S.get('water')}.get(p.get('kind'))
+    if isinstance(c, str) and g.geom_type.endswith('Polygon') and g.intersects(fr):
+        fill(g.intersection(fr.buffer(10)), c)
+
 # base: the street surface, the buildings
 if STREETS is not None and any(p.get('kind') == 'street' for p, g in STREETS):
     surf = unary_union([g for p, g in STREETS if p.get('kind') in ('street', 'path') and g.geom_type.endswith('Polygon') and g.intersects(fr)])
@@ -732,6 +742,17 @@ for m in reversed(ORDER):
         key = {'bike': 'bike' if lvl == 'main' else 'bike-local'}.get(m, m)
         stroke(unary_union(sel), col, lw(wkey, 1.6 if lvl == 'main' else 0.8), dash, key)   # every main route at one weight
 o.append('</g>')
+
+
+GLYPH = {'bus': 'M-.6,-.75h1.2v1.3h-1.2zM-.6,-.1h1.2M-.35,.55v.25M.35,.55v.25',   # white pictograms in a disc of the mode's colour
+         'car': 'M-.85,.35v-.4l.35,-.45h1l.35,.45v.4zM-.45,.35v.25M.45,.35v.25',
+         'bike': 'M-.85,.3a.35,.35 0 1,0 .7,0a.35,.35 0 1,0 -.7,0M.15,.3a.35,.35 0 1,0 .7,0a.35,.35 0 1,0 -.7,0M-.5,.3l.35,-.65h.55l.1,.65M-.15,-.35l.25,.65',
+         'foot': 'M0,-.85a.15,.15 0 1,0 0,.3a.15,.15 0 1,0 0,-.3M0,-.4v.6l-.35,.6M0,.2l.35,.6M-.35,-.15h.7'}
+
+
+def icon(m, x, y, r):
+    return (f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}" fill="{LOOK[m][0]}"/><path d="{GLYPH[m]}" transform="translate({f2(x)},{f2(y)}) '
+            f'scale({f2(r * 0.62)})" fill="none" stroke="{S["paper"]}" stroke-width="0.16" stroke-linecap="round" stroke-linejoin="round"/>')
 
 
 def symbol(kind, x, y):
@@ -914,6 +935,8 @@ for key, spec in legend.items():
     if spec[0] == 'fill':
         sk = f' stroke="{spec[2]}"' if spec[2] else f' stroke="{S["path"]}"'
         st.append(f'<rect x="{m_(x)}" y="{m_(Yb(mid - 1.75))}" width="{m_(8)}" height="{m_(3.5)}" fill="{spec[1]}"{sk} stroke-width="{m_(thin)}"/>')
+    elif spec[0] == 'line' and key in GLYPH:   # a way of moving: its icon, as the winners' legends show it
+        st.append(icon(key, (x + 4) * k, Yb(mid) * k, 2.6 * k))
     elif spec[0] == 'line':
         da = f' stroke-dasharray="{m_(spec[3][0])} {m_(spec[3][1])}"' if spec[3] else ''
         st.append(f'<path d="M{m_(x)},{m_(Yb(mid))}L{m_(x + 8)},{m_(Yb(mid))}" stroke="{spec[1]}" stroke-width="{f2(spec[2])}"{da} stroke-linecap="round"/>')
