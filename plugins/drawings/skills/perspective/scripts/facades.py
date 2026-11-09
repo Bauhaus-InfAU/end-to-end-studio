@@ -5,7 +5,8 @@
 Run after perspective.py and before render.py. The systems and which building type takes which are in the skill's
 facades.json, a PROVISIONAL design proposal, not a team decision. A proposal's perspective/facades_override.json overrides
 it key by key: write the team's facade instructions there. Every system is the same on every floor and bay of a
-building, ground floor included; systems never mix on one building.
+building, ground floor included; systems never mix on one building. Each system is an opening of a given width,
+sill and head per 3 m bay, with an optional glass rail on the upper floors.
 Keeps the plain view as <stem>_plain.svg/png the first time, so a rerun starts from it; writes <stem>_base.svg/png
 with the facades, and perspective/facades_drawn.json with what was drawn and where the systems came from.
 Never changes footprints, heights, floors or the camera. Entrances come from ground-floor/*.geojson when there is one.
@@ -48,8 +49,6 @@ def main(proposal, site=None):
     except (OSError, ValueError):
         st = {}
     ink, shadow = st.get("ink", "#1a1a1a"), st.get("shadow", "#a8a8a8")
-    ramp = st.get("ramp") if isinstance(st.get("ramp"), list) and len(st.get("ramp")) > 2 else None
-    timber, timber_edge = (ramp[1], ramp[2]) if ramp else ("#d9b98f", "#9c7b55")
     bay = float(cfg.get("bay_m", 3.0))
 
     sc = Scene(proposal, site=site)
@@ -114,16 +113,7 @@ def main(proposal, site=None):
         def poly(pts, fill, extra=""):
             return f'<polygon points="{" ".join(P(p) for p in pts)}" fill="{fill}"{extra}/>'
 
-        def line(p0, p1, col, edge, w):
-            c0, c1 = cam.cam(*p0), cam.cam(*p1)
-            if c0[2] < dv.NEAR or c1[2] < dv.NEAR:
-                return ""
-            lw = max(0.5, cam.f * w / max(c0[2], 1))
-            (u0, v0), (u1, v1) = cam.px(c0), cam.px(c1)
-            return (f'<line x1="{u0:.1f}" y1="{v0:.1f}" x2="{u1:.1f}" y2="{v1:.1f}" stroke="{edge}" stroke-width="{lw + 0.5:.2f}"/>'
-                    f'<line x1="{u0:.1f}" y1="{v0:.1f}" x2="{u1:.1f}" y2="{v1:.1f}" stroke="{col}" stroke-width="{lw:.2f}"/>')
-
-        layers = {"recess": [], "glass": [], "rail": [], "slat": [], "door": []}
+        layers = {"recess": [], "glass": [], "rail": [], "door": []}
         drawn = {}
         for b in sorted(sc.buildings, key=lambda b: -b["geom"].distance(Point(x, y))):
             if b["group"] != "new" or not b.get("floors") or b["geom"].centroid.distance(Point(x, y)) > 160:
@@ -175,10 +165,6 @@ def main(proposal, site=None):
                                 if s.get("rail") and k > 0:
                                     layers["rail"].append(poly([W0(t0, z0 + 0.95, 0.04), W0(t1, z0 + 0.95, 0.04), W0(t1, z0 + 1.0, 0.04), W0(t0, z0 + 1.0, 0.04)],
                                                                "#ffffff", f' stroke="{ink}" stroke-width="0.5"'))
-                                if s.get("slats"):
-                                    zb, zt = base + k * fh + 0.02 * fh, base + (k + 1) * fh - 0.04 * fh
-                                    for tt in np.arange(t0, t1 + 1e-6, float(s.get("slat_gap_m", 0.12))):
-                                        layers["slat"].append(line(W0(tt, zb, 0.15), W0(tt, zt, 0.15), timber, timber_edge, 0.045))
         for d, bearing in doors:
             bn = math.radians(bearing)
             nx, ny = math.sin(bn), math.cos(bn)
@@ -192,7 +178,7 @@ def main(proposal, site=None):
                                             (X + tx * DOOR_W / 2, Y + ty * DOOR_W / 2, z0 + DOOR_H), (X - tx * DOOR_W / 2, Y - ty * DOOR_W / 2, z0 + DOOR_H)],
                                            "#3a3a3a", ' stroke="#000" stroke-width="0.6"'))
                 drawn["doors"] = drawn.get("doors", 0) + 1
-        layer = '<g id="facades">' + "".join("".join(layers[k]) for k in ("recess", "glass", "rail", "slat", "door")) + "</g>"
+        layer = '<g id="facades">' + "".join("".join(layers[k]) for k in ("recess", "glass", "rail", "door")) + "</g>"
         svg.write_text(plain_svg.read_text(encoding="utf-8").replace("</svg>", layer + "</svg>"), encoding="utf-8")
         dv.to_png(svg, png)
         record["views"].append({"name": view["name"], "drawn": drawn})
