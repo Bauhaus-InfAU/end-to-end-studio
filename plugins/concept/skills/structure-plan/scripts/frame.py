@@ -73,7 +73,7 @@ class Frame:
         self.buildings = self._layer('buildings')
         self.rail = unary_union([g for p, g in self._layer('rail')])
         self.water = unary_union([g for p, g in self._layer('water')])
-        self.noise = {}
+        self.noise, self.air = {}, None    # air: the climate's air corridor, kept free of buildings
         rules = read_fc(Path(climate_dir) / 'rules.geojson') if climate_dir else None
         if climate_dir and rules is None:
             self.missing.append('rules.geojson in the climate folder')
@@ -83,6 +83,9 @@ class Frame:
                 g = self.local(shape(f['geometry']))
                 k = p.get('kind', '?')
                 self.noise[k] = unary_union([self.noise[k], g]) if k in self.noise else g
+            elif p.get('topic') == 'fresh air' and p.get('kind') == 'dont' and f.get('geometry'):
+                g = self.local(shape(f['geometry']))
+                self.air = g if self.air is None else unary_union([self.air, g])
 
     # ------------------------------------------------------------ coordinates
     def local(self, geom):

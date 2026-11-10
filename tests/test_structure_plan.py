@@ -125,10 +125,13 @@ def made_site(d, buildings=(), streets=(), rail=(), terrain=None):
     return d
 
 
-def checks_of(tmp_path, design_text, **site):
+def checks_of(tmp_path, design_text, rules=None, **site):
     site_dir = made_site(tmp_path / "site", **site)
     prop = tmp_path / "proposal"
     prop.mkdir()
+    if rules is not None:                     # the climate's rules, in the proposal's climate/ where build.py looks
+        (prop / "climate").mkdir()
+        (prop / "climate" / "rules.geojson").write_text(fc(rules), encoding="utf-8")
     design = prop / "design.py"
     design.write_text(design_text, encoding="utf-8")
     r = run(SCRIPTS / "build.py", design, "--site", site_dir, "--proposal", prop)
@@ -206,6 +209,19 @@ def test_loose_route_end_is_short(tmp_path):
     line = next(l for l in checks.splitlines() if "loose ends" in l)
     assert line.rstrip().endswith("SHORT: lead each on to a street, a centre or the site edge") and ": 1" in line
     assert "Stub ends at (100,420)" in checks and "Through ends" not in checks   # Through runs from the square to the edge
+
+
+def test_new_land_in_the_air_corridor_is_short(tmp_path):
+    from shapely.geometry import box as sbox
+    design = PLAN + "F.add('neighbourhood', 'South', F.box(400, 0, 600, 250), 'new', 'hypothesis', 'test')\n"
+    corridor = ({"kind": "dont", "topic": "fresh air"}, sbox(100, 0, 140, 600))     # crosses North, misses South
+    loud = ({"kind": "dont", "topic": "noise"}, sbox(400, 0, 600, 250))             # noise: not the corridor
+    prop, checks = checks_of(tmp_path, design, rules=[corridor, loud])
+    line = next(l for l in checks.splitlines() if "air corridor" in l)
+    assert ": 1" in line and "SHORT" in line
+    assert "neighbourhood North: 12,000 m2" in checks and "South:" not in checks   # 40 m x 300 m of North
+    prop, checks = checks_of(tmp_path / "none", design, rules=[loud])
+    assert "air corridor" not in checks                                              # no corridor, no line
 
 
 def test_existing_buildings_need_a_decision(tmp_path):
