@@ -2,7 +2,7 @@
 """Makes a proposal's pedestrian-level base views, ready for an image model.
 
     python perspective.py <proposal folder> [--site DIR] [--count N] [--eye-height 1.65] [--hfov 70]
-                          [--floor-height M] [--no-terrain] [--options FILE] [--views FILE]
+                          [--floor-height M] [--terrain] [--options FILE] [--views FILE]
 
 Reads <proposal>/massing/massing.geojson, the project's site folder and, if there,
 <proposal>/narrative/narrative.md. Writes into <proposal>/perspective/. It doesn't read the brief: the number
@@ -51,7 +51,7 @@ def write_assumptions(scene, path, views, count_source):
               f"- New trees: {a['tree_height']} m tall, crown radius {a['tree_crown_radius']} m, unless the massing or open-space gives a height and crown.",
               f"- Existing street widths by road class: {a['street_width']}; {a['lane_width']} m a lane where lanes are given.",
               f"- Railway strip: {a['rail_width']} m wide.",
-              f"- Ground: {'from terrain data' if scene.terrain else 'flat, no terrain data'}.",
+              f"- Ground: {'from terrain data' if scene.terrain else 'level, as an eye-level perspective is drawn'}.",
               "- A wood's uneven top edge is a drawing convention, not data.",
               "", "## Buildings", *[f"- {k}: {v}" for k, v in scene.building_counts.items()],
               f"- from the massing: {sum(b['group'] != 'context' for b in scene.buildings)}, listed in building_status.csv",
@@ -67,7 +67,7 @@ def main():
     ap.add_argument("--eye-height", type=float, default=1.65)
     ap.add_argument("--hfov", type=float, default=70)
     ap.add_argument("--floor-height", type=float)
-    ap.add_argument("--no-terrain", action="store_true")
+    ap.add_argument("--terrain", action="store_true", help="draw the real ground, not a level one")
     ap.add_argument("--options", help="JSON overriding assumed numbers, with an optional 'style'")
     ap.add_argument("--views", help="a views.json from an earlier run, to redraw the same cameras")
     args = ap.parse_args()
@@ -86,9 +86,7 @@ def main():
         scene.used.append("style from --options")
     if not (scene.proposal / "drawing-graphics" / "style.json").exists():
         scene.absent.append("drawing-graphics/style.json: the views use the script's own tones")
-    if args.no_terrain:
-        scene.warn("Terrain was switched off: the ground is drawn flat.")
-    else:
+    if args.terrain:   # else a level ground: the horizon at eye height above every building's foot
         found = terrain.find(scene, out) or terrain.fetch(scene, out)
         if found:
             scene.use_terrain(found)
@@ -123,15 +121,18 @@ def main():
         if made["trees_too_near"]:
             scene.warn(f"{stem}: {made['trees_too_near']} trees under 3 m from the camera were left out of the view.")
         lon, lat = scene.to_lonlat.transform(v["x"], v["y"])
-        ground = draw_view.Camera(scene, v).ground
+        cam = draw_view.Camera(scene, v)
+        ground = cam.ground
+        if abs(cam.terrain - ground) > 1:
+            scene.warn(f"{stem}: the eye is {args.eye_height} m above the foot of the nearest building, which lies "
+                       f"{abs(cam.terrain - ground):.1f} m {'below' if cam.terrain > ground else 'above'} the ground under the camera.")
         views.append({"name": v["name"], "stem": stem, "situation": v.get("situation"),
                       "why": v.get("why"), "narrative": v.get("narrative"),
                       "eye": [round(lon, 7), round(lat, 7)], "eye_height_m": args.eye_height, "ground_m": round(ground, 2),
                       "heading_deg": round(v["heading"] % 360, 1), "hfov_deg": v["hfov"], "score": v.get("score"),
-                      "metrics": v.get("metrics") or {k: round(v[k], 3) for k in ("new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near", "framed", "void", "frame_new") if k in v},
+                      "metrics": v.get("metrics") or {k: round(v[k], 3) for k in ("new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near", "framed", "void", "frame_new", "one_point", "cut") if k in v},
                       "frame_shares": made["frame_shares"],
-                      "files": {"base_svg": f"{stem}_base.svg", "base_png": f"{stem}_base.png", "depth_png": f"{stem}_depth.png",
-                                "ids_png": f"{stem}_ids.png"}, "x": v["x"], "y": v["y"], "heading": v["heading"]})
+                      "files": {"base_svg": f"{stem}_base.svg", "base_png": f"{stem}_base.png", "ids_png": f"{stem}_ids.png"}, "x": v["x"], "y": v["y"], "heading": v["heading"]})
     draw_view.draw_map(scene, views, out, f"{prefix}views_map", style)
     for v in views:
         low = [k for k in ("new",) if v["frame_shares"].get(k, 0) < 0.03]
@@ -148,7 +149,7 @@ def main():
         w.writerows(scene.status_rows)
     if scored:
         with open(out / "candidates.csv", "w", newline="", encoding="utf-8") as fh:
-            keys = ["situation", "score", "heading", "x", "y", "new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near"]
+            keys = ["situation", "score", "heading", "x", "y", "new", "presence", "kept_context", "vegetation", "trees", "open", "public", "green", "depth", "blocked", "tree_near", "one_point", "cut"]
             w = csv.DictWriter(fh, keys, extrasaction="ignore")
             w.writeheader()
             w.writerows(scored)
@@ -158,7 +159,7 @@ def main():
     flat = [w for w in scene.warnings if w.endswith("the ground is drawn flat.")]
     unsure = " ".join(dict.fromkeys(flat + scene.warnings[:1])) or "nothing flagged."
     (out / "summary.md").write_text(
-        f"{head}Eye-level base views, no scale, at {args.eye_height} m: {made}.\n"
+        f"{head}Eye-level base views, no scale, at {args.eye_height} m above the foot of the nearest building: {made}.\n"
         f"{len(views)} views {f'from {len(scored)} scored candidates' if scored else 'redrawn from earlier cameras'}; {len(scene.warnings)} warnings.\n"
         f"Unsure: {unsure} All assumed numbers are in assumptions.md.\n", encoding="utf-8")
     print(f"{len(views)} views in {out}; {len(scene.warnings)} warnings:")

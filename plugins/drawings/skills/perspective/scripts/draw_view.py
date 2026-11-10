@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws one eye-level base view of a scene: a shaded massing as SVG and PNG, a depth map and a map of what each pixel is."""
+"""Draws one eye-level base view of a scene: a shaded massing as SVG and PNG, and a map of what each pixel is."""
 import colorsys
 import json
 import math
@@ -19,7 +19,7 @@ from shapely import STRtree, box
 from shapely.geometry.polygon import orient
 from shapely.ops import triangulate
 
-W, H, HORIZON = 1536, 1024, 0.58   # the horizon sits low, as with a shift lens, so verticals stay vertical
+W, H, HORIZON = 1536, 1024, 2 / 3   # the horizon a third up the picture, as with a shift lens, so verticals stay vertical
 MM_W, MM_H = 300, 200              # print size; a perspective has no scale
 NEAR, FAR = 0.5, 700.0
 FINE, COARSE, FINE_REACH = 10.0, 40.0, 160.0
@@ -42,13 +42,27 @@ CLASS_OF_TONE = {"street": 2, "old_street": 2, "square": 2, "rail": 2, "green": 
 class Camera:
     def __init__(self, scene, view):
         self.ex, self.ey = view["x"], view["y"]
-        self.ground = float(scene.ground(np.array([self.ex]), np.array([self.ey]))[0])
-        self.ez = self.ground + view.get("eye_height", 1.65)
         h = math.radians(view["heading"])
         self.fx, self.fy = math.sin(h), math.cos(h)
         self.hfov = view.get("hfov", 70)
+        self.terrain = float(scene.ground(np.array([self.ex]), np.array([self.ey]))[0])
+        foot = self.nearest_foot(scene)
+        self.ground = self.terrain if foot is None else foot   # the level the eye height counts from
+        self.ez = self.ground + view.get("eye_height", 1.65)
         self.f = W / 2 / math.tan(math.radians(self.hfov) / 2)
         self.cx, self.cy = W / 2, H * HORIZON
+
+    def nearest_foot(self, scene):
+        """Where the walls of the nearest building in the frame start, as draw_block draws them; None with no building in it."""
+        eye, t = shapely.Point(self.ex, self.ey), math.tan(math.radians(self.hfov) / 2) * FAR
+        far = (self.ex + FAR * self.fx, self.ey + FAR * self.fy)
+        frame = shapely.Polygon([(self.ex, self.ey)] + [(far[0] + s * t * self.fy, far[1] - s * t * self.fx) for s in (-1, 1)])
+        seen = [(part.intersection(frame).distance(eye), i, part) for i, part in
+                enumerate(p for b in scene.buildings for p in polys(b["geom"])) if part.intersects(frame)]
+        if not seen:
+            return None
+        bx, by = min(seen)[2].exterior.xy
+        return float(scene.ground(np.array(bx), np.array(by)).min())
 
     def cam(self, x, y, z):
         dx, dy = x - self.ex, y - self.ey
@@ -384,7 +398,7 @@ def grass(scene, cam, buf, style, rnd, tree, step=7, blade=0.12):
 
 
 def draw_view(scene, view, out, stem, style):
-    """Writes <stem>_base.svg and .png, <stem>_depth.png and <stem>_ids.png. Returns what the view can't vouch for."""
+    """Writes <stem>_base.svg and .png and <stem>_ids.png. Returns what the view can't vouch for."""
     style = {**STYLE, **from_standard(scene), **style}
     cam = Camera(scene, view)
     buf, items = Buffers(), []
@@ -424,9 +438,6 @@ def draw_view(scene, view, out, stem, style):
     svg_path = out / f"{stem}_base.svg"
     svg_path.write_text(svg, encoding="utf-8")
     made_png = to_png(svg_path, out / f"{stem}_base.png")
-    d = np.where(buf.depth > 0, 1 / np.maximum(buf.depth, 1e-9), np.inf)
-    g = np.clip(1 - np.log(np.maximum(d, 2) / 2) / math.log(FAR / 2), 0, 1)
-    write_gray_png(out / f"{stem}_depth.png", np.nan_to_num(g * 255, posinf=0).astype(np.uint8))
     write_gray_png(out / f"{stem}_ids.png", buf.ids * 20)
     shares = {name: round(float(np.mean(buf.ids == c)), 3) for name, c in CLASSES.items()}
     return {"png": made_png, "trees_too_near": near_trees, "frame_shares": shares}

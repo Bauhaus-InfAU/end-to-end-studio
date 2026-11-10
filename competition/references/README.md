@@ -24,7 +24,7 @@ Which skill looks at which files:
 | concept-diagrams | `concept-diagrams-*`, `phases`, `activity-pictograms` |
 | building-types | `building-types`, `typology-diagram` |
 | isometric | `isometric`, `isometric-1`, `isometric-2` |
-| perspective | `perspective-1` to `perspective-3` |
+| perspective | `perspective-1` to `perspective-3`; the look to follow is the special mention's hand sketch (its `perspective-1`, `perspective-2`), so `render_style` describes that one |
 | site-section | `site-section-1`, `site-section-2`, `concept-section` |
 | open-space | `open-space`, `open-space-types` |
 | mobility | `mobility` |

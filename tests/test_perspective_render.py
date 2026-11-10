@@ -1,5 +1,5 @@
 """The perspective skill's render step: no key or no package stops it with one line and no image; a fake image model
-gets the base view, the depth map and a prompt that keeps the geometry, and its image is written and checked for size.
+gets the base view and a prompt that keeps the geometry, and its image is written and checked for size.
 The real image API is never called."""
 import io
 import json
@@ -27,10 +27,9 @@ def proposal(tmp_path, standard=True, narrative=True):
     out = p / "perspective"
     out.mkdir(parents=True)
     Image.new("RGB", BASE, (200, 200, 200)).save(out / "view-1_base.png")
-    Image.new("L", BASE, 120).save(out / "view-1_depth.png")
     (out / "views.json").write_text(json.dumps({"views": [{
         "name": "view-1", "stem": "view-1", "situation": "square", "why": "a public square with the buildings around it",
-        "files": {"base_png": "view-1_base.png", "depth_png": "view-1_depth.png"}}]}), encoding="utf-8")
+        "files": {"base_png": "view-1_base.png"}}]}), encoding="utf-8")
     if narrative:
         (p / "narrative").mkdir()
         (p / "narrative/narrative.md").write_text(
@@ -107,10 +106,17 @@ def test_fake_image_is_written_with_its_prompt(tmp_path):
     v = saved["views"][0]
     assert v["model"] == render.DEFAULTS["model"] == calls[0]["model"] and v["warnings"] == [] and v["size"] == list(BASE)
     assert v["prompt"] == calls[0]["contents"][-1] and render.KEEP_GEOMETRY in v["prompt"]
-    assert sum(isinstance(c, Image.Image) for c in calls[0]["contents"]) == 2   # the base view and its depth map
+    assert sum(isinstance(c, Image.Image) for c in calls[0]["contents"]) == 1   # the base view alone
     assert "a public square" in v["prompt"] and '"Courtyards"' in v["prompt"] and "shared yard" in v["prompt"]
     assert "Overcast autumn light" in v["prompt"] and "c8442b" not in v["prompt"] and saved["look_source"].endswith("standard.md")
     assert record["notes"] == []
+
+
+def test_the_plans_colours_are_the_palette_family(tmp_path):
+    p = proposal(tmp_path)
+    (p / "drawing-graphics/style.json").write_text(json.dumps({"new": "#ffffff", "public": "#f2c3cf", "thin": 0.13}), encoding="utf-8")
+    prompt = render.render(p, fake_client(BASE, []), dict(render.DEFAULTS))["views"][0]["prompt"]
+    assert "#f2c3cf, #ffffff" in prompt and "takes its own tint" in prompt and "0.13" not in prompt
 
 
 def test_other_size_is_resampled_and_other_shape_warned(tmp_path):

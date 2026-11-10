@@ -17,6 +17,7 @@ from draw_view import H, HORIZON, W
 
 EYE = 1.65                                  # the usual eye height: frame_new is an estimate for ranking
 RAYS, REACH, MIN_APART = 41, 220.0, 120.0
+TWO_POINT = 20.0                            # degrees a view is turned against a wall before the wall reads as two-point
 WORDS = {
     "square": ["square", "plaza", "piazza", "centre", "center", "hub", "station", "stop", "market", "mobility"],
     "green": ["green", "corridor", "park", "landscape", "meadow", "garden", "forest", "wood", "planted"],
@@ -95,7 +96,7 @@ def candidates(scene):
                 for side in (1, -1):
                     x, y = p.x - dy / n * off * side, p.y + dx / n * off * side
                     base = math.degrees(math.atan2(dx, dy))
-                    for turn in (-18, 18, 162, 198):
+                    for turn in (-25, 25, 155, 205):
                         out.append(("street", x, y, base + turn))
     for g, use in scene.open_spaces:
         if use not in ("square", "park"):
@@ -149,8 +150,10 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         hit = np.where(np.isfinite(ts.min(axis=1)), k[solid][first], -1)
         wall = up[solid][first]
         rise = np.degrees(np.arctan2(wall, dist))     # how high it stands in the frame
+        turn = (np.degrees(np.arctan2(ex[solid][first], ey[solid][first])) - heading) % 90
+        skew = np.minimum(turn, 90 - turn)            # 0: the wall lies square to the view or along it
     else:
-        dist, hit, rise, wall = np.full(RAYS, REACH), np.full(RAYS, -1), np.zeros(RAYS), np.zeros(RAYS)
+        dist, hit, rise, wall, skew = np.full(RAYS, REACH), np.full(RAYS, -1), np.zeros(RAYS), np.zeros(RAYS), np.full(RAYS, 45.0)
     tree = t[:, ~solid].min(axis=1) if (~solid).any() and t.size else np.full(RAYS, np.inf)
     m = {
         "new": float(np.mean(hit == 0)),
@@ -164,11 +167,13 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         "green_wall": float(np.mean((hit == 3) & (dist < 40))),   # woodland close in front: a grey slab in the view
         "depth": float(np.std(np.log(np.maximum(dist, 1)))),
         "void": float(np.mean(dist > 80)),          # the eye runs out with nothing to stop it
+        "one_point": float(np.mean(skew[(hit >= 0) & (hit <= 2)] < TWO_POINT)) if ((hit >= 0) & (hit <= 2)).any() else 0.0,
         "framed": min(float(np.mean(dist[:RAYS // 3] < 60)), float(np.mean(dist[-(RAYS // 3):] < 60))),   # held on both sides
     }
     spread = np.radians(np.linspace(-hfov / 2, hfov / 2, RAYS))
     f, z, width = W / 2 / np.tan(np.radians(hfov) / 2), dist * np.cos(spread), 1 / np.cos(spread) ** 2   # rays are even in angle, pixels in its tangent
     top, foot = np.clip(H * HORIZON - f * (wall - EYE) / z, 0, H), np.clip(H * HORIZON + f * EYE / z, 0, H)
+    m["cut"] = float(np.mean((H * HORIZON - f * (wall - EYE) / z < 0) & (hit >= 0) & (hit <= 2)))   # buildings too near to show their top
     m["frame_new"] = float(np.sum(width / width.sum() * (foot - top) / H * (hit == 0)))   # share of the picture that is new building
     samples = np.outer(np.array([12.0, 25, 45]), np.sin(angles[::4])) + x, np.outer(np.array([12.0, 25, 45]), np.cos(angles[::4])) + y
     m["public"] = float(np.mean(shapely.contains_xy(scene.public, samples[0], samples[1]))) if scene.public is not None else 0.0
@@ -185,6 +190,8 @@ def score(scene, seg, kind, tall, x, y, heading, hfov):
         + 0.2 * min(1, m["trees"] / 0.15)
         + 0.5 * min(1, m["framed"] / 0.5)           # a space, not a block beside a field
         - 0.8 * m["void"]
+        - 1.0 * m["one_point"]                    # walls seen square-on or end-on: a one-point view
+        - 1.0 * max(0, m["vegetation"] - 0.4)       # woodland across most of the frame: a green slab, not a place
         - 2.0 * m["blocked"] - 1.5 * m["tree_near"] - 1.5 * min(1, m["green_wall"] / 0.25), 3)
     return m
 
@@ -206,7 +213,7 @@ def choose(scene, count, hfov):
         if not shapely.contains_xy(scene.public, x, y) or shapely.contains_xy(bad, x, y):
             continue
         m = score(scene, seg, kind, tall, x, y, heading, hfov)
-        if m["frame_new"] >= 0.1:
+        if m["frame_new"] >= 0.1 and m["one_point"] <= 0.5 and m["cut"] <= 0.25:   # two-point views of whole buildings
             scored.append({"situation": sit, "x": x, "y": y, "heading": heading % 360, **m})
     scored.sort(key=lambda c: -c["score"])
     picks = []

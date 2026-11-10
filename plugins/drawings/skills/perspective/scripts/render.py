@@ -4,7 +4,7 @@
     python render.py <proposal folder> [--model NAME] [--image-size 2K] [--env DIR_OR_FILE] [--options FILE]
                      [--only view-1] [--provider auto|google|replicate] [--references IMAGE ...]
 
-For every view in <proposal>/perspective/views.json it sends <stem>_base.png and <stem>_depth.png, and any style
+For every view in <proposal>/perspective/views.json it sends <stem>_base.png, and any style
 reference images, to Gemini with a prompt built from the view's reason, the idea in narrative/narrative.md and
 the look in drawing-graphics/standard.md, and writes <stem>.png next to them, and render.json with each prompt,
 the provider, the model and the reference images.
@@ -33,16 +33,17 @@ DEFAULTS = {
     "provider": "auto",    # auto: Google with a Gemini key, else Replicate with its token
     "references": [],      # style reference images: paths, read only
     "image_size": "2K",
-    "send_depth": True,
     "fit_to_base": True,   # a result with the base's proportions but another size is resampled to the base's size
     "look": ("Soft daylight under a lightly clouded sky, late spring, trees in fresh leaf. Materials on the facades "
              "and the ground drawn in flat, simple colour. People of all ages walking, sitting and cycling, at their true size for where they stand. "
              "No lens flare, no sunset sky, no glow; the buildings are not lit brighter than the street."),
 }
-RENDER_STYLE = ("Render it as an illustrated architectural perspective at a pedestrian's eye height, not a photograph: a "
-                "clean line drawing with flat areas of colour, in the manner of a vector or watercolour collage. Simple "
-                "textured planes for facades and ground, cut-out trees and people, a pale painted sky, no photographic "
-                "detail, no gloss, no lens effects.")
+RENDER_STYLE = ("Render it as a hand-drawn architectural perspective at a pedestrian's eye height, not a photograph and "
+                "not a vector drawing: a loose freehand black ink line of even weight, slightly wobbly, with corners that "
+                "overshoot, as drawn quickly with a fineliner. Under the lines flat, very pale washes of colour that don't "
+                "quite meet them, a few muted tones for the whole picture. Trees and shrubs as loosely scribbled crowns "
+                "washed in green, one or two in the foreground left as white outlines. People as white outline figures. A pale sky fading to warm white at the "
+                "horizon. No shading, no shadows, no gradients on buildings, no hatching, no photographic detail.")
 KEYS = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
 REPLICATE_KEYS = ("REPLICATE_API_TOKEN",)
 REPLICATE_API = "https://api.replicate.com/v1"
@@ -50,28 +51,44 @@ USER_AGENT = "perspective-render/1.0"   # Replicate's firewall refuses Python's 
 REPLICATE_WAIT_S = 300
 LOOK_HEADING = r"render|perspective|atmospher|mood|people|material|season"
 KEEP_GEOMETRY = (
-    "IMAGE 1 is the base view. Keep its geometry exactly: every building, roof line, edge, street, tree and the ground "
-    "stay where they are and at the same size. Add no building, move none, remove none, and do not change their heights "
-    "or outlines. Keep the same camera, the same horizon line, the same lens and the same framing, so the result lies "
-    "over IMAGE 1 line for line. Only give the surfaces their materials, light, planting, sky and people.")
-DEPTH_NOTE = ("IMAGE 2 is the depth map of the same view: lighter is nearer, black is the sky. Use it only to tell "
-              "near from far; do not draw it.")
+    "IMAGE 1 is the base view, a plain model of the design. Keep its camera, horizon line, lens and framing, and keep "
+    "every building where it stands, with its outline, its height and its number of floors: each grey or white block "
+    "of IMAGE 1 is a building, however bare, and fills the same part of the picture in the result. Keep every street, "
+    "square and lawn within its edges, and a tree wherever IMAGE 1 has one. Add no building, move none, remove none, "
+    "and let nothing rise above a roof line of IMAGE 1: no tower, no extra floor, no building in the distance it "
+    "doesn't show. It is a two-point perspective: verticals stay vertical, and its horizon is the eye height of a "
+    "standing person, so the eyes of every standing adult, near or far, lie on that horizon line.")
+PLACEHOLDERS = (
+    "What IMAGE 1 leaves bare is to be drawn anew: its round tree symbols, the faces of its walls and its empty "
+    "ground. Draw each tree as a real tree, with its own irregular crown and branching trunk; a flat green mass with a stepped top is woodland: draw it as a wall of tree crowns against the sky, with no roof, wall or building in or above it. Add people of all ages "
+    "doing things: walking, talking, sitting, playing, with children, dogs and prams, in groups and alone, two or "
+    "three large in the foreground and cut by the frame, small far away, each at true size for where they stand. Give "
+    "the walls an architecture: the lines across a wall of IMAGE 1 are its floor levels and it draws no windows, so "
+    "keep one storey to each level and draw the windows, frames, balconies, cladding joints and open ground floors "
+    "with doors yourself, under the roof line IMAGE 1 draws. Make the houses lived in, not blocks: plants on balconies "
+    "and climbing a wall, open windows, curtains, a parasol, someone on a balcony, tables and chairs before a ground "
+    "floor. Furnish the open ground with benches, tables, play and "
+    "small planting beds, and a few plants in the foreground corners: paving stays paving and lawn stays lawn. Give "
+    "the sky clouds and a few birds, no sun or moon.")
 GROUND_NOTE = ("GROUND: keep every ground colour of IMAGE 1 within its edges. The pale pink ground is the project's public "
                "space (squares, shared streets, park thresholds): keep it that pale pink, as paving with fine joints, never "
-               "grey, green or red. The lawns and parks are never a flat green: paint them as grass, with visible blades, "
-               "mowing stripes and small variations of tone, as the short strokes in IMAGE 1 show.")
-CLOSING = "No text, no labels, no frame, no watermark in the image."
+               "grey, green or red. The lawns and parks are never a flat green: paint them as grass, with visible blades "
+               "and small variations of tone, as the short strokes in IMAGE 1 show.")
+PALETTE = ("public", "accent", "park", "kept", "lawn", "meadow", "wet-meadow", "grove", "water", "existing", "new", "ink")   # style.json keys: the plans' colours
+CLOSING = ("No text, no labels, no frame, no watermark in the image, and no lettering, sign or number on any facade, shop "
+           "or ground. No bicycles anywhere, whatever the references show. Before you finish, compare with IMAGE 1: the "
+           "result has exactly its buildings, each in its place and at its size, and trees wherever it has green.")
 
 
 def reference_note(first, last):
     """What the style reference images are for, and what they must not bring in."""
     which = f"IMAGE {first} is a style reference" if first == last else f"IMAGES {first} to {last} are style references"
-    return (f"{which} only, from other projects. Take from them the drawing technique, the atmosphere, the colour "
-            "palette and how they draw vegetation, landscape, people and architecture. Copy nothing from them: no "
-            "particular building, structure, walkway, deck, railing, figure, composition, viewpoint or text. People "
-            "appear as the look below asks, drawn in the references' manner. They don't change what the buildings are "
-            "made of. Use their accent colour sparingly: never across a whole building, and never on an element "
-            "IMAGE 1 doesn't have. The geometry and the design come from IMAGE 1 alone.")
+    return (f"{which}, from other projects. Take from them only how they are drawn: the technique, the line, the "
+            "palette, the level of detail, and their manner of drawing trees, plants, people, facades, ground and sky, "
+            "so the result could hang beside them as one series. Take nothing that is in them: no building, tree, "
+            "plant, flower, figure, pose, foreground, composition, viewpoint or text of theirs appears in the result. "
+            "Where the style described below differs from them, the references win. The geometry and the design come "
+            "from IMAGE 1 alone.")
 ASPECTS = {"1:1": 1.0, "2:3": 2 / 3, "3:2": 3 / 2, "3:4": 3 / 4, "4:3": 4 / 3, "9:16": 9 / 16, "16:9": 16 / 9, "21:9": 21 / 9}
 
 
@@ -159,17 +176,31 @@ def render_style_from(proposal):
     return plain(value) if isinstance(value, str) and value.strip() else None
 
 
-def build_prompt(view, title, idea, look, send_depth=True, style=None, references=0):
+def palette_from(proposal):
+    """The colours of the plans, from drawing-graphics/style.json, as the family the picture is coloured from; None without them."""
+    try:
+        s = json.loads((proposal / "drawing-graphics" / "style.json").read_text(encoding="utf-8"))
+        swatches = list(dict.fromkeys(s[k] for k in PALETTE if isinstance(s.get(k), str) and s[k].startswith("#")))
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not swatches:
+        return None
+    return ("COLOUR: the picture belongs to the same family as the project's plans, whose colours are " + ", ".join(swatches)
+            + ". Colour everything from these and from paler or deeper tints of them, nothing outside the family and nothing "
+            "saturated. The facades take part: each building IMAGE 1 shows takes its own tint from the family and a material "
+            "(timber boards, brick, render, metal), not bare white or grey; this adds no building. Where the style, the "
+            "look or a reference names other colours, this family wins.")
+
+
+def build_prompt(view, title, idea, look, style=None, references=0, palette=None):
     tell = []
     if view.get("why"):
         tell.append(f"This eye-level view shows {view['why']}" + (f" ({view['situation']})." if view.get("situation") else "."))
     if title or idea:
         tell.append("The idea of the project" + (f", \"{title}\"" if title else "") + (f": {trimmed(idea)}" if idea else "."))
-    first = 3 if send_depth else 2
-    parts = [KEEP_GEOMETRY, DEPTH_NOTE if send_depth else "",
-             reference_note(first, first + references - 1) if references else "",
+    parts = [KEEP_GEOMETRY, PLACEHOLDERS, reference_note(2, 1 + references) if references else "",
              style or RENDER_STYLE,
-             " ".join(tell), f"The look: {look}", GROUND_NOTE, CLOSING]
+             " ".join(tell), f"The look: {look}", GROUND_NOTE, palette or "", CLOSING]
     return "\n\n".join(p for p in parts if p)
 
 
@@ -288,7 +319,7 @@ def render(proposal, client, opts, only=None, key_source=None, types=None, provi
     if not look:
         look, look_source = opts["look"], "default"
         notes.append("drawing-graphics/standard.md has no section on renders, perspectives or atmosphere: the prompts use the script's default look.")
-    style = render_style_from(proposal)
+    style, palette = render_style_from(proposal), palette_from(proposal)
     refs, ref_paths, ref_warnings = load_references(opts.get("references"))
     notes += ref_warnings
     record = {"provider": provider, "model": opts["model"], "image_size": opts["image_size"], "key": key_source,
@@ -299,17 +330,14 @@ def render(proposal, client, opts, only=None, key_source=None, types=None, provi
             continue
         files = view.get("files", {})
         base_path = out / files.get("base_png", f"{stem}_base.png")
-        depth_path = out / files.get("depth_png", f"{stem}_depth.png")
         entry = {"name": view["name"], "base": base_path.name, "output": f"{stem}.png", "model": opts["model"], "warnings": []}
         if not base_path.exists():
             entry["warnings"].append(f"{base_path.name} is missing: nothing rendered.")
             record["views"].append(entry)
             continue
         base = Image.open(base_path).convert("RGB")
-        send_depth = opts["send_depth"] and depth_path.exists()
-        entry["depth"] = depth_path.name if send_depth else None
-        entry["prompt"] = build_prompt(view, title, idea, look, send_depth, style, len(refs))
-        contents = [base] + ([Image.open(depth_path)] if send_depth else []) + refs + [entry["prompt"]]
+        entry["prompt"] = build_prompt(view, title, idea, look, style, len(refs), palette)
+        contents = [base] + refs + [entry["prompt"]]
         config = None
         if types is not None:
             config = types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"],
@@ -362,7 +390,7 @@ def main():
     ap.add_argument("--only", nargs="*", help="view names or stems to render, else all")
     ap.add_argument("--provider", choices=("auto", "google", "replicate"),
                     help="where Gemini is reached (default auto: Google with a Gemini key, else Replicate with its token)")
-    ap.add_argument("--references", nargs="*", help="style reference images, sent after the base and depth images; only read")
+    ap.add_argument("--references", nargs="*", help="style reference images, sent after the base view; only read")
     args = ap.parse_args()
     proposal = Path(args.proposal).resolve()
     views = proposal / "perspective" / "views.json"
