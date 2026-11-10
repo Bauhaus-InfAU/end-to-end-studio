@@ -1,0 +1,3 @@
+Placed 259 doors (257 on streets, 2 on paths) with 1,026 bike stands, 3 play areas (278 m2; 104 courtyards are under 600 m2), 15 labelled centre uses, and at Station square 6 bus bays and 400 bike spaces in `detail.geojson`.
+Non-housing ground floor at the centres: 28,118 m2 (`uses.csv`); the food market took the shop floor of building 65 at Station square.
+Flag: the food market needs 1,200 m2 but the largest shop floor there has 980 m2, so the massing should give that hall more floor; bays follow the brief's 6 platforms (p. 27), but the 400 bike spaces, 4 stands per door and the play areas are illustrative proposals, not the brief's numbers.

@@ -1,0 +1,3 @@
+Mobility plan 1:10,000 redrawn (mobility_1-10000.svg/png, frame unchanged 184 x 189 mm; network, mobility.geojson and stats untouched): the main bike routes now draw at 1.1 mm printed, bus 0.7 mm, side by side on shared streets, foot dotted, bus stops as larger dark-ringed dots, and the bike arrows out of the site carry the names of the places they lead to.
+17 % of new housing floor area is within a 400 m walk of the main stop (57 % within 800 m), unchanged.
+Open: only 3 of the 5 main bike routes have a named destination (so 2 arrows carry no name), the labels sit close to the frame edge, and the changed drawing script is mobility/mob_run13.py (a copy; the skill's own file is untouched).
