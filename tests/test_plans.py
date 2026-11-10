@@ -9,6 +9,7 @@ from synthetic import make_proposal
 
 PLANS = REPO / "plugins/drawings/skills/plans/scripts/plans.py"
 MASSING = REPO / "plugins/design/skills/massing/scripts/massing.py"
+PANELS = REPO / "plugins/delivery/skills/panel-layout/scripts/panels.py"
 CONFIG = {"site_plan_scale": 3000, "figure_ground_scale": 15000, "storeys_on_site_plan": True,
           "panel_width_mm": 594, "panel_height_mm": 841, "margin_mm": 15,
           "detail_areas": [{"name": "detail-area-1", "scale": 1000, "at": "Square"}]}
@@ -234,6 +235,19 @@ def test_plans_flag_a_detail_area_too_small_for_its_subject(drawn):
         e = made_of(out)["detail-area-1"]
         assert e["subject_shown"] < 0.7 and "too_small" in e, e
         assert "too small" in r.stderr
+        # it asks panel-layout for a frame that holds them, at its scale; panel-layout's `frames` step gives it
+        req = out / "plans/detail-area-1_1-1000.frame.json"
+        asked = json.loads(req.read_text(encoding="utf-8"))
+        assert asked["scale"] == "1:1000" and asked["needs_mm"]["w"] > 90 and asked["needs_mm"]["h"] > 70, asked
+        layout = json.loads(plan.read_text(encoding="utf-8"))
+        layout["format"] = {"width_mm": 594, "height_mm": 841, "margin_mm": 15}
+        plan.write_text(json.dumps(layout), encoding="utf-8")
+        run(PANELS, "frames", plan)
+        given = json.loads(plan.read_text(encoding="utf-8"))["panels"][0]["items"][0]["frame"]
+        assert given == {"w": min(asked["needs_mm"]["w"], 564), "h": asked["needs_mm"]["h"]}, given
+        draw(out, site_dir)   # in the frame it asked for, it shows its subject and asks no more
+        e = made_of(out)["detail-area-1"]
+        assert "too_small" not in e and e["subject_shown"] >= 0.7 and not req.exists(), e
     finally:
         plan.unlink()
         draw(out, site_dir)   # leave the module's drawings as the other tests expect them

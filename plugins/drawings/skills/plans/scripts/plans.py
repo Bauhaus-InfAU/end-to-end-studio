@@ -1220,6 +1220,19 @@ for name, title, scale, win, cut, a in details:
                 round(100 * e['subject_shown']), CFG['detail_near_m'], a.get('at'))
             print('%s is too small: %s; panel-layout should give it a larger frame' % (name, e['too_small']),
                   file=sys.stderr)
+    # ask panel-layout for the frame that holds them, at this scale, the way its `frames` step reads it
+    req = os.path.join(OUT, os.path.splitext(e['file'])[0] + '.frame.json')
+    if 'too_small' in e:
+        k = scale / 1000.0
+        b = pad(unary_union(near).bounds, CFG['detail_pad_m'])
+        under = e['height_mm'] - e['map_height_mm'] + (float(CFG.get('panel_bar_mm', 8)) if PANEL else 0)
+        e['needs_mm'] = {'w': round(max((b[2] - b[0]) / k, (win[2] - win[0]) / k), 1),
+                         'h': round(max((b[3] - b[1]) / k, (win[3] - win[1]) / k) + under, 1)}
+        with open(req, 'w', encoding='utf8') as fh:
+            json.dump({'drawing': e['file'], 'scale': '1:%d' % scale, 'needs_mm': e['needs_mm'], 'by': 'plans',
+                       'why': e['too_small']}, fh, indent=1)
+    elif os.path.exists(req):
+        os.remove(req)                                   # an old request this frame no longer needs
     made.append(e)
 
 if fig_scale:
