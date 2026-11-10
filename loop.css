@@ -1,0 +1,110 @@
+/* Loop page: styles scoped under #view[data-page="loop"] */
+#view[data-page="loop"] .lp-wrap{display:grid;height:100%;grid-template-columns:minmax(0,1fr) clamp(340px,32vw,460px)}
+#view[data-page="loop"] .lp{min-width:0;overflow:auto;padding:32px 28px 56px}
+#view[data-page="loop"] .lp-head{max-width:1080px}
+#view[data-page="loop"] .lp-over{margin-bottom:2px}
+#view[data-page="loop"] .lp-head h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.02em}
+#view[data-page="loop"] .lp-how p{margin:0;max-width:112ch;color:var(--ink2);font-size:13px;line-height:1.6}
+#view[data-page="loop"] .lp-how code{font-family:var(--mono);font-size:.86em;background:var(--hair2);padding:0 3px;border-radius:3px}
+#view[data-page="loop"] .lp-none{margin:28px 0 0;color:var(--muted)}
+#view[data-page="loop"] .lp-sum{margin:2px 0 0}
+#view[data-page="loop"] .lp-head .label{margin-top:18px}
+
+/* key and compare picker */
+#view[data-page="loop"] .lp-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 24px;margin:14px 0 6px;padding-top:14px;border-top:1px solid var(--hair)}
+#view[data-page="loop"] .lp-key span{display:inline-flex;align-items:center;gap:6px}
+#view[data-page="loop"] .lp-key svg{display:block;overflow:visible}
+#view[data-page="loop"] .lp-cmp{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;color:var(--ink2)}
+#view[data-page="loop"] .lp-cmp-note:empty{display:none}
+
+/* the diagram scrolls sideways inside its own strip, never the page */
+#view[data-page="loop"] .lp-scroll{overflow-x:auto;overflow-y:hidden;margin:0 -28px;padding:0 4px;outline:none}
+#view[data-page="loop"] .lp-svg{display:block}
+#view[data-page="loop"] .lp-svg text{font-family:var(--sans)}
+
+#view[data-page="loop"] .lp-edge{transition:opacity .15s}
+#view[data-page="loop"] .lp-edge path{fill:none;stroke:var(--muted);stroke-opacity:.42;stroke-width:1}
+#view[data-page="loop"] .lp-edge .ah{fill:var(--muted);fill-opacity:.42;stroke:none}
+#view[data-page="loop"] .lp-edge.end path{stroke-dasharray:3 3}
+#view[data-page="loop"] .lp-edge.end .ah{stroke-dasharray:none}
+/* a highlighted box: lines into it in --ink, lines out of it in --ink2, the rest faded */
+#view[data-page="loop"] .lp-svg.hl .lp-edge{opacity:.18}
+#view[data-page="loop"] .lp-svg.hl .lp-edge.in,#view[data-page="loop"] .lp-svg.hl .lp-edge.out{opacity:1}
+#view[data-page="loop"] .lp-svg.hl .lp-edge.in path{stroke:var(--ink);stroke-opacity:1;stroke-width:1.5}
+#view[data-page="loop"] .lp-svg.hl .lp-edge.in .ah{fill:var(--ink);fill-opacity:1}
+#view[data-page="loop"] .lp-svg.hl .lp-edge.out path{stroke:var(--ink2);stroke-opacity:.85}
+#view[data-page="loop"] .lp-svg.hl .lp-edge.out .ah{fill:var(--ink2);fill-opacity:.85}
+
+#view[data-page="loop"] .lp-node{cursor:pointer;outline:none;transition:opacity .15s}
+#view[data-page="loop"] .lp-node rect{fill:var(--paper);stroke:var(--muted);stroke-opacity:.55;stroke-width:1}
+#view[data-page="loop"] .lp-node .nm{font-size:11.5px;font-weight:500;fill:var(--ink)}
+#view[data-page="loop"] .lp-node .mt{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+#view[data-page="loop"] .lp-pill .mt{font-size:10.5px;fill:var(--ink2)}
+#view[data-page="loop"] .lp-node.off rect{fill:var(--bg);stroke:var(--hair);stroke-opacity:1}
+#view[data-page="loop"] .lp-node.off .nm{fill:var(--muted);font-weight:400}
+#view[data-page="loop"] .lp-pill.off .mt{fill:var(--muted)}
+#view[data-page="loop"] .lp-node.added rect{stroke:var(--sel);stroke-opacity:1;stroke-width:1.5}
+#view[data-page="loop"] .lp-node.added .nm{fill:var(--sel)}
+#view[data-page="loop"] .lp-node.gone rect{fill:none;stroke:var(--muted);stroke-opacity:.8;stroke-dasharray:4 3}
+#view[data-page="loop"] .lp-node.stuck rect{stroke:var(--issue);stroke-opacity:1}
+#view[data-page="loop"] .lp-svg.hl .lp-node:not(.rel){opacity:.45}
+#view[data-page="loop"] .lp-node.pin rect{stroke:var(--ink);stroke-opacity:1;stroke-width:1.5}
+#view[data-page="loop"] .lp-node.added.pin rect{stroke:var(--sel)}
+#view[data-page="loop"] .lp-node:hover rect,#view[data-page="loop"] .lp-node:focus-visible rect{stroke:var(--ink);stroke-opacity:1}
+#view[data-page="loop"] .lp-node.added:hover rect,#view[data-page="loop"] .lp-node.added:focus-visible rect{stroke:var(--sel)}
+#view[data-page="loop"] .m-opus{fill:var(--opus)}
+#view[data-page="loop"] .m-sonnet{fill:var(--sonnet)}
+
+/* the redraw loop: the lead's one extra round */
+#view[data-page="loop"] .lp-loop{outline:none}
+#view[data-page="loop"] .lp-loop>*{transition:opacity .15s}
+#view[data-page="loop"] .lp-svg.hl .lp-loop:not(.on)>*{opacity:.18}
+#view[data-page="loop"] .lp-svg.hl .lp-loop:not(.on)>.lp-drop.mine{opacity:.5}
+#view[data-page="loop"] .lp-loop path{fill:none;stroke:var(--ink);stroke-opacity:.7;stroke-width:1;stroke-linejoin:round}
+#view[data-page="loop"] .lp-loop .ah{fill:var(--ink);fill-opacity:.7;stroke:none}
+#view[data-page="loop"] .lp-loop text{font-family:var(--mono);font-size:10.5px;fill:var(--ink2)}
+#view[data-page="loop"] .lp-loop.on path,#view[data-page="loop"] .lp-loop:hover path{stroke-opacity:1;stroke-width:1.5}
+#view[data-page="loop"] .lp-loop.on .ah{fill-opacity:1}
+#view[data-page="loop"] .lp-loop.off path{stroke:var(--muted);stroke-opacity:.5;stroke-dasharray:3 3}
+#view[data-page="loop"] .lp-loop.off .ah{fill:var(--muted);fill-opacity:.5}
+#view[data-page="loop"] .lp-loop.off text{fill:var(--muted)}
+#view[data-page="loop"] .lp-foot{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+
+/* key swatches */
+#view[data-page="loop"] .k-line{stroke:var(--muted);stroke-width:1}
+#view[data-page="loop"] .k-dash{stroke-dasharray:3 3}
+#view[data-page="loop"] .k-loop{fill:none;stroke:var(--ink);stroke-width:1}
+#view[data-page="loop"] .k-loop-ah{fill:var(--ink)}
+#view[data-page="loop"] .k-off{fill:var(--bg);stroke:var(--hair)}
+#view[data-page="loop"] .k-added{fill:var(--paper);stroke:var(--sel);stroke-width:1.5}
+#view[data-page="loop"] .k-gone{fill:none;stroke:var(--muted);stroke-dasharray:3 2}
+
+/* the card: the picked box, what it reads, who reads it and the skill's own text */
+#view[data-page="loop"] .lp-chead{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;margin-bottom:6px}
+#view[data-page="loop"] .lp-chead .label{margin:0}
+#view[data-page="loop"] .lp-hint{margin:0}
+#view[data-page="loop"] .lp-rel{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:14px 0 0;color:var(--ink2);font-size:12.5px}
+#view[data-page="loop"] .lp-rel dt{color:var(--muted)}
+#view[data-page="loop"] .lp-rel dd{margin:0;overflow-wrap:anywhere}
+#view[data-page="loop"] .lp-tl{margin-top:20px}
+#view[data-page="loop"] .lp-text{color:var(--ink2);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+#view[data-page="loop"] .lp-text h3{margin:1.3em 0 .4em;font-size:13px;font-weight:600;color:var(--ink)}
+#view[data-page="loop"] .lp-text h3:first-child{margin-top:0}
+#view[data-page="loop"] .lp-text pre{margin:0 0 .9em;padding:8px 10px;border-radius:var(--r);background:var(--hair2);font-family:var(--mono);font-size:11px;line-height:1.5;overflow-x:auto}
+
+/* what changed */
+#view[data-page="loop"] .lp-diff{max-width:760px;margin-top:18px;color:var(--ink2)}
+#view[data-page="loop"] .lp-diff:empty{display:none}
+#view[data-page="loop"] .lp-diff p{margin:0 0 .6em}
+#view[data-page="loop"] .lp-diff ul{margin:0;padding-left:1.2em}
+#view[data-page="loop"] .lp-diff li{margin:0 0 .3em}
+#view[data-page="loop"] .lp-new{color:var(--sel);font-weight:500}
+
+@media (max-width:720px){
+  #view[data-page="loop"] .lp-wrap{display:block;height:auto}
+  #view[data-page="loop"] .lp{overflow:visible;padding:24px 16px 40px}
+  #view[data-page="loop"] .lp-card{overflow:visible;padding:20px 16px;border-left:0;border-top:1px solid var(--hair)}
+  #view[data-page="loop"] .lp-scroll{margin:0 -16px}
+  #view[data-page="loop"] .lp-cmp{margin-left:0}
+  #view[data-page="loop"] .lp-cmp .select{max-width:62vw}
+}
