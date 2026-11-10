@@ -45,6 +45,7 @@ DEFAULTS = {
     'low_buffer_m': 100,        # a green's ground is compared with the ground this far around it
     'low_step_m': 5,            # the ground is sampled on a grid this fine
     'low_share': 0.4,           # warn when less than this share of a water green lies below the median ground around it
+    'air_m2': 25,               # a new or changed neighbourhood or centre with more than this in the air corridor is SHORT
     'listed': 10,               # at most this many pieces are listed under a check
     'min_piece_m2': 25,         # pieces smaller than this are left out of the lists
     'check_scale': 10000,       # scale of the check plan
@@ -191,6 +192,12 @@ def checks(feats, F, distance, proposal=None, asked=None):
     for p, g in nb:
         noise = ''.join(f'  noise {k}: {ha(g.intersection(z)):.2f} ha' for k, z in sorted(F.noise.items()))
         L.append(f"  {p.get('name', ''):<{w}}  {p.get('action', ''):<6} {ha(g):7.2f} ha{noise}")
+    if F.air is not None:
+        inair = [(p, g.intersection(F.air).area) for p, g in nb + ce if p.get('action') in ('new', 'change')]
+        inair = [(p, a) for p, a in inair if a > C['air_m2']]
+        L.append(f"  new or changed in the climate's air corridor: {len(inair)}"
+                 + ('  SHORT: keep the corridor free, take its edge from the climate' if inair else ''))
+        L += [f"     {p.get('kind')} {p.get('name', '')}: {a:,.0f} m2" for p, a in inair]
     for a in ('new', 'change', 'keep'):
         L.append(f"  total {a}: {sum(ha(g) for p, g in nb if p.get('action') == a):.2f} ha")
     for ph in sorted({str(p['phase']) for p, g in nb if p.get('phase') is not None}):
