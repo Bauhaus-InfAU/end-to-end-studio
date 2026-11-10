@@ -1,0 +1,3 @@
+Placed 275 doors on 254 buildings (273 on a street, 2 on a path) with 1,036 bike stands, 76 play areas (7,121 m2) in 120 courtyards, 27 labelled centre uses, and at Station Square 6 bus bays (brief p. 27) and 300 bike spaces (assumed).
+The non-housing ground floors at the centres cover 74,269 m2, with the food market put into the largest shop floor at Station Square.
+Flags: the food market needs 1,200 m2 but the largest shop floor at Station Square has 893 m2 (the massing should enlarge it or join two floors), 44 courtyards are under 600 m2 and got no play area, and the stands, play areas and 300 bike spaces are illustrative proposals, not the brief's numbers.

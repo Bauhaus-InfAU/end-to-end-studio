@@ -42,6 +42,8 @@ DEFAULTS = {
     'floor_h': 3.0,             # storey height, only for existing buildings without a height
     'default_floors': 2,        # storeys of an existing building with neither height nor storeys
     'excerpt_m': 200,           # length of the excerpt at the detail scale, m
+    'usual_scales': [1000, 1500, 2000, 2500, 3000, 5000],   # in a frame, the whole cut tries these, largest drawing first
+    'frame_fill': 0.5,          # in a frame, the ground, buildings and trees fill at most this share of its height; notes the rest
     'key_scale': 30000,         # scale of the key plan
     'label_min_gap_m': 80,      # the same street, railway or water is labelled once within this distance
     'land_classes': {           # plots' landuse -> what grows there (built and street: nothing)
@@ -737,10 +739,25 @@ if ARGS.massing:
         it = dict(text=str(n['text']), lines=textwrap.wrap(str(n['text']), C['note_chars'])[:3], t=t, illustrative=not runs)
         NOTE_ITEMS.append(it)
         if t is None or not 0 <= t <= L:
+            it['free'] = True
             free.append(it)
     s0, s1 = (SITE_TS[0], SITE_TS[-1]) if SITE_TS else (0.0, L)
     for i, it in enumerate(free):   # spread along the site, in their order
         it['t'] = s0 + (i + 0.5) * (s1 - s0) / len(free)
+
+
+def zspan(w0, w1, detail, k, frame):
+    """(zmin, zbase, ztop) of what a drawing of A-A' from w0 to w1 m shows at k mm per m: ground, buildings, trees, bands."""
+    inwin = lambda a, b: b > w0 and a < w1
+    m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
+    zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
+    ztops = [c['top'] for c in cut + behind if inwin(c['t0'], c['t1'])]
+    ztops += [float(zwin.max()) + max([*C['tree_h'].values(), *(h for _, h, _ in DTREES)])]
+    ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
+    zmin = float(zwin.min())
+    depth = max(4.0, 0.1 * (float(zwin.max()) - zmin), FS * 1.6 / k if RUNS else 0)   # under the ground: room for the bands' names
+    zbase = zmin - depth if frame else math.floor((zmin - depth) / nice_step(FS * 1.4, k)) * nice_step(FS * 1.4, k)
+    return zmin, zbase, max(ztops) + 2
 
 
 def draw(w0, w1, scale, detail, name, frame=None):
@@ -749,14 +766,8 @@ def draw(w0, w1, scale, detail, name, frame=None):
     sel_cut = [c for c in cut if inwin(c['t0'], c['t1'])]
     sel_beh = sorted((c for c in behind if inwin(c['t0'], c['t1'])), key=lambda c: -c['u'])
     m = (TS >= w0 - C['step_m']) & (TS <= w1 + C['step_m'])
-    zwin = np.concatenate([ground(np.array([w0, w1])), ZS[(TS >= w0) & (TS <= w1)]])
-    ztops = [c['top'] for c in sel_cut + sel_beh] + [float(zwin.max()) + max([*C['tree_h'].values(), *(h for _, h, _ in DTREES)])]
-    ztops += [float(np.nanmax(z[m])) for u, z in BANDS + ([] if detail else LANDSCAPE) if np.isfinite(z[m]).any()]
-    zmin = float(zwin.min())
+    zmin, zbase, ztop = zspan(w0, w1, detail, k, frame)
     step = nice_step(FS * 1.4, k)
-    depth = max(4.0, 0.1 * (float(zwin.max()) - zmin), FS * 1.6 / k if RUNS else 0)   # under the ground: room for the bands' names
-    zbase = zmin - depth if frame else math.floor((zmin - depth) / step) * step
-    ztop = max(ztops) + 2
     gut = GUT
     lab_rows = []   # rows of (x0, x1); in a frame the labels are set in the sky instead
     placed = []
@@ -1050,11 +1061,40 @@ def shot(svg, png, w_mm, h_mm):
         NOTES.append(f'{png.name} was not made: the browser failed.')
 
 
-W0, W1 = 0.0, L
-if FRAME_W and L > ROOM_M + 0.5:   # the site is longer than the frame: its middle
-    W0, W1 = (L - ROOM_M) / 2, (L + ROOM_M) / 2
-    NOTES.append(f'The {FRAME_W[0]:g} mm frame holds {ROOM_M:.0f} m of the {L:.0f} m line at 1:{ARGS.scale}: the middle is drawn.')
-whole = draw(W0, W1, ARGS.scale, False, WHOLE, FRAME_W)
+W0, W1, SCALE_W = 0.0, L, ARGS.scale
+if FRAME_W:   # in a frame: the largest usual scale at which the cut fills about half the height and still holds what it must show
+    new = [c for c in cut + behind if c['b']['new']]
+    must = [(c['t0'], c['t1']) for c in new] + [(n['t'], n['t']) for n in NOTE_ITEMS if not n.get('free')]   # and notes at their zone
+    s0, s1 = ((min(a for a, _ in must), max(b for _, b in must)) if must else
+              (SITE_TS[0], SITE_TS[-1]) if SITE_TS else (0.0, L))
+
+    def window(s):
+        room = min(L, (FRAME_W[0] - GUT - 2) * s / 1000)
+        a = min(max(0.0, (s0 + s1) / 2 - room / 2), L - room)
+        return a, a + room
+
+    for s in sorted(x for x in C['usual_scales'] if ARGS.detail_scale < x < ARGS.scale):
+        a, b = window(s)
+        _, zb, zt = zspan(a, b, False, 1000 / s, FRAME_W)
+        if a <= s0 + 0.5 and b >= s1 - 0.5 and (zt - zb) * 1000 / s <= C['frame_fill'] * FRAME_W[1]:
+            SCALE_W = s
+            break
+    W0, W1 = window(SCALE_W)
+    if SCALE_W != ARGS.scale:
+        WHOLE = f'site-section{TAG}_1-{SCALE_W}'
+        NOTES.append(f'The {FRAME_W[0]:g} x {FRAME_W[1]:g} mm frame is drawn at 1:{SCALE_W}, not the site plan\'s 1:{ARGS.scale}, so the '
+                     f'ground and buildings fill about half its height: {W1 - W0:.0f} m of the {L:.0f} m line, '
+                     f'{"around the new buildings and the notes" if must else "the site"} ({WHOLE}).')
+    elif W1 - W0 < L - 0.5:
+        NOTES.append(f'The {FRAME_W[0]:g} mm frame holds {W1 - W0:.0f} m of the {L:.0f} m line at 1:{ARGS.scale}.')
+    spread = [n for n in NOTE_ITEMS if n.get('free')]
+    a, b = max(W0, SITE_TS[0] if SITE_TS else W0), min(W1, SITE_TS[-1] if SITE_TS else W1)
+    for i, it in enumerate(spread):   # the notes the drawing places, spread along the part of the site drawn
+        it['t'] = a + (i + 0.5) * (b - a) / len(spread)
+    for n in NOTE_ITEMS:
+        if not W0 <= n['t'] <= W1:
+            NOTES.append(f'The note "{n["text"]}" is at {n["t"]:.0f} m, outside the part drawn, so it is left out.')
+whole = draw(W0, W1, SCALE_W, False, WHOLE, FRAME_W)
 part = draw(E0, E1, ARGS.detail_scale, True, PART, FRAME_E)
 
 n_default = sum(1 for c in cut + behind if c['b']['default'])
@@ -1081,6 +1121,7 @@ info = {
     'excerpt_t_m': [round(E0, 1), round(E1, 1)], 'excerpt_why': why,
     'labels': [[round(t, 1), s] for t, s, _ in labels],
     'frame_mm': {'whole': FRAME_W, 'excerpt': FRAME_E}, 'beyond_m': round(BEYOND, 1),
+    'scale_whole': SCALE_W, 'whole_t_m': [round(W0, 1), round(W1, 1)],
     'zones': [[round(a, 1), round(b, 1), lab] for a, b, lab, _ in RUNS],
     'notes': [[round(n['t'], 1), n['text'], 'illustrative' if n['illustrative'] else 'at its zone'] for n in NOTE_ITEMS],
     'drawings': [whole, part],

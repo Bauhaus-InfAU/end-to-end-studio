@@ -1,0 +1,3 @@
+Fine-line plans on white paper with a pale green-grey city around them and soft layered greens for the furrows, new buildings white with grey shadow, Roman storey numerals, all at 12 px or more.
+Accent pink #d4487a (pale #f2c6d2) marks the public ground that runs through the furrows (squares, shared streets, hub), taken from the narrative's public furrow and from all three winners' pink public ground; nothing else is pink.
+Unsure: I opened only board-1 of each winner, not all nine boards, so the section, isometric and diagram recipes rest on board-1 and the README, and the pink may fight the furrow's own green.

@@ -200,7 +200,9 @@ def test_section_story_strip(tmp_path):
     assert c["frame_mm"]["whole"] == [300, 30] and [z[2] for z in c["zones"]] == ["Low Rows", "Long Field"], c
     assert [n[1:] for n in c["notes"]] == [["The field stays open", "at its zone"], ["Short ways", "illustrative"]], c["notes"]
     assert abs(c["notes"][0][0] - (450 + c["beyond_m"])) < 0.2   # in the middle of its zone
-    svg = out / "site-section/site-section_design_1-3000.svg"
+    # the frame is taller than the cut at 1:3,000 needs: a larger scale, still holding the new building and every note
+    assert c["scale_whole"] < 3000 and c["whole_t_m"][0] <= 100 + c["beyond_m"] and c["whole_t_m"][1] >= c["notes"][0][0], c
+    svg = out / f"site-section/site-section_design_1-{c['scale_whole']}.svg"
     s = svg.read_text(encoding="utf-8")
     assert 'width="300.0mm" height="30.0mm"' in s and "Key plan" not in s
     assert s.count('class="zone"') == 2 and s.count('class="note"') == 2 and 'class="idea-line"' in s
@@ -210,3 +212,6 @@ def test_section_story_strip(tmp_path):
     # by default the notes are the narrative's principles, each placed by the drawing
     section(site_dir, out, *line, env={"SECTION_NO_NETWORK": "1"})
     assert [n[1:] for n in cut(out)["notes"]] == [["The field stays open", "illustrative"], ["Short ways", "illustrative"]]
+    # a low frame keeps the site plan's scale
+    section(site_dir, out, *line, "--frame", "300,10", env={"SECTION_NO_NETWORK": "1"})
+    assert cut(out)["scale_whole"] == 3000

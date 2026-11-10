@@ -53,6 +53,7 @@ def problems(s):
     else:   # px at the pictogram's own size, where text has the 12 px floor
         out += [f"diagram.{k}: {v!r} px, needs at least 12" for k, v in s["diagram"].items()
                 if k.endswith("_size") and not (isinstance(v, (int, float)) and v >= 12)]
+    out += [f"modes.{m}: {k!r} is not one of the standard's colours" for m, k in (s.get("modes") or {}).items() if k not in COLOURS]
     return out
 
 

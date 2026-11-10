@@ -54,6 +54,7 @@ def read_config(path, required=()):
 
 
 DEFAULTS = {
+    'fade_outside': 0.55,       # how far everything outside the site fades toward the paper, 0 (not) to 1 (gone)
     # street widths in metres by the site's street class, used only without the streets skill's surface
     'street_widths': {'motorway': 28, 'trunk': 22, 'trunk_link': 9, 'primary': 18, 'secondary': 15, 'tertiary': 13,
                       'tertiary_link': 8, 'residential': 10, 'unclassified': 8, 'living_street': 7, 'service': 5,
@@ -100,7 +101,9 @@ DEFAULTS = {
     'margin_mm': 15,            # panel margin when neither the brief nor the standard gives one
     'png_px_per_mm': 4,         # PNG resolution, pixels per printed mm
 }
-LABELS = {'new': 'New buildings', 'existing': 'Kept buildings', 'context': 'Existing buildings',
+LABELS = {'new': 'New buildings', 'existing': 'Existing, kept', 'changed': 'Existing, taken into the design',
+          'removed': 'Existing, removed', 'context': 'City around the site',
+          'park path': 'Park paths', 'footbridge': 'Footbridges', 'boardwalk': 'Boardwalks', 'park threshold': 'Park thresholds',
           'buildings': 'Buildings', 'street': 'Streets and squares', 'path': 'Paths', 'green': 'Fields and woods',
           'park': 'Parks', 'kept': 'Kept green', 'lawn': 'Lawn, gardens', 'meadow': 'Meadow',
           'wet-meadow': 'Wet meadow', 'grove': 'Grove', 'water': 'Water, rain pools', 'playground': 'Playground',
@@ -214,6 +217,7 @@ SITE_STREETS = load(os.path.join(SITE, 'streets.geojson')) or []
 BUILD = [(p, g) for p, g in MASS if p.get('kind') == 'building']
 NEW = [(p, g) for p, g in BUILD if not p.get('existing')]
 KEPT = [(p, g) for p, g in BUILD if p.get('existing')]
+GONE = [(p, g) for p, g in MASS if p.get('kind') == 'removed-building']
 CTX_OUT = [(p, g) for p, g in CTX if not site.contains(g.representative_point())]
 
 # the narrative's idea, where a design layer has it as a shape: config's idea {"label", "names"} names the features
@@ -480,14 +484,17 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         elif CFG['contour_m']:
             missing.append('terrain (no contour lines)')
         # 3. streets: the streets skill's surface, else lines at their widths
-        paths = [g for p, g in (OPEN or []) if p.get('kind') == 'path']
+        walk = [(p.get('type') or 'promenade', g) for p, g in (OPEN or []) if p.get('kind') == 'path']   # park loops too
+        paths = []
         if STREETS is not None:
             used.append('streets')
             old = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and p.get('existing') and g.geom_type.endswith('Polygon')]
             new = [g for p, g in inside(STREETS) if p.get('kind') == 'street' and not p.get('existing') and g.geom_type.endswith('Polygon')]
             for p, g in inside(STREETS):
                 if p.get('kind') == 'path':
-                    if g.geom_type.endswith('Polygon'):
+                    if p.get('type') == 'park threshold':
+                        fill(g, S.get('public', S['street']), 'park threshold')
+                    elif g.geom_type.endswith('Polygon'):
                         fill(g, S['street'])
                     else:
                         paths.append(g)
@@ -527,6 +534,15 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         for g in paths:
             if g.intersects(fr):
                 line(g, S['path'], 'thin', (1.2, 0.8), 'path')
+        for t, g in walk:                      # new park paths solid; bridges heavy; boardwalks a fine double line
+            if not g.intersects(fr):
+                continue
+            if t == 'bridge':
+                line(g, S['accent'], 'thick', None, 'footbridge')
+            elif t == 'boardwalk':
+                line(g.buffer(1.2, cap_style=2).boundary, S['ink'], 'thin', None, 'boardwalk')
+            else:
+                line(g, S['ink'], 'thin', None, 'park path')
         # 3d. the idea, under the buildings like a highlighter: a line as a broad band, an area as a tint
         j = CFG['idea_join_m']                           # grown and shrunk again: close lines become one band
         idea_ground = unary_union([IDEA_AREA, IDEA_LINE.buffer(j + CFG['idea_band_mm'] * k / 2).buffer(-j)
@@ -635,12 +651,19 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     o.append(f'<g fill="{c}" fill-opacity="0.9" stroke="{dark}" stroke-width="{f2(lw("thin"))}">' + ''.join(
                         f'<circle cx="{f2(x)}" cy="{f2(y)}" r="{f2(r)}"/>' for (x, y, r), tn in zip(trees, tone) if tn == i) + '</g>')
             legend.setdefault('tree', ('dot', S['grove']))
-        # 5. existing buildings: around the site pale, kept ones in it with an outline
+        # 5. existing buildings: the city around the site fades back; in it, what the design does with each
+        #    (massing's status): kept with an outline, changed darker, removed only its dashed outline
         used.append('site buildings')
         for p, g in inside(CTX_OUT):
-            fill(g, S['context'], 'context')
-        for p, g in inside(KEPT):
-            fill(g, S['existing'], 'existing', S['ink'], 'thin')
+            fill(g, mix(S['context'], S['paper'], 0.5), 'context')
+        for p, g in inside(KEPT + GONE):
+            st = p.get('status', 'kept')
+            if st == 'removed':
+                line(g.boundary, S['ink'], 'thin', (1.0, 0.7), 'removed')
+            elif st == 'changed':
+                fill(g, mix(S['existing'], S['ink'], 0.35), 'changed', S['ink'], 'thin')
+            else:
+                fill(g, S['existing'], 'existing', S['ink'], 'thin')
         # 6. new buildings; in a detail area at cut_scale_max and larger, cut at the ground floor
         cut = kind == 'detail' and scale <= CFG['cut_scale_max']
         door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []
@@ -660,6 +683,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     wall = wall.difference(unary_union([q.buffer(CFG['door_m'] / 2) for q in doors]))
                 if not wall.is_empty:
                     fill(wall, S['ink'], 'cut')
+        # 7b. everything outside the site fades back under a veil of the paper; the names go on top of it
+        if CFG['fade_outside'] > 0:
+            fill(fr.difference(site), S['paper'], extra=' fill-opacity="%g"' % CFG['fade_outside'])
         # 8. mobility: stops, hubs, car access; the routes belong to the mobility plan
         if MOB is not None:
             used.append('mobility')
@@ -1194,6 +1220,19 @@ for name, title, scale, win, cut, a in details:
                 round(100 * e['subject_shown']), CFG['detail_near_m'], a.get('at'))
             print('%s is too small: %s; panel-layout should give it a larger frame' % (name, e['too_small']),
                   file=sys.stderr)
+    # ask panel-layout for the frame that holds them, at this scale, the way its `frames` step reads it
+    req = os.path.join(OUT, os.path.splitext(e['file'])[0] + '.frame.json')
+    if 'too_small' in e:
+        k = scale / 1000.0
+        b = pad(unary_union(near).bounds, CFG['detail_pad_m'])
+        under = e['height_mm'] - e['map_height_mm'] + (float(CFG.get('panel_bar_mm', 8)) if PANEL else 0)
+        e['needs_mm'] = {'w': round(max((b[2] - b[0]) / k, (win[2] - win[0]) / k), 1),
+                         'h': round(max((b[3] - b[1]) / k, (win[3] - win[1]) / k) + under, 1)}
+        with open(req, 'w', encoding='utf8') as fh:
+            json.dump({'drawing': e['file'], 'scale': '1:%d' % scale, 'needs_mm': e['needs_mm'], 'by': 'plans',
+                       'why': e['too_small']}, fh, indent=1)
+    elif os.path.exists(req):
+        os.remove(req)                                   # an old request this frame no longer needs
     made.append(e)
 
 if fig_scale:

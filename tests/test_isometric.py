@@ -39,3 +39,48 @@ def test_district_at_its_scale_and_the_centre_close_up(tmp_path):
     assert ">school<" in close and ">commerce *<" in close and ">Square<" in close   # uses from the massing; * illustrative
     text = (iso / "summary.md").read_text(encoding="utf-8")
     assert "centre Square close up at 1:1000" in text and "people, illustrative" in text and "1 gable" in text
+
+
+def _two_buildings(tmp_path):
+    """Two small buildings far apart along the diagonal that lies across the view from the south-west and north-east."""
+    g = shape(json.loads((SITE / "site.geojson").read_text(encoding="utf-8"))["features"][0]["geometry"])
+    epsg = (32600 if g.centroid.y >= 0 else 32700) + int((g.centroid.x + 180) // 6) + 1
+    to_m = pyproj.Transformer.from_crs(4326, epsg, always_xy=True).transform
+    to_ll = pyproj.Transformer.from_crs(epsg, 4326, always_xy=True).transform
+    c = transform(to_m, g).centroid
+    out = tmp_path / "proposal"
+    (out / "massing").mkdir(parents=True)
+    (out / "massing/massing.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"kind": "building", "floors": 3, "height_m": 9, "use": "housing", "block": i},
+         "geometry": mapping(transform(to_ll, box(c.x + d - 10, c.y - d - 10, c.x + d + 10, c.y - d + 10)))}
+        for i, d in enumerate((-300, 300))]}), encoding="utf-8")
+    return out
+
+
+def _draw(out, *args):
+    r = subprocess.run([sys.executable, str(ISO), str(SITE), str(out), *args], capture_output=True, text=True,
+                       encoding="utf-8", env={**os.environ, "PYTHONUTF8": "1"})
+    assert r.returncode == 0, r.stderr[-2000:]
+    return out / "isometric"
+
+
+def test_fit_draws_the_district_as_large_as_its_frame_holds(tmp_path):
+    iso = _draw(_two_buildings(tmp_path), "5000", "100", "--frame", "400", "200", "--fit")
+    # 1,074 m across the view and 100 m on each side in 400 mm: 1:3185, rounded to 1:3000; the other sides fill it less
+    svg = (iso / "isometric_1-3000.svg").read_text(encoding="utf-8")
+    assert 'width="400mm" height="200mm"' in svg
+    assert not (iso / "isometric_1-5000.svg").exists()
+    text = (iso / "summary.md").read_text(encoding="utf-8")
+    assert "south-west" in text or "north-east" in text
+    assert "planned at 1:5000" in text
+
+
+def test_fit_never_draws_smaller_than_planned(tmp_path):
+    iso = _draw(_two_buildings(tmp_path), "2000", "100", "--frame", "400", "200", "--fit")
+    assert 'width="400mm" height="200mm"' in (iso / "isometric_1-2000.svg").read_text(encoding="utf-8")
+    assert "planned at" not in (iso / "summary.md").read_text(encoding="utf-8")
+
+
+def test_a_frame_without_fit_keeps_the_planned_scale(tmp_path):
+    iso = _draw(_two_buildings(tmp_path), "5000", "100", "--frame", "400", "200")
+    assert 'width="400mm" height="200mm"' in (iso / "isometric_1-5000.svg").read_text(encoding="utf-8")

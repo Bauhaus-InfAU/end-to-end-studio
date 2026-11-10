@@ -22,6 +22,7 @@ NEW_SCRIPTS += [REPO / "plugins/design/skills/phasing/scripts" / f for f in ("ph
 NEW_SCRIPTS += [REPO / "plugins/design/skills/ground-floor/scripts" / f for f in ("ground_floor.py", "config.example.json")]
 NEW_SCRIPTS += [REPO / "plugins/concept/skills/structure-plan/scripts" / f
                 for f in ("frame.py", "build.py", "check.py", "georef.py", "design.example.py")]
+NEW_SCRIPTS += [REPO / "plugins/drawings/skills/building-types/scripts/building_types.py"]
 FORBIDDEN = re.compile(r"Regensburg|Europan|Pilsenallee|Chamer|Brandlberg|Haslbach|Wutzlhofen|run-3|25832"
                        r"|\b49\.0\d{3}|\b12\.\d{4}|\b[A-Z]:[\\/](?:Users|Work)", re.I)
 needs_run3 = pytest.mark.skipif(not RUN3.exists(), reason="run-3 not on this computer")
@@ -75,13 +76,6 @@ def test_massing_runs_on_run3_inputs(tmp_path):
         or stats["at_cap"] / stats["n_home"] > 0.5
 
 
-@needs_run3
-def test_massing_missing_key_stops(tmp_path):
-    out = massing_run(tmp_path, drop="homes_target")
-    r = run(MASSING / "massing.py", "--proposal", out, "--site", SITE, "--config", out / "massing/config.json", check=False)
-    assert r.returncode != 0 and "homes_target" in r.stderr
-
-
 def run_massing(out):
     return run(MASSING / "massing.py", "--proposal", out, "--site", out.parent / "site", "--config", out / "massing/config.json", check=False)
 
@@ -93,8 +87,10 @@ def with_site(out, drop=()):
 
 
 @needs_run3
-def test_massing_example_config_stops(tmp_path):
-    out = with_site(massing_run(tmp_path))
+def test_massing_missing_key_or_example_config_stops(tmp_path):
+    out = with_site(massing_run(tmp_path, drop="homes_target"))
+    r = run_massing(out)
+    assert r.returncode != 0 and "homes_target" in r.stderr
     shutil.copy(MASSING / "config.example.json", out / "massing/config.json")
     r = run_massing(out)
     assert r.returncode != 0 and "height_limit_m" in r.stderr and "homes_target" in r.stderr

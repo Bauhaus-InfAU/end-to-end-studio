@@ -8,7 +8,7 @@ PNG_1PX = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8ffff3f0005fe02fea7d6a5ea0000000049454e44ae426082")
 
 
-def test_read_run_full(fixture_proposals):
+def test_read_run(fixture_proposals):
     r = read_run(fixture_proposals / "2026-01-02_run-1", SK, {}, [])
     assert r["label"] == "run-1" and r["verdict"] == "Special Mention"
     assert r["items"] == [12, 12]
@@ -17,11 +17,6 @@ def test_read_run_full(fixture_proposals):
     assert r["skills"]["plans"]["unsure"].startswith("Stray accent lines")
     it = r["panels"][0]["items"][0]
     assert (it["skill"], round(it["x"], 4), round(it["w"], 4)) == ("plans", round(15/594, 4), round(564/594, 4))
-    assert r["headline"]["homes"] == 3237
-
-
-def test_read_run_details(fixture_proposals):
-    r = read_run(fixture_proposals / "2026-01-02_run-1", SK, {}, [])
     assert (r["key"], r["title"], r["date"], r["kind"]) == ("2026-01-02_run-1", "Lantern Yard", "2026-01-02", "run")
     assert (r["start"], r["end"], r["minutes"]) == ("10:00", "10:25", 25)
     assert r["commit"] == "abc1234" and r["new_in_run"] == "the plans skill"

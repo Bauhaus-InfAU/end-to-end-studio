@@ -1,0 +1,3 @@
+No award: "Long Fields" is admitted and passes round 1 on its clear field-strip idea, but it is eliminated in round 2 (concept and site, programme) and the control round confirms it (`jury/report.md`).
+The number that weighed most: 942 homes in phase 1 against the 1,100 the brief says must be built (p. 33), 14 % short; closeness to the winners' boards 34 of 65, a mean of 2.6 of 5 (`jury/closeness.csv`, `jury/evaluation.png`).
+Unsure: whether a street links Chamer Straße and Sandgasse directly, and the B16, canal and 150 kV distances, which can't be checked on the panels; which sealing figure is right (44.9 % on panel 2, 56.6 % in the text); the text A4 PDF and the 3 communication JPGs were not found.

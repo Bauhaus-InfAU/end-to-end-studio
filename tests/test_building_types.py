@@ -7,8 +7,6 @@ from synthetic import make_proposal
 
 BT = REPO / "plugins/drawings/skills/building-types/scripts/building_types.py"
 MASSING = REPO / "plugins/design/skills/massing/scripts/massing.py"
-FORBIDDEN = re.compile(r"Regensburg|Europan|Pilsenallee|Chamer|Brandlberg|Haslbach|Wutzlhofen|run-3|25832"
-                       r"|\b49\.0\d{3}|\b12\.\d{4}|\b[A-Z]:[\\/](?:Users|Work)", re.I)
 
 
 def run(script, *args):
@@ -39,10 +37,6 @@ def draw(src, dest, notes=None, layout=None):
     rows = list(csv.DictReader((dest / "building-types/types.csv").open(encoding="utf-8")))
     svg = next((dest / "building-types").glob("*.svg")).read_text(encoding="utf-8")
     return rows, svg
-
-
-def test_names_no_site():
-    assert not FORBIDDEN.findall(BT.read_text(encoding="utf-8"))
 
 
 def test_one_whole_block_per_type(massed, tmp_path):

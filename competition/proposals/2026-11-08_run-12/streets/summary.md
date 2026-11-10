@@ -1,0 +1,3 @@
+Existing streets came from the cadastre's street-land areas as they are (59.2 ha existing, 13.2 ha new streets, 0.2 ha existing street given way to new buildings); no buildings sit under new streets; check plan at 1:3000, the brief's site plan scale.
+Streets cover 24.7 % of the site; 2,319 m of new street run along existing ones and count as those; ends are 8 future links, 23 turning heads and 48 square ends.
+Unsure: 5 main routes still end nowhere, so the massing should link them to a street or path; 223 centrelines got default widths, and no brief widths or kerb radius were set (6 m default); the new streets show in the PNG as dark grey, not an obvious accent.

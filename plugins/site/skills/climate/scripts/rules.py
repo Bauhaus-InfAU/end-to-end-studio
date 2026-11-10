@@ -50,8 +50,8 @@ def main():
     mid = shapely.union_all([g for g, p in day if th["day_homes"] <= p["db_min"] < th["day_robust"]] or [shapely.Polygon()])
     air = shapely.union_all([g for g, p in S.layer("fresh-air", out) if p["kind"] == "corridor"] or [shapely.Polygon()])
     if day:
-        rule("dont", "noise", f"No homes, schools, childcare or playgrounds: {th['day_robust']} dB(A) or more by day. "
-             "Noise-robust uses (work, parking, mobility) or a building or landform that shields what lies behind.", loud,
+        rule("dont", "noise", f"Homes, schools, childcare or playgrounds without a screen: {th['day_robust']} dB(A) or more by day today. "
+             "A building, wall or landform in front makes them possible; otherwise noise-robust uses (work, parking, mobility).", loud,
              f"noise.geojson, day >= {th['day_robust']} dB(A)")
         rule("careful", "noise", f"Homes only behind a shielding edge ({th['day_homes']}-{th['day_robust']} dB(A) by day): closed side to the road, "
              "bedrooms and outdoor space on the quiet side. Offices, shops and services fit.", mid,

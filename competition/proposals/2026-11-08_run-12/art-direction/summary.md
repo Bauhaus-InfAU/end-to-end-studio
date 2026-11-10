@@ -1,0 +1,3 @@
+24 fixes for 10 skills (plans, isometric, building-types, site-section, perspective 3 each; open-space, mobility, structure-plan, analysis 2 each; climate 1); concept-diagrams and the figure-ground are close to the winners and get none.
+Largest gap: the perspectives show blank grey walls on an all-pink floor, and the plans and isometric leave the city around the district bare and empty in the frame, where the winners fill it with trees and green to the edge. The panels are still empty frames (panel-layout's step), see notes.md.
+Unsure: I saw each sheet once at reduced size, so small labels and line weights are judged roughly; whether the perspectives were ever rendered with an image model is not stated; the analysis maps may be measurement maps not meant for the panels.
