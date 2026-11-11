@@ -79,7 +79,7 @@ Skills work in code and plain files, not in a modelling program. Leave Rhino and
 | analysis | `analysis` | The site as it is: uses, edges, green and biotopes, walking reach, sealed share, what to keep. At the end the same on the design, and the comparison of every analysis | `roy-mdr` |
 | concept | `narrative` | The idea, its title and the storyline across the panels. At the end, the text with the key figures | `Emdot-code` |
 | | `structure-plan` | The urban figure: green corridors, neighbourhoods, centres, main routes | `dishadesign1503-lab` |
-| | `programme` | The brief's programme as a table: homes and household mix, residents, uses and their areas | `Mehrn00shK` |
+| | `programme` | The brief's programme as a table: homes and household mix, residents, uses and their areas; what the entry proposes on top, as themes and users; at the end, a theme for each neighbourhood | `Mehrn00shK` |
 | design | `massing` | Buildings, streets and open spaces on the structure plan | `TukaElGhazaly` |
 | | `phasing` | The construction phases and what comes first | open |
 | | `mobility` | How people arrive and move: hubs, low-traffic streets, bike and foot routes, parking | `simaycansubulat` |

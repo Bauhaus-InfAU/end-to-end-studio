@@ -272,6 +272,24 @@ def test_plans_name_places_streets_and_detail_areas(drawn):
     assert re.search(r'paint-order="stroke">Detail area 1</text>', site)   # the window's name, on a halo
 
 
+def test_plans_show_the_programme(drawn, tmp_path):
+    """Homes stay white and every other kind of use takes a tone with its legend line; the tones show the programme,
+    so the site plan writes no use beside a building."""
+    out, site_dir = drawn
+    alone = tmp_path / "p"
+    shutil.copytree(out, alone)
+    gj = json.loads((alone / "massing/massing.geojson").read_text(encoding="utf-8"))
+    new = [f for f in gj["features"] if f["properties"].get("kind") == "building" and not f["properties"].get("existing")]
+    new[0]["properties"].update(use="school", ground_floor="school")
+    new[1]["properties"].update(use="workshop", ground_floor="workshop")
+    (alone / "massing/massing.geojson").write_text(json.dumps(gj), encoding="utf-8")
+    draw(alone, site_dir)
+    site = (alone / "plans/site-plan_1-3000.svg").read_text(encoding="utf-8")
+    for label in ("New buildings", "Work and trade", "Community and special uses"):
+        assert ">%s</text>" % label in site, label
+    assert ">School</text>" not in site
+
+
 def test_plans_flag_overlapping_detail_areas(drawn):
     out, site_dir = drawn
     assert "overlaps" not in made_of(out)["detail-area-1"]

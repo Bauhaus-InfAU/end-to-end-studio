@@ -87,6 +87,16 @@ DEFAULTS = {
     'wall_m': 0.5,              # the cut outer wall's thickness, metres
     'door_m': 2.0,              # a door's opening in the cut wall, metres
     'plain_uses': ['housing', 'mixed', 'commerce'],   # building uses too common to name; every other use is written on it
+    'living_uses': ['housing', 'residential', 'home', 'living', 'dwelling'],   # uses that are homes: the standard's white
+    'use_groups': [['mobility', ['garage', 'parking', 'station', 'depot']],
+                   ['community', ['school', 'daycare', 'kindergarten', 'nursery', 'community', 'culture', 'library', 'sport',
+                                  'pool', 'market', 'health', 'care']],
+                   ['work', ['commerce', 'office', 'workshop', 'craft', 'industr', 'retail', 'shop', 'trade']],
+                   ['mixed', ['mixed']]],   # a building's group: the first whose word is in its use
+    'use_other': 'community',   # the group of a use that is neither homes nor in a group's words: a special use
+    'use_tint': {'mixed': ['ramp1', 0.4], 'work': ['ramp1', 0.9], 'community': ['accent', 0.3],
+                 'mobility': ['building', 0.4]},   # a group's tone, in the legend's order: this much of that colour of the
+                                                   # standard (rampN: the Nth of its ramp) on the buildings' white
     'label_seen_min': 0.5,      # an area whose middle is off the map is named only if this share of it is on the map
     'idea_band_mm': 7,          # a line idea is drawn as a band this wide on paper, in the accent's pale tone
     'idea_tint': 0.18,          # how strong the accent lies on the idea's band or area (0 to 1)
@@ -111,6 +121,8 @@ LABELS = {'new': 'New buildings', 'existing': 'Existing, kept', 'changed': 'Exis
           'storeys': 'Storeys', 'site': 'Project site', 'window': 'Detail areas', 'landmark': 'Landmark',
           'public': 'Squares, shared streets', 'entrance': 'Entrances', 'cut': 'Walls, cut at the ground floor', 'bike-stands': 'Bike stands',
           'bus-bay': 'Bus bays', 'bike-parking': 'Bike parking',
+          'use-community': 'Community and special uses', 'use-work': 'Work and trade',
+          'use-mixed': 'Homes over shops and services', 'use-mobility': 'Garages and stations',
           'courtyard': 'Shared courtyards', 'active-gf': 'Ground floors open to the public', 'idea': 'The idea',
           'site-plan': 'Site plan', 'figure-ground': 'Figure-ground', 'legend': 'Legend'}
 # the look without a drawing standard: black on white, one accent
@@ -234,6 +246,26 @@ if IDEA:
 IDEA_AREA = unary_union([g for g in IDEA_G if g.geom_type.endswith('Polygon')] or [Polygon()])
 IDEA_LINE = unary_union([g for g in IDEA_G if 'LineString' in g.geom_type] or [Polygon()])
 IDEA_LINE = IDEA_LINE.intersection(site.buffer(CFG['idea_reach_m'])) if not IDEA_LINE.is_empty else IDEA_LINE
+
+
+def group_of(text):
+    """The use group a use's words put it in, else None."""
+    t = str(text or '').lower()
+    return next((name for name, words in CFG['use_groups'] if any(w in t for w in words)), None)
+
+
+def is_living(text):
+    t = str(text or '').strip().lower()
+    return not t or any(t.startswith(w) for w in CFG['living_uses'])
+
+
+def use_group(p):
+    """The group that gives a new building its tone: None for homes, mixed for homes over another ground floor."""
+    if not is_living(p.get('use')):
+        return group_of(p.get('use')) or CFG['use_other']
+    return None if is_living(p.get('ground_floor')) else 'mixed'
+
+
 # a ground floor that is not homes: shops, services, a daycare, a school, a hub
 ACTIVE_GF = lambda p: bool(p.get('ground_floor')) and not str(p['ground_floor']).startswith('housing')
 
@@ -381,6 +413,7 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
     used, missing, legend = ['massing'], [], {}
     taken = []                                           # the boxes of the text written so far, on paper in metres
     not_shown = []                                       # what a detail area should show and the layers don't give
+
 
     def lw(key): return float(S[key]) * k
     def f2(v): return '%.2f' % v
@@ -669,10 +702,16 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
         door_pts = [g for p, g in gfd if p.get('kind') == 'entrance' and g.geom_type == 'Point'] if cut else []
         tone = S['paper'] if cut else S['new']             # a ground-floor plan shows the inside, not the roof
         for p, g in inside(NEW):
+            grp = None if cut else use_group(p)            # homes white, every other kind of use in its light tone
+            mine = tone
+            if grp in CFG['use_tint']:
+                key_, much = CFG['use_tint'][grp]
+                col = S['ramp'][min(int(key_[4:]), len(S['ramp']) - 1)] if key_.startswith('ramp') else S.get(key_, S['ink'])
+                mine = mix(S['new'], col, much)
             if p.get('landmark'):
-                fill(g, tone, 'landmark', S['ink'], 'thick')
+                fill(g, mine, 'landmark', S['ink'], 'thick')
             else:
-                fill(g, tone, 'new', S['ink'], 'mid')
+                fill(g, mine, 'use-' + grp if mine != tone else 'new', S['ink'], 'mid')
             if kind == 'detail' and ACTIVE_GF(p):          # in a detail area, a ground floor open to the public: hatched
                 o.append(f'<path d="{d(g)}" fill="url(#gf-{name})" stroke="none"/>')
                 legend.setdefault('active-gf', ('hatch',))
@@ -683,6 +722,9 @@ def draw_plan(name, title, scale, window, kind, windows=(), shoot=True):
                     wall = wall.difference(unary_union([q.buffer(CFG['door_m'] / 2) for q in doors]))
                 if not wall.is_empty:
                     fill(wall, S['ink'], 'cut')
+        for key_ in ['new'] + ['use-' + n for n in CFG['use_tint']]:   # the legend lists the buildings' tones together
+            if key_ in legend:
+                legend[key_] = legend.pop(key_)
         # 7b. everything outside the site fades back under a veil of the paper; the names go on top of it
         if CFG['fade_outside'] > 0:
             fill(fr.difference(site), S['paper'], extra=' fill-opacity="%g"' % CFG['fade_outside'])
